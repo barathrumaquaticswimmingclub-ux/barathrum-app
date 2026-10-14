@@ -1,13 +1,512 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BARATHRUM A.S.C</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BARATHRUM AQUATIC</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+  color: #172033;
+}
+
+header {
+  background: linear-gradient(135deg, #063b70, #087fba);
+  color: white;
+  padding: 24px 18px;
+}
+
+header h1 {
+  font-size: 23px;
+  margin: 0 0 8px;
+}
+
+header p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.container {
+  padding: 16px;
+  max-width: 900px;
+  margin: auto;
+}
+
+.section-title {
+  font-size: 19px;
+  font-weight: bold;
+  margin: 10px 0 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.card {
+  background: white;
+  padding: 17px 13px;
+  border-radius: 14px;
+  box-shadow: 0 3px 12px #0000000c;
+}
+
+.card .icon {
+  font-size: 25px;
+}
+
+.card h3 {
+  font-size: 13px;
+  color: #64748b;
+  margin: 10px 0 5px;
+}
+
+.number {
+  font-size: 25px;
+  font-weight: bold;
+  color: #075985;
+}
+
+.menu-title {
+  margin-top: 25px;
+  margin-bottom: 12px;
+  font-weight: bold;
+}
+
+.menu {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.menu button {
+  background: white;
+  color: #123456;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 17px 10px;
+  font-size: 14px;
+  text-align: left;
+  font-weight: bold;
+}
+
+.menu button:active {
+  background: #dbeafe;
+}
+
+.content {
+  background: white;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 20px;
+}
+
+input, select {
+  width: 100%;
+  padding: 12px;
+  margin: 6px 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+}
+
+.primary {
+  background: #087fba;
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+  font-weight: bold;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th, td {
+  padding: 10px 6px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+th {
+  background: #eff6ff;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.hidden {
+  display: none;
+}
+
+footer {
+  text-align: center;
+  padding: 25px 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+</style>
 </head>
+
 <body>
-  <h1>BARATHRUM AQUATIC SWIMMING CLUB</h1>
-  <p>Management System</p>
-  <p>Aplikasi berhasil dibuka.</p>
+
+<header>
+  <h1>🏊 BARATHRUM AQUATIC</h1>
+  <p>SWIMMING CLUB MANAGEMENT SYSTEM</p>
+</header>
+
+<div class="container">
+
+  <div id="dashboard">
+    <div class="section-title">Dashboard Klub</div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="icon">🏊</div>
+        <h3>Total Atlet</h3>
+        <div class="number" id="totalAtlet">0</div>
+      </div>
+
+      <div class="card">
+        <div class="icon">👨‍🏫</div>
+        <h3>Total Pelatih</h3>
+        <div class="number" id="totalPelatih">0</div>
+      </div>
+
+      <div class="card">
+        <div class="icon">📅</div>
+        <h3>Jadwal Latihan</h3>
+        <div class="number" id="totalJadwal">0</div>
+      </div>
+
+      <div class="card">
+        <div class="icon">💰</div>
+        <h3>Transaksi</h3>
+        <div class="number" id="totalPembayaran">0</div>
+      </div>
+    </div>
+
+    <div class="menu-title">MENU UTAMA</div>
+
+    <div class="menu">
+      <button onclick="buka('atlet')">🏊 Data Atlet</button>
+      <button onclick="buka('pelatih')">👨‍🏫 Data Pelatih</button>
+      <button onclick="buka('jadwal')">📅 Jadwal Latihan</button>
+      <button onclick="buka('absensi')">✅ Absensi</button>
+      <button onclick="buka('pembayaran')">💰 Pembayaran</button>
+      <button onclick="buka('laporan')">📊 Laporan</button>
+    </div>
+  </div>
+
+  <div id="halaman" class="content hidden">
+    <button onclick="kembali()" style="border:0;background:none;color:#087fba">
+      ← Kembali ke Dashboard
+    </button>
+
+    <h2 id="judul"></h2>
+
+    <div id="formArea"></div>
+
+    <div class="table-wrap">
+      <table>
+        <thead id="kepalaTabel"></thead>
+        <tbody id="isiTabel"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  BARATHRUM AQUATIC SWIMMING CLUB<br>
+  Management System
+</footer>
+
+<script>
+const jenisData = {
+  atlet: "Data Atlet",
+  pelatih: "Data Pelatih",
+  jadwal: "Jadwal Latihan",
+  absensi: "Absensi",
+  pembayaran: "Pembayaran",
+  laporan: "Laporan"
+};
+
+let data = {
+  atlet: [],
+  pelatih: [],
+  jadwal: [],
+  absensi: [],
+  pembayaran: []
+};
+
+let halamanAktif = "";
+
+async function api(jenis, opsi = {}) {
+  const respons = await fetch("/api/" + jenis, opsi);
+
+  if (!respons.ok) {
+    throw new Error("Gagal mengakses server");
+  }
+
+  return respons.json();
+}
+
+async function muatData() {
+  try {
+    for (const jenis of Object.keys(data)) {
+      data[jenis] = await api(jenis);
+    }
+
+    document.getElementById("totalAtlet").textContent =
+      data.atlet.length;
+
+    document.getElementById("totalPelatih").textContent =
+      data.pelatih.length;
+
+    document.getElementById("totalJadwal").textContent =
+      data.jadwal.length;
+
+    document.getElementById("totalPembayaran").textContent =
+      data.pembayaran.length;
+
+  } catch (error) {
+    console.error(error);
+    alert("Data server belum berhasil dimuat. Periksa koneksi server.");
+  }
+}
+
+function buatInput(nama, label, tipe = "text") {
+  return `
+    <label>${label}</label>
+    <input name="${nama}" type="${tipe}" required>
+  `;
+}
+
+function buatSelect(nama, label, pilihan) {
+  return `
+    <label>${label}</label>
+    <select name="${nama}" required>
+      <option value="">Pilih ${label}</option>
+      ${pilihan.map(x => `<option value="${x}">${x}</option>`).join("")}
+    </select>
+  `;
+}
+
+function buka(jenis) {
+  halamanAktif = jenis;
+
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("halaman").classList.remove("hidden");
+
+  document.getElementById("judul").textContent = jenisData[jenis];
+
+  let form = "";
+
+  if (jenis === "atlet") {
+    form += buatInput("nama", "Nama lengkap");
+    form += buatInput("nik", "NIK");
+    form += buatSelect("jk", "Jenis kelamin", ["Laki-laki", "Perempuan"]);
+    form += buatInput("tanggalLahir", "Tanggal lahir", "date");
+    form += buatInput("noHpOrtu", "Nomor HP orang tua", "tel");
+    form += buatSelect("kelompok", "Jenis kelas", [
+      "Private Class",
+      "Semi Private Class",
+      "Group Class",
+      "Regular Class",
+      "Prestasi Class",
+      "Hydro Terapi Class"
+    ]);
+    form += buatSelect("status", "Status", ["Aktif", "Nonaktif"]);
+  }
+
+  if (jenis === "pelatih") {
+    form += buatInput("nama", "Nama pelatih");
+    form += buatInput("noHp", "Nomor HP", "tel");
+    form += buatInput("spesialisasi", "Spesialisasi");
+  }
+
+  if (jenis === "jadwal") {
+    form += buatInput("nama", "Nama jadwal / kelas");
+    form += buatInput("hari", "Hari");
+    form += buatInput("jam", "Jam latihan");
+    form += buatInput("pelatih", "Nama pelatih");
+  }
+
+  if (jenis === "absensi") {
+    form += buatInput("namaAtlet", "Nama atlet");
+    form += buatInput("tanggal", "Tanggal", "date");
+    form += buatSelect("status", "Kehadiran", [
+      "Hadir", "Izin", "Sakit", "Alpa"
+    ]);
+  }
+
+  if (jenis === "pembayaran") {
+    form += buatInput("namaAtlet", "Nama atlet");
+    form += buatSelect("jenisKelas", "Jenis kelas", [
+      "Private Class",
+      "Semi Private Class",
+      "Group Class",
+      "Regular Class",
+      "Prestasi Class",
+      "Hydro Terapi Class"
+    ]);
+    form += buatInput("jumlah", "Nominal pembayaran (Rp)", "number");
+    form += buatInput("tanggal", "Tanggal pembayaran", "date");
+    form += buatSelect("status", "Status pembayaran", [
+      "Lunas", "Belum Lunas"
+    ]);
+  }
+
+  if (jenis === "laporan") {
+    form = "<p>Rekap data klub berdasarkan data yang tersimpan.</p>";
+  } else {
+    form = `
+      <form id="formData">
+        ${form}
+        <button class="primary" type="submit">Simpan Data</button>
+      </form>
+      <br>
+      <input id="cari" placeholder="Cari data..." oninput="tampilkanTabel()">
+    `;
+  }
+
+  document.getElementById("formArea").innerHTML = form;
+
+  document.getElementById("formData")?.addEventListener("submit", simpanData);
+
+  tampilkanTabel();
+}
+
+async function simpanData(event) {
+  event.preventDefault();
+
+  const form = new FormData(event.target);
+  const item = Object.fromEntries(form.entries());
+
+  if (halamanAktif === "pembayaran") {
+    item.jumlah = Number(item.jumlah);
+  }
+
+  try {
+    await api(halamanAktif, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(item)
+    });
+
+    event.target.reset();
+
+    await muatData();
+    tampilkanTabel();
+
+    alert("Data berhasil disimpan.");
+
+  } catch (error) {
+    alert("Data belum tersimpan. Server perlu diperiksa.");
+  }
+}
+
+function tampilkanTabel() {
+  const jenis = halamanAktif;
+  const daftar = data[jenis] || [];
+
+  const pencarian = (
+    document.getElementById("cari")?.value || ""
+  ).toLowerCase();
+
+  const hasil = daftar.filter(item =>
+    Object.values(item).join(" ").toLowerCase().includes(pencarian)
+  );
+
+  if (jenis === "laporan") {
+    document.getElementById("kepalaTabel").innerHTML =
+      "<tr><th>Jenis Data</th><th>Jumlah</th></tr>";
+
+    document.getElementById("isiTabel").innerHTML =
+      Object.keys(data).map(k => `
+        <tr>
+          <td>${jenisData[k]}</td>
+          <td>${data[k].length}</td>
+        </tr>
+      `).join("");
+
+    return;
+  }
+
+  const kolom = {
+    atlet: ["nama", "kelompok", "status"],
+    pelatih: ["nama", "noHp", "spesialisasi"],
+    jadwal: ["nama", "hari", "jam", "pelatih"],
+    absensi: ["namaAtlet", "tanggal", "status"],
+    pembayaran: ["namaAtlet", "jenisKelas", "jumlah", "status"]
+  }[jenis] || [];
+
+  document.getElementById("kepalaTabel").innerHTML =
+    "<tr>" + kolom.map(k => `<th>${k}</th>`).join("") +
+    "<th>Aksi</th></tr>";
+
+  document.getElementById("isiTabel").innerHTML =
+    hasil.map(item => `
+      <tr>
+        ${kolom.map(k => `<td>${aman(item[k] ?? "-")}</td>`).join("")}
+        <td>
+          <button onclick="hapusData('${jenis}','${aman(item.id)}')">
+            Hapus
+          </button>
+        </td>
+      </tr>
+    `).join("");
+}
+
+function aman(teks) {
+  return String(teks).replace(/[&<>"']/g, karakter => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[karakter]);
+}
+
+async function hapusData(jenis, id) {
+  if (!confirm("Yakin ingin menghapus data ini?")) return;
+
+  try {
+    await fetch("/api/" + jenis + "/" + id, {
+      method: "DELETE"
+    });
+
+    await muatData();
+    tampilkanTabel();
+
+  } catch (error) {
+    alert("Data gagal dihapus.");
+  }
+}
+
+function kembali() {
+  document.getElementById("halaman").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  halamanAktif = "";
+}
+
+muatData();
+</script>
+
 </body>
 </html>
