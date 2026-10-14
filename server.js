@@ -174,6 +174,66 @@ app.put("/api/:jenis/:id", async (req, res) => {
     });
   }
 });
+app.put("/api/:jenis/:id", async (req, res) => {
+  try {
+    const { jenis, id } = req.params;
+
+    if (!tabel.includes(jenis)) {
+      return res.status(400).json({
+        pesan: "Jenis data tidak ditemukan"
+      });
+    }
+
+    if (!/^\d+$/.test(id)) {
+      return res.status(400).json({
+        pesan: "ID tidak valid"
+      });
+    }
+
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body)
+    ) {
+      return res.status(400).json({
+        pesan: "Data tidak valid"
+      });
+    }
+
+    const hasil = await pool.query(
+      `UPDATE data_klub
+       SET data = $1
+       WHERE jenis = $2 AND id = $3
+       RETURNING id, data`,
+      [
+        JSON.stringify(req.body),
+        jenis,
+        Number(id)
+      ]
+    );
+
+    if (hasil.rowCount === 0) {
+      return res.status(404).json({
+        pesan: "Data tidak ditemukan"
+      });
+    }
+
+    res.json({
+      pesan: "Data berhasil diperbarui",
+      data: {
+        ...hasil.rows[0].data,
+        id: String(hasil.rows[0].id)
+      }
+    });
+
+  } catch (error) {
+    console.error("Gagal memperbarui data:", error);
+
+    res.status(500).json({
+      pesan: "Gagal memperbarui data"
+    });
+  }
+});
 app.delete("/api/:jenis/:id", async (req, res) => {
   try {
     const { jenis, id } = req.params;
