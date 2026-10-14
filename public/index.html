@@ -359,13 +359,14 @@ if (jenis === "pembayaran") {
   form += buatInput("namaAtlet", "Nama atlet");
 
   form += buatSelect("jenisKelas", "Jenis kelas", [
-    "Private Class",
-    "Semi Private Class",
-    "Group Class",
-    "Regular Class",
-    "Prestasi Class",
-    "Hydro Terapi Class"
-  ]);
+  "Private Class",
+  "Semi Private Class",
+  "Group Class",
+  "Reguler Class",
+  "Regular Class",
+  "Prestasi Class",
+  "Hydro Terapi Class"
+]);
 
   form += buatInput(
     "jumlah",
@@ -409,13 +410,14 @@ if (jenis === "pembayaran") {
   );
 
   const tarif = {
-    "Private Class": 400000,
-    "Semi Private Class": 200000,
-    "Group Class": 150000,
-    "Regular Class": 150000,
-    "Prestasi Class": 250000,
-    "Hydro Terapi Class": 300000
-  };
+  "Private Class": 400000,
+  "Semi Private Class": 200000,
+  "Group Class": 150000,
+  "Reguler Class": 150000,
+  "Regular Class": 250000,
+  "Prestasi Class": 250000,
+  "Hydro Terapi Class": 300000
+};
 
   pilihKelas.addEventListener("change", function () {
     inputJumlah.value = tarif[this.value] || "";
