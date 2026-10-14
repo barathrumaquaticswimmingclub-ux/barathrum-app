@@ -490,7 +490,106 @@ function aman(teks) {
     "'": "&#39;"
   })[karakter]);
 }
+async function editData(jenis, id) {
+  try {
+    const response = await fetch("/api/" + jenis);
+    const daftar = await response.json();
 
+    const item = daftar.find(
+      data => String(data.id) === String(id)
+    );
+
+    if (!item) {
+      alert("Data tidak ditemukan.");
+      return;
+    }
+
+    const kolom = {
+      atlet: [
+        ["nama", "Nama lengkap"],
+        ["nik", "NIK"],
+        ["jk", "Jenis kelamin"],
+        ["tanggalLahir", "Tanggal lahir"],
+        ["noHpOrtu", "Nomor HP orang tua"],
+        ["kelompok", "Jenis kelas"],
+        ["status", "Status"]
+      ],
+      pelatih: [
+        ["nama", "Nama pelatih"],
+        ["noHp", "Nomor HP"],
+        ["spesialisasi", "Spesialisasi"]
+      ],
+      jadwal: [
+        ["nama", "Nama jadwal"],
+        ["hari", "Hari"],
+        ["jam", "Jam"],
+        ["pelatih", "Pelatih"]
+      ],
+      absensi: [
+        ["namaAtlet", "Nama atlet"],
+        ["tanggal", "Tanggal"],
+        ["status", "Status"]
+      ],
+      pembayaran: [
+        ["namaAtlet", "Nama atlet"],
+        ["jenisKelas", "Jenis kelas"],
+        ["jumlah", "Jumlah pembayaran"],
+        ["status", "Status pembayaran"]
+      ]
+    };
+
+    const daftarKolom = kolom[jenis];
+
+    if (!daftarKolom) {
+      alert("Jenis data tidak dikenali.");
+      return;
+    }
+
+    const perubahan = {};
+
+    for (const [key, label] of daftarKolom) {
+      const nilai = prompt(
+        "Ubah " + label,
+        item[key] ?? ""
+      );
+
+      if (nilai === null) return;
+
+      perubahan[key] = nilai.trim();
+    }
+
+    const simpan = await fetch(
+      "/api/" + jenis + "/" + id,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...item,
+          ...perubahan
+        })
+      }
+    );
+
+    const hasil = await simpan.json();
+
+    if (!simpan.ok) {
+      throw new Error(
+        hasil.pesan || "Gagal memperbarui data."
+      );
+    }
+
+    await muatData();
+    tampilkanTabel();
+
+    alert("Data berhasil diperbarui.");
+
+  } catch (error) {
+    console.error(error);
+    alert("Gagal mengedit data. Periksa koneksi server.");
+  }
+  }
 async function hapusData(jenis, id) {
   if (!confirm("Yakin ingin menghapus data ini?")) return;
 
