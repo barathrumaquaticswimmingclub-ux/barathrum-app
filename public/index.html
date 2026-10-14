@@ -327,8 +327,8 @@ function buka(jenis) {
   "Private Class",
   "Semi Private Class",
   "Group Class",
-  "Reguler Class",
-  "Regular Class",
+  "Reguler Class (1x Seminggu)",
+  "Regular Class (2x Seminggu)",
   "Prestasi Class",
   "Hydro Terapi Class"
 ]);
@@ -358,13 +358,12 @@ function buka(jenis) {
 
 if (jenis === "pembayaran") {
   form += buatInput("namaAtlet", "Nama atlet");
-
-  form += buatSelect("jenisKelas", "Jenis kelas", [
+form += buatSelect("jenisKelas", "Jenis kelas", [
   "Private Class",
   "Semi Private Class",
   "Group Class",
-  "Reguler Class",
-  "Regular Class",
+  "Reguler Class (1x Seminggu)",
+  "Regular Class (2x Seminggu)",
   "Prestasi Class",
   "Hydro Terapi Class"
 ]);
@@ -414,8 +413,8 @@ if (jenis === "pembayaran") {
   "Private Class": 400000,
   "Semi Private Class": 200000,
   "Group Class": 150000,
-  "Reguler Class": 150000,
-  "Regular Class": 250000,
+  "Reguler Class (1x Seminggu)": 150000,
+  "Regular Class (2x Seminggu)": 250000,
   "Prestasi Class": 250000,
   "Hydro Terapi Class": 300000
 };
