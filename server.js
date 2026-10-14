@@ -65,12 +65,30 @@ app.get("/api/:jenis", async (req, res) => {
       [jenis]
     );
 
-    res.json(
-      hasil.rows.map(row => ({
-        ...row.data,
-        id: String(row.id)
-      }))
-    );
+    const daftarData = hasil.rows.map(row => ({
+  ...row.data,
+  id: String(row.id)
+}));
+
+if (jenis === "pembayaran") {
+  const hariIni = new Date();
+  hariIni.setHours(0, 0, 0, 0);
+
+  for (const item of daftarData) {
+    if (item.tanggalBerakhir) {
+      const tanggalBerakhir = new Date(
+        item.tanggalBerakhir + "T00:00:00"
+      );
+
+      item.statusMasaBerlaku =
+        hariIni > tanggalBerakhir
+          ? "Kedaluwarsa"
+          : "Aktif";
+    }
+  }
+}
+
+res.json(daftarData);
   } catch (error) {
     console.error(error);
     res.status(500).json({
