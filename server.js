@@ -5,6 +5,57 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static("public"));
+app.get("/", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>BARATHRUM A.S.C</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background: #eaf4ff;
+          margin: 0;
+          padding: 20px;
+          color: #123456;
+        }
+        .box {
+          background: white;
+          padding: 24px;
+          border-radius: 16px;
+          max-width: 600px;
+          margin: 30px auto;
+          box-shadow: 0 4px 15px #0001;
+        }
+        h1 { color: #0879bd; }
+        .menu {
+          padding: 14px;
+          margin: 10px 0;
+          background: #eaf4ff;
+          border-radius: 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>🏊 BARATHRUM A.S.C</h1>
+        <p>BARATHRUM AQUATIC SWIMMING CLUB</p>
+        <hr>
+        <h2>Management System</h2>
+        <div class="menu">🏊 Data Atlet</div>
+        <div class="menu">🧑‍🏫 Data Pelatih</div>
+        <div class="menu">📅 Jadwal Latihan</div>
+        <div class="menu">📝 Absensi</div>
+        <div class="menu">💰 Pembayaran</div>
+        <div class="menu">📊 Laporan</div>
+        <p>Website BARATHRUM berhasil dibuka.</p>
+      </div>
+    </body>
+    </html>
+  `);
+});
 
 let data = {
   atlet: [],
