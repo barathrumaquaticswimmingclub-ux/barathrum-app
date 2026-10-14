@@ -436,7 +436,45 @@ async function simpanData(event) {
   const item = Object.fromEntries(form.entries());
 
   if (halamanAktif === "pembayaran") {
-    item.jumlah = Number(item.jumlah);
+  item.jumlah = Number(item.jumlah);
+
+  const tanggalBayar = new Date(item.tanggal + "T00:00:00");
+
+  const kelasPaket = [
+    "Private Class",
+    "Semi Private Class",
+    "Group Class",
+    "Hydro Terapi Class"
+  ];
+
+  const kelasBulanan = [
+    "Reguler Class (1x Seminggu)",
+    "Regular Class (2x Seminggu)",
+    "Prestasi Class"
+  ];
+
+  if (kelasPaket.includes(item.jenisKelas)) {
+    const tanggalBerakhir = new Date(tanggalBayar);
+    tanggalBerakhir.setMonth(tanggalBerakhir.getMonth() + 1);
+
+    item.totalPertemuan = 4;
+    item.sisaPertemuan = 4;
+    item.tanggalBerakhir = tanggalBerakhir.toISOString().slice(0, 10);
+
+  } else if (kelasBulanan.includes(item.jenisKelas)) {
+    const tanggalBerakhir = new Date(tanggalBayar);
+    tanggalBerakhir.setMonth(tanggalBerakhir.getMonth() + 1);
+
+    item.tanggalBerakhir = tanggalBerakhir.toISOString().slice(0, 10);
+  }
+
+  const hariIni = new Date();
+  hariIni.setHours(0, 0, 0, 0);
+
+  item.statusMasaBerlaku =
+    hariIni > new Date(item.tanggalBerakhir + "T00:00:00")
+      ? "Kedaluwarsa"
+      : "Aktif";
   }
 
   try {
