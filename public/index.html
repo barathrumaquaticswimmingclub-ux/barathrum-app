@@ -355,22 +355,35 @@ function buka(jenis) {
     ]);
   }
 
-  if (jenis === "pembayaran") {
-    form += buatInput("namaAtlet", "Nama atlet");
-    form += buatSelect("jenisKelas", "Jenis kelas", [
-      "Private Class",
-      "Semi Private Class",
-      "Group Class",
-      "Regular Class",
-      "Prestasi Class",
-      "Hydro Terapi Class"
-    ]);
-    form += buatInput("jumlah", "Nominal pembayaran (Rp)", "number");
-    form += buatInput("tanggal", "Tanggal pembayaran", "date");
-    form += buatSelect("status", "Status pembayaran", [
-      "Lunas", "Belum Lunas"
-    ]);
-  }
+if (jenis === "pembayaran") {
+  form += buatInput("namaAtlet", "Nama atlet");
+
+  form += buatSelect("jenisKelas", "Jenis kelas", [
+    "Private Class",
+    "Semi Private Class",
+    "Group Class",
+    "Regular Class",
+    "Prestasi Class",
+    "Hydro Terapi Class"
+  ]);
+
+  form += buatInput(
+    "jumlah",
+    "Nominal pembayaran (Rp)",
+    "number"
+  );
+
+  form += buatInput(
+    "tanggal",
+    "Tanggal pembayaran",
+    "date"
+  );
+
+  form += buatSelect("status", "Status pembayaran", [
+    "Lunas",
+    "Belum Lunas"
+  ]);
+}
 
   if (jenis === "laporan") {
     form = "<p>Rekap data klub berdasarkan data yang tersimpan.</p>";
@@ -386,6 +399,28 @@ function buka(jenis) {
   }
 
   document.getElementById("formArea").innerHTML = form;
+  if (jenis === "pembayaran") {
+  const pilihKelas = document.querySelector(
+    '#formData [name="jenisKelas"]'
+  );
+
+  const inputJumlah = document.querySelector(
+    '#formData [name="jumlah"]'
+  );
+
+  const tarif = {
+    "Private Class": 400000,
+    "Semi Private Class": 200000,
+    "Group Class": 150000,
+    "Regular Class": 150000,
+    "Prestasi Class": 250000,
+    "Hydro Terapi Class": 300000
+  };
+
+  pilihKelas.addEventListener("change", function () {
+    inputJumlah.value = tarif[this.value] || "";
+  });
+  }
 
   document.getElementById("formData")?.addEventListener("submit", simpanData);
 
