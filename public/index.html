@@ -464,11 +464,19 @@ function tampilkanTabel() {
     hasil.map(item => `
       <tr>
         ${kolom.map(k => `<td>${aman(item[k] ?? "-")}</td>`).join("")}
-        <td>
-          <button onclick="hapusData('${jenis}','${aman(item.id)}')">
-            Hapus
-          </button>
-        </td>
+        <td style="white-space: nowrap;">
+  <button
+    onclick="editData('${jenis}', '${aman(item.id)}')"
+    style="background:#0d84bd;color:white;border:0;padding:8px 12px;border-radius:6px;margin-right:5px;">
+    Edit
+  </button>
+
+  <button
+    onclick="hapusData('${jenis}', '${aman(item.id)}')"
+    style="background:#dc3545;color:white;border:0;padding:8px 12px;border-radius:6px;">
+    Hapus
+  </button>
+</td>
       </tr>
     `).join("");
 }
