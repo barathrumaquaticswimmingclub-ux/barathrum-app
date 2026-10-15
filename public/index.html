@@ -400,74 +400,7 @@ form += buatSelect("jenisKelas", "Jenis kelas", [
   }
 
   document.getElementById("formArea").innerHTML = form;
-  if (jenis === "pembayaran") {
-  form += buatInput("namaAtlet", "Nama atlet");
-
-  form += buatSelect("jenisKelas", "Jenis kelas", [
-    "Private Class",
-    "Semi Private Class",
-    "Group Class",
-    "Reguler Class (1x Seminggu)",
-    "Reguler Class (2x Seminggu)",
-    "Prestasi Class",
-    "Hydro Terapi Class"
-  ]);
-
-  form += buatSelect("statusAnggota", "Status anggota", [
-    "Anggota Baru",
-    "Anggota Lama"
-  ]);
-
-  form += buatSelect("jenisPotongan", "Jenis potongan", [
-    "Tanpa Potongan",
-    "Potongan Khusus Sekolah",
-    "Potongan DBS & TEC"
-  ]);
-
-  form += buatInput(
-    "jumlah",
-    "Total tagihan (Rp)",
-    "number"
-  );
-
-  form += buatInput(
-    "tanggal",
-    "Tanggal pembayaran",
-    "date"
-  );
-
-  form += buatSelect("status", "Status pembayaran", [
-    "Lunas",
-    "Belum Lunas"
-  ]);
-  }
-  const pilihKelas = document.querySelector(
-    '#formData [name="jenisKelas"]'
-  );
-
-  const inputJumlah = document.querySelector(
-    '#formData [name="jumlah"]'
-  );
-
-  const tarif = {
-  "Private Class": 400000,
-  "Semi Private Class": 200000,
-  "Group Class": 150000,
-  "Reguler Class (1x Seminggu)": 150000,
-  "Regular Class (2x Seminggu)": 250000,
-  "Prestasi Class": 250000,
-  "Hydro Terapi Class": 300000
-};
-
-  pilihKelas.addEventListener("change", function () {
-    inputJumlah.value = tarif[this.value] || "";
-  });
-  }
-
-  document.getElementById("formData")?.addEventListener("submit", simpanData);
-
-  tampilkanTabel();
-}
+  
 
 async function simpanData(event) {
   event.preventDefault();
