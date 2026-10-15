@@ -357,33 +357,53 @@ function buka(jenis) {
   }
 
 if (jenis === "pembayaran") {
-  form += buatInput("namaAtlet", "Nama atlet");
-form += buatSelect("jenisKelas", "Jenis kelas", [
-  "Private Class",
-  "Semi Private Class",
-  "Group Class",
-  "Reguler Class (1x Seminggu)",
-  "Regular Class (2x Seminggu)",
-  "Prestasi Class",
-  "Hydro Terapi Class"
-]);
+    form += buatInput("namaAtlet", "Nama atlet");
 
-  form += buatInput(
-    "jumlah",
-    "Nominal pembayaran (Rp)",
-    "number"
-  );
+    form += buatSelect("jenisKelas", "Jenis kelas", [
+        "Private Class",
+        "Semi Private Class",
+        "Group Class",
+        "Reguler Class (1x Seminggu)",
+        "Reguler Class (2x Seminggu)",
+        "Prestasi Class",
+        "Hydro Terapi Class"
+    ]);
 
-  form += buatInput(
-    "tanggal",
-    "Tanggal pembayaran",
-    "date"
-  );
+    form += buatSelect("statusPendaftaran", "Status pendaftaran", [
+        "Anggota Baru",
+        "Anggota Lama"
+    ]);
 
-  form += buatSelect("status", "Status pembayaran", [
-    "Lunas",
-    "Belum Lunas"
-  ]);
+    form += buatSelect("jenisDiskon", "Jenis diskon", [
+        "Tidak Ada Diskon",
+        "Khusus Sekolah",
+        "TEC & DBS"
+    ]);
+
+    form += `
+        <label>Nominal pembayaran (Rp)</label>
+        <input name="jumlah" type="number" min="0" required>
+
+        <label>Biaya pendaftaran (Rp)</label>
+        <input name="biayaPendaftaran" type="number" value="0" readonly>
+
+        <label>Potongan diskon (Rp)</label>
+        <input name="potonganDiskon" type="number" value="0" readonly>
+
+        <label>Total tagihan (Rp)</label>
+        <input name="totalTagihan" type="number" value="0" readonly>
+    `;
+
+    form += buatInput(
+        "tanggal",
+        "Tanggal pembayaran",
+        "date"
+    );
+
+    form += buatSelect("status", "Status pembayaran", [
+        "Lunas",
+        "Belum Lunas"
+    ]);
 }
 
   if (jenis === "laporan") {
@@ -420,12 +440,55 @@ if (jenis === "pembayaran") {
         "Hydro Terapi Class": 300000
     };
 
-    if (pilihKelas && inputJumlah) {
-        pilihKelas.addEventListener("change", function () {
-            inputJumlah.value = tarif[this.value] || "";
-        });
+    const inputPendaftaran = document.querySelector(
+    '#formData [name="biayaPendaftaran"]'
+);
+
+const inputDiskon = document.querySelector(
+    '#formData [name="potonganDiskon"]'
+);
+
+const inputTotal = document.querySelector(
+    '#formData [name="totalTagihan"]'
+);
+
+const pilihPendaftaran = document.querySelector(
+    '#formData [name="statusPendaftaran"]'
+);
+
+const pilihDiskon = document.querySelector(
+    '#formData [name="jenisDiskon"]'
+);
+
+function hitungPembayaran() {
+    const nominal = Number(inputJumlah.value) || 0;
+
+    const biayaDaftar =
+        pilihPendaftaran.value === "Anggota Baru" ? 50000 : 0;
+
+    let diskon = 0;
+
+    if (pilihDiskon.value === "Khusus Sekolah") {
+        diskon = 25000;
+    } else if (pilihDiskon.value === "TEC & DBS") {
+        diskon = 25000;
     }
+
+    inputPendaftaran.value = biayaDaftar;
+    inputDiskon.value = diskon;
+    inputTotal.value = Math.max(0, nominal + biayaDaftar - diskon);
 }
+
+if (pilihKelas && inputJumlah) {
+    pilihKelas.addEventListener("change", function () {
+        inputJumlah.value = tarif[this.value] || 0;
+        hitungPembayaran();
+    });
+}
+
+pilihPendaftaran.addEventListener("change", hitungPembayaran);
+pilihDiskon.addEventListener("change", hitungPembayaran);
+inputJumlah.addEventListener("input", hitungPembayaran);
 
 document.getElementById("formData")?.addEventListener(
     "submit",
