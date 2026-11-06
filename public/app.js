@@ -108,9 +108,15 @@ function actions(kind,row) {
   if(isOwner()&&kind==='atlet'&&row.noHpOrtu&&row.statusSPP!=='Lunas'){
     let phone=row.noHpOrtu.replace(/\D/g,'');if(phone.startsWith('0'))phone='62'+phone.slice(1);
     const msg=`Halo, Bapak/Ibu orang tua ${row.nama}. Kami dari BRTM mengingatkan SPP/paket ${row.kelompok}${row.jatuhTempo?' dengan tanggal batas '+displayDate(row.jatuhTempo):''}. Mohon menghubungi admin kami untuk konfirmasi pembayaran. Terima kasih🙏🏻`;
-    html+=`<a target="_blank" rel="noopener" href="https://wa.me/${phone}?text=${encodeURIComponent(msg)}">Ingatkan via WA</a>`;
+    html+=`<a ${/Android/i.test(navigator.userAgent)?'':'target="_blank" rel="noopener"'} href="${esc(whatsappReminderLink(phone,msg))}">Ingatkan via WA Business</a>`;
   }
   return html?`<div class="actions">${html}</div>`:'';
+}
+function whatsappReminderLink(phone, message, android = /Android/i.test(navigator.userAgent)) {
+  const query = 'phone=' + encodeURIComponent(phone) + '&text=' + encodeURIComponent(message);
+  if (!android) return 'https://wa.me/' + encodeURIComponent(phone) + '?text=' + encodeURIComponent(message);
+  const fallback = encodeURIComponent('https://play.google.com/store/apps/details?id=com.whatsapp.w4b');
+  return 'intent://send?' + query + '#Intent;scheme=whatsapp;package=com.whatsapp.w4b;S.browser_fallback_url=' + fallback + ';end;';
 }
 function card(row) {
   const k=S.section;let name='',sub='',tag='',content='';
