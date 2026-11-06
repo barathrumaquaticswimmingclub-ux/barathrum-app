@@ -107,7 +107,7 @@ function actions(kind,row) {
   if(isOwner()&&kind==='akun'&&row.id!==S.user.id)html+=`<button class="secondary" data-reset="${esc(row.id)}">Buat kata sandi awal</button>`;
   if(isOwner()&&kind==='atlet'&&row.noHpOrtu&&row.statusSPP!=='Lunas'){
     let phone=row.noHpOrtu.replace(/\D/g,'');if(phone.startsWith('0'))phone='62'+phone.slice(1);
-    const msg=`Halo, Bapak/Ibu orang tua ${row.nama}. Kami dari BRTM mengingatkan SPP/paket ${row.kelompok}${row.jatuhTempo?' dengan tanggal batas '+displayDate(row.jatuhTempo):''}. Mohon menghubungi Owner untuk konfirmasi pembayaran. Terima kasih.`;
+    const msg=`Halo, Bapak/Ibu orang tua ${row.nama}. Kami dari BRTM mengingatkan SPP/paket ${row.kelompok}${row.jatuhTempo?' dengan tanggal batas '+displayDate(row.jatuhTempo):''}. Mohon menghubungi admin kami untuk konfirmasi pembayaran. Terima kasih🙏🏻`;
     html+=`<a target="_blank" rel="noopener" href="https://wa.me/${phone}?text=${encodeURIComponent(msg)}">Ingatkan via WA</a>`;
   }
   return html?`<div class="actions">${html}</div>`:'';
