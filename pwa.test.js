@@ -30,7 +30,7 @@ async function main() {
   assert.equal((await dispatch('/','POST','navigate')).intercepted,false);
   assert.equal((await dispatch('/file','GET','cors','https://other.test')).intercepted,false);
   assert.equal((await dispatch('/','GET','navigate')).result,'offline page');
-  assert.equal((await dispatch('/icons/brtm-192.png')).result,'public asset');
+  assert.equal((await dispatch('/icons/brtm-brand-192.png')).result,'public asset');
   assert.equal((await dispatch('/app.js')).intercepted,false);
   context.fetch=async()=> 'fresh response';assert.equal((await dispatch('/','GET','navigate')).result,'fresh response');
   function installHarness(standalone=false) {
