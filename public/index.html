@@ -308,7 +308,6 @@ function buatSelect(nama, label, pilihan) {
 }
 
 function buka(jenis) {
-    alert("Tombol berhasil ditekan: " + jenis);
     halamanAktif = jenis;
   document.getElementById("dashboard").classList.add("hidden");
   document.getElementById("halaman").classList.remove("hidden");
@@ -489,6 +488,7 @@ if (pilihKelas && inputJumlah) {
 pilihPendaftaran.addEventListener("change", hitungPembayaran);
 pilihDiskon.addEventListener("change", hitungPembayaran);
 inputJumlah.addEventListener("input", hitungPembayaran);
+}
 
 document.getElementById("formData")?.addEventListener(
     "submit",
@@ -738,7 +738,7 @@ async function hapusData(jenis, id) {
   if (!confirm("Yakin ingin menghapus data ini?")) return;
 
   try {
-    await fetch("/api/" + jenis + "/" + id, {
+    await api(jenis + "/" + id, {
       method: "DELETE"
     });
 
