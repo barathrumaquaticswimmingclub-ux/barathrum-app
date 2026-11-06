@@ -19,7 +19,7 @@ function date(value, label = 'Tanggal') { if (!B.validDate(value)) throw fail(40
 function id(value) { const v = String(value || ''); if (!/^[1-9]\d{0,14}$/.test(v)) throw fail(400, 'ID tidak valid'); return v; }
 function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change }; }
 async function passwordHash(password) {
-  if (typeof password !== 'string' || password.length < 10 || password.length > 128) throw fail(400, 'Kata sandi harus 10–128 karakter');
+  if (typeof password !== 'string' || password.length < 5 || password.length > 128) throw fail(400, 'Kata sandi harus 5–128 karakter');
   const salt = crypto.randomBytes(16).toString('hex');
   return salt + ':' + (await scrypt(password, salt, 64)).toString('hex');
 }
@@ -149,13 +149,22 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.put('/api/akun/:id', owner, wrap(async (req, res) => {
     const uid = id(req.params.id); const nama = text(req.body.nama, 'Nama akun', true, 100);
     if (typeof req.body.active !== 'boolean') throw fail(400, 'Status akun tidak valid');
+    const username = req.body.username === undefined ? null : text(req.body.username, 'ID akun', true, 40).toLowerCase();
+    if (username !== null && !/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)) throw fail(400, 'ID akun harus 3–40 huruf kecil, angka, titik, garis bawah, atau tanda hubung');
+    const changingPassword = typeof req.body.password === 'string' && req.body.password !== '';
+    if (changingPassword && uid === String(req.user.id)) throw fail(400, 'Gunakan Ganti Kata Sandi untuk kata sandi akun sendiri');
+    const hash = changingPassword ? await passwordHash(req.body.password) : null;
     const result = await transaction(async c => {
       const old = (await c.query('SELECT * FROM brtm_users WHERE id=$1 FOR UPDATE', [uid])).rows[0];
       if (!old) throw fail(404, 'Akun tidak ditemukan');
       if (old.role === 'owner' && !req.body.active) throw fail(400, 'Akun Owner harus tetap aktif');
-      const r = await c.query('UPDATE brtm_users SET nama=$1,active=$2 WHERE id=$3 RETURNING *', [nama, req.body.active, uid]);
-      if (!req.body.active) await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]);
-      await audit(c, req.user, 'ubah-akun', 'akun', uid, publicUser(old), publicUser(r.rows[0])); return publicUser(r.rows[0]);
+      const nextUsername = username ?? old.username;
+      const r = await c.query('UPDATE brtm_users SET nama=$1,active=$2,username=$3,password_hash=$4,must_change=$5 WHERE id=$6 RETURNING *', [nama, req.body.active, nextUsername, hash || old.password_hash, hash ? false : old.must_change, uid]);
+      const revoke = !req.body.active || nextUsername !== old.username || !!hash;
+      if (revoke) await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]);
+      await audit(c, req.user, 'ubah-akun', 'akun', uid, publicUser(old), publicUser(r.rows[0]));
+      if (hash) await audit(c, req.user, 'atur-kata-sandi', 'akun', uid);
+      return { ...publicUser(r.rows[0]), sessionRevoked: revoke && uid === String(req.user.id) };
     }); res.json(result);
   }));
   app.post('/api/akun/:id/reset', owner, wrap(async (req, res) => {

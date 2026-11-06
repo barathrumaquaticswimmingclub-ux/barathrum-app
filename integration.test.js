@@ -99,6 +99,27 @@ async function main() {
   const dump=await expect(owner.get('/api/backup'),200);assert(dump.data.length);assert(dump.audit.length);assert(!JSON.stringify(dump).includes('password_hash'));
   await expect(write(owner,'post','/api/akun/'+coach1.id+'/reset'),200);
   await expect(coach.get('/auth/me'),401);
+  const beforeIds=accounts.map(u=>u.id);
+  await expect(write(owner,'put','/api/akun/'+coach1.id,{nama:'Named Coach',username:'owner',active:true,password:'54321'}),409);
+  await expect(write(owner,'put','/api/akun/'+coach1.id,{nama:'Named Coach',username:'namedcoach1',active:true,password:'1234'}),400);
+  for(const account of accounts.filter(u=>u.role!=='owner')){
+    const username=account.role==='prestasi'?'squad':'named'+account.username;
+    const renamed=await expect(write(owner,'put','/api/akun/'+account.id,{nama:username,username,active:true,password:'54321',role:'owner'}),200);
+    assert.equal(renamed.id,account.id);assert.equal(renamed.role,account.role);assert.equal(renamed.mustChangePassword,false);
+    const agent=supertest.agent(app);
+    const logged=await expect(write(agent,'post','/auth/login',{username,password:'54321'}),200);
+    assert.equal(logged.user.role,account.role);
+    await expect(agent.get('/api/pembayaran'),403);
+    if(account.id===coach1.id)assert((await expect(agent.get('/api/jadwal'),200)).some(s=>s.id===schedule.id));
+    await expect(write(agent,'post','/auth/logout'),200);
+  }
+  await expect(write(owner,'post','/auth/password',{currentPassword:'OwnerSecure02!',password:'543210'}),200);
+  await expect(write(owner,'post','/auth/login',{username:'owner',password:'543210'}),200);
+  const renamedOwner=await expect(write(owner,'put','/api/akun/'+accounts[0].id,{nama:'Club Owner',username:'clubowner',active:true}),200);
+  assert.equal(renamedOwner.sessionRevoked,true);
+  await expect(owner.get('/auth/me'),401);
+  await expect(write(owner,'post','/auth/login',{username:'clubowner',password:'543210'}),200);
+  assert.deepEqual((await expect(owner.get('/api/akun'),200)).map(u=>u.id),beforeIds);
   assert.equal(B.addMonth('2026-01-31'),'2026-02-28');assert.equal(B.addMonth('2028-01-31'),'2028-02-29');assert.equal(B.validDate('2026-02-30'),false);
   const before=(await pool.query('SELECT COUNT(*) AS n FROM data_klub')).rows[0].n;
   await db.close();

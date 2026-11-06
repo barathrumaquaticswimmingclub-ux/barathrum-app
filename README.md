@@ -6,7 +6,7 @@ Aplikasi klub untuk HP, melanjutkan Express + PostgreSQL dari `barathrum-app`. `
 
 1. Owner masuk dan mengganti kata sandi awal. Tambah/lengkapi identitas atlet dan pilih kelasnya.
 2. Pada **SPP & paket**, catat tagihan dan pembayaran aktual dengan status **Lunas** atau **Belum Lunas**. Nilai dihitung di server. Tidak ada pembayaran sebagian.
-3. Pada **Akun tim**, ubah label Coach 1–7 menjadi nama pelatih. Buat kata sandi awal satu kali untuk dibagikan langsung kepada masing-masing pelatih. Akun wajib mengganti kata sandinya sebelum mengakses data.
+3. Pada **Akun tim**, ubah label Coach 1–7 menjadi nama pelatih dan atur ID login. Kata sandi khusus dapat diatur melalui Edit (minimal 5 karakter); kolom kosong mempertahankan kata sandi lama. Buat kata sandi awal satu kali untuk dibagikan langsung kepada masing-masing pelatih. Akun wajib mengganti kata sandinya sebelum mengakses data.
 4. Pada **Jadwal latihan**, buat sesi per tanggal, tentukan pelatih, lokasi, dan peserta. Pergantian pelatih/jadwal disetujui Owner, disertai alasan, dan tidak menambah kuota paket. Sesi dengan absensi tidak boleh dipindah atau dihapus.
 5. Coach membuka sesi penugasannya dan mencatat **Absensi sesi**. Hadir menggunakan satu pertemuan; Izin, Sakit, dan Alpa tidak. Satu atlet hanya memiliki satu absensi pada satu sesi. Koreksi status memperbarui kuota.
 6. Gunakan **Perkembangan atlet** untuk teknik, fisik, attitude, dan catatan. Akun Prestasi juga mengelola **Catatan waktu** (personal best per gaya/jarak/panjang kolam) serta **Program & event**, termasuk informasi keberangkatan di detail event.
