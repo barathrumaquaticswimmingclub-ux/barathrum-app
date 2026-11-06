@@ -100,7 +100,7 @@ function filteredRows() {
 }
 function details(entries) { return '<dl>'+entries.filter(([,v])=>v!==undefined&&v!==null&&v!=='').map(([label,value])=>`<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')+'</dl>'; }
 function actions(kind,row) {
-  const editable=canWrite(kind)&&(isOwner()||row.dibuatOleh===S.user.username);
+  const editable=canWrite(kind)&&(isOwner()||String(row.dibuatOlehId||row.coachId||'')===S.user.id||row.dibuatOleh===S.user.username);
   let html=editable?`<button class="secondary" data-edit="${esc(row.id)}">Edit</button>`:'';
   if(isOwner()&&kind!=='akun')html+=`<button class="danger" data-delete="${esc(row.id)}">Hapus</button>`;
   if(isOwner()&&kind==='pembayaran'&&row.jenisKelas!=='Prestasi Class')html+=`<button class="secondary" data-exception="${esc(row.id)}">Perpanjang khusus</button>`;

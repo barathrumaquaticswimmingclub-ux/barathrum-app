@@ -95,7 +95,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   async function save(db, user, kind, data, previous) {
     const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id;
-    if (!previous) { payload.dibuatOleh = user.username; payload.dibuatPada = new Date().toISOString(); }
+    if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
     await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); return out;
@@ -222,7 +222,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (!isOwner) {
       const writeKinds = user.role === 'coach' ? ['absensi','perkembangan'] : ['absensi','perkembangan','catatanwaktu','program'];
       if (!writeKinds.includes(kind)) throw fail(403, 'Anda tidak memiliki izin mengubah bagian ini');
-      if (old && old.dibuatOleh !== user.username) throw fail(403, 'Anda hanya dapat memperbaiki catatan sendiri');
+      const authorId = old?.dibuatOlehId || old?.coachId;
+      if (old && (authorId ? String(authorId) !== String(user.id) : old.dibuatOleh !== user.username)) throw fail(403, 'Anda hanya dapat memperbaiki catatan sendiri');
     }
     const out = { ...old }; delete out.id;
     if (kind === 'atlet') {

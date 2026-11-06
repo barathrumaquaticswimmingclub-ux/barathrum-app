@@ -110,7 +110,10 @@ async function main() {
     const logged=await expect(write(agent,'post','/auth/login',{username,password:'54321'}),200);
     assert.equal(logged.user.role,account.role);
     await expect(agent.get('/api/pembayaran'),403);
-    if(account.id===coach1.id)assert((await expect(agent.get('/api/jadwal'),200)).some(s=>s.id===schedule.id));
+    if(account.id===coach1.id){
+      assert((await expect(agent.get('/api/jadwal'),200)).some(s=>s.id===schedule.id));
+      await expect(write(agent,'put','/api/absensi/'+attendance.id,{...input,catatan:'Koreksi setelah ID diganti'}),200);
+    }
     await expect(write(agent,'post','/auth/logout'),200);
   }
   await expect(write(owner,'post','/auth/password',{currentPassword:'OwnerSecure02!',password:'543210'}),200);
