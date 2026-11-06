@@ -8,8 +8,8 @@
   "start_url": "/?source=installed",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#092d40",
-  "theme_color": "#092d40",
+  "background_color": "#003ca6",
+  "theme_color": "#003ca6",
   "prefer_related_applications": false,
   "categories": ["sports", "productivity"],
   "icons": [
