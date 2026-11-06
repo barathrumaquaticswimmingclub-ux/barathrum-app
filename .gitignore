@@ -1,0 +1,7 @@
+node_modules/
+.env
+*credentials*
+*.log
+server.previous.cjs
+public/index.previous.html
+.preview-data/

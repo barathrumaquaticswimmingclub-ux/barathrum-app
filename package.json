@@ -1,13 +1,19 @@
 {
   "name": "barathrum-app",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "BARATHRUM AQUATIC SWIMMING CLUB Management System",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node preview-server.cjs",
+    "test": "node integration.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "supertest": "^7.3.1"
   }
 }

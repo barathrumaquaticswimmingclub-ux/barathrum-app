@@ -1,312 +1,337 @@
-const express = require("express");
-const { Pool } = require("pg");
-const path = require("path");
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL
-    ? { rejectUnauthorized: false }
-    : false
-});
-
-const tabel = [
-  "atlet",
-  "pelatih",
-  "jadwal",
-  "absensi",
-  "pembayaran"
-];
-
-async function siapkanDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS data_klub (
-      id SERIAL PRIMARY KEY,
-      jenis VARCHAR(30) NOT NULL,
-      data JSONB NOT NULL,
-      dibuat_pada TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+'use strict';
+const express = require('express');
+const { Pool } = require('pg');
+const crypto = require('crypto');
+const path = require('path');
+const { promisify } = require('util');
+const B = require('./business');
+const scrypt = promisify(crypto.scrypt);
+const KINDS = ['atlet', 'pelatih', 'jadwal', 'absensi', 'pembayaran', 'perkembangan', 'catatanwaktu', 'program'];
+const APP_VERSION = '2.0.0';
+const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+const fail = (status, message) => Object.assign(new Error(message), { status });
+function text(value, label, required = true, max = 500) {
+  if (value == null && !required) return '';
+  if (typeof value !== 'string' || value.trim().length > max || (required && !value.trim())) throw fail(400, `${label} wajib diisi dengan benar`);
+  return value.trim();
 }
-
-app.get("/api", async (req, res) => {
-  res.json({
-    nama: "BARATHRUM AQUATIC SWIMMING CLUB",
-    status: "Aktif",
-    database: "PostgreSQL",
-    fitur: [
-      "Data Atlet",
-      "Data Pelatih",
-      "Jadwal Latihan",
-      "Absensi",
-      "Pembayaran",
-      "Laporan"
-    ]
+function date(value, label = 'Tanggal') { if (!B.validDate(value)) throw fail(400, `${label} tidak valid`); return value; }
+function id(value) { const v = String(value || ''); if (!/^[1-9]\d{0,14}$/.test(v)) throw fail(400, 'ID tidak valid'); return v; }
+function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change }; }
+async function passwordHash(password) {
+  if (typeof password !== 'string' || password.length < 10 || password.length > 128) throw fail(400, 'Kata sandi harus 10–128 karakter');
+  const salt = crypto.randomBytes(16).toString('hex');
+  return salt + ':' + (await scrypt(password, salt, 64)).toString('hex');
+}
+async function verify(password, hash) {
+  if (typeof password !== 'string' || password.length > 128) return false;
+  const [salt, key] = hash.split(':');
+  const check = await scrypt(password, salt, 64);
+  return check.length === Buffer.from(key, 'hex').length && crypto.timingSafeEqual(check, Buffer.from(key, 'hex'));
+}
+async function initDb(pool) {
+  await pool.query(`CREATE TABLE IF NOT EXISTS data_klub (id SERIAL PRIMARY KEY, jenis VARCHAR(30) NOT NULL, data JSONB NOT NULL, dibuat_pada TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS brtm_users (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, nama TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('owner','coach','prestasi')), password_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, must_change BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS brtm_sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES brtm_users(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS brtm_audit (id BIGSERIAL PRIMARY KEY, user_id INTEGER, username TEXT NOT NULL, action TEXT NOT NULL, jenis TEXT, record_id TEXT, before_data JSONB, after_data JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS brtm_install (id INTEGER PRIMARY KEY CHECK (id=1), completed BOOLEAN NOT NULL DEFAULT FALSE)`);
+  await pool.query('INSERT INTO brtm_install (id, completed) VALUES (1, FALSE) ON CONFLICT (id) DO NOTHING');
+  await pool.query(`CREATE INDEX IF NOT EXISTS brtm_data_kind ON data_klub (jenis)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS brtm_sessions_expiry ON brtm_sessions (expires_at)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_attendance_unique ON data_klub ((data->>'jadwalId'), (data->>'atletId')) WHERE jenis='absensi' AND data->>'jadwalId' IS NOT NULL AND data->>'atletId' IS NOT NULL`);
+}
+function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID } = {}) {
+  const app = express();
+  app.disable('x-powered-by'); app.set('trust proxy', 1);
+  app.use((req, res, next) => {
+    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
-});
-
-app.get("/api/:jenis", async (req, res) => {
-  try {
-    const { jenis } = req.params;
-
-    if (!tabel.includes(jenis)) {
-      return res.status(404).json({
-        pesan: "Jenis data tidak ditemukan"
-      });
-    }
-
-    const hasil = await pool.query(
-      "SELECT id, data FROM data_klub WHERE jenis = $1 ORDER BY id DESC",
-      [jenis]
-    );
-
-    const daftarData = hasil.rows.map(row => ({
-  ...row.data,
-  id: String(row.id)
-}));
-
-if (jenis === "pembayaran") {
-  const hariIni = new Date();
-  hariIni.setHours(0, 0, 0, 0);
-
-  for (const item of daftarData) {
-    if (item.tanggalBerakhir) {
-      const tanggalBerakhir = new Date(
-        item.tanggalBerakhir + "T00:00:00"
-      );
-
-      item.statusMasaBerlaku =
-        hariIni > tanggalBerakhir
-          ? "Kedaluwarsa"
-          : "Aktif";
-    }
+  app.use(express.json({ limit: '100kb' }));
+  const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+  const attempts = new Map();
+  function limit(req, key, max = 8) {
+    const now = Date.now();
+    for (const [k, v] of attempts) if (v.until < now) attempts.delete(k);
+    if (attempts.size > 10000) attempts.clear();
+    const k = req.ip + ':' + key;
+    const a = attempts.get(k) || { count: 0, until: now + 15 * 60000 };
+    a.count++; attempts.set(k, a);
+    if (a.count > max) throw fail(429, 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.');
+    return k;
   }
+  app.use(['/auth', '/api'], (req, res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      if (req.get('X-BRTM-Request') !== '1') return next(fail(403, 'Muat ulang halaman sebelum menyimpan'));
+      const origin = req.get('origin');
+      if (origin) { try { if (new URL(origin).host !== req.get('host')) return next(fail(403, 'Asal permintaan tidak diizinkan')); } catch { return next(fail(403, 'Asal permintaan tidak valid')); } }
+    } next();
+  });
+  const cookieToken = req => (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('brtm_session='))?.slice(13);
+  async function session(req) {
+    const token = cookieToken(req);
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+    const r = await pool.query(`SELECT u.* FROM brtm_sessions s JOIN brtm_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.active=TRUE`, [digest(token)]);
+    return r.rows[0] || null;
+  }
+  const auth = wrap(async (req, res, next) => { req.user = await session(req); if (!req.user) throw fail(401, 'Silakan masuk ke akun BRTM'); next(); });
+  const owner = (req, res, next) => req.user.role === 'owner' ? next() : next(fail(403, 'Hanya Owner yang dapat mengakses bagian ini'));
+  const changed = (req, res, next) => req.user.must_change ? next(fail(403, 'Ubah kata sandi awal terlebih dahulu')) : next();
+  async function audit(db, user, action, jenis = null, recordId = null, before = null, after = null) {
+    await db.query(`INSERT INTO brtm_audit (user_id,username,action,jenis,record_id,before_data,after_data) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [user?.id || null, user?.username || 'setup', action, jenis, recordId, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null]);
+  }
+  async function transaction(fn) {
+    const c = await pool.connect();
+    try { await c.query('BEGIN'); const result = await fn(c); await c.query('COMMIT'); return result; }
+    catch (error) { await c.query('ROLLBACK'); throw error; } finally { c.release(); }
+  }
+  async function rows(db, kind, lock = false) {
+    const r = await db.query(`SELECT id,data FROM data_klub WHERE jenis=$1 ORDER BY id DESC${lock ? ' FOR UPDATE' : ''}`, [kind]);
+    return r.rows.map(x => ({ ...x.data, id: String(x.id) }));
+  }
+  async function record(db, kind, recordId, lock = false) {
+    const r = await db.query(`SELECT id,data FROM data_klub WHERE jenis=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`, [kind, id(recordId)]);
+    if (!r.rowCount) throw fail(404, 'Data tidak ditemukan');
+    return { ...r.rows[0].data, id: String(r.rows[0].id) };
+  }
+  async function save(db, user, kind, data, previous) {
+    const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id;
+    if (!previous) { payload.dibuatOleh = user.username; payload.dibuatPada = new Date().toISOString(); }
+    const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
+    const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
+    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); return out;
+  }
+  function setCookie(res, token, maxAge = 7 * 86400) { res.setHeader('Set-Cookie', `brtm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`); }
+  app.get('/health', wrap(async (req, res) => { await pool.query('SELECT 1'); res.json({ status: 'ok', database: 'ok', version: APP_VERSION }); }));
+  app.get('/auth/status', wrap(async (req, res) => { const r = await pool.query('SELECT completed FROM brtm_install WHERE id=1'); res.json({ configured: !!r.rows[0]?.completed, version: APP_VERSION }); }));
+  app.post('/auth/setup', wrap(async (req, res) => {
+    limit(req, 'setup', 5);
+    if (typeof req.body?.token !== 'string' || digest(req.body.token) !== setupHash) throw fail(403, 'Kode aktivasi tidak valid');
+    const hash = await passwordHash(req.body.password);
+    const result = await transaction(async c => {
+      const r = await c.query('SELECT completed FROM brtm_install WHERE id=1 FOR UPDATE');
+      if (r.rows[0].completed) throw fail(409, 'Akun Owner sudah diaktifkan');
+      if ((await c.query('SELECT id FROM brtm_users LIMIT 1')).rowCount) throw fail(409, 'Akun sudah tersedia');
+      const u = await c.query(`INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES('owner','Owner BRTM','owner',$1,TRUE) RETURNING *`, [hash]);
+      for (let i = 1; i <= 7; i++) await c.query(`INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES($1,$2,'coach',$3,TRUE)`, ['coach' + i, 'Coach ' + i, await passwordHash(crypto.randomBytes(24).toString('base64url'))]);
+      await c.query(`INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES('prestasi','Tim Prestasi','prestasi',$1,TRUE)`, [await passwordHash(crypto.randomBytes(24).toString('base64url'))]);
+      await c.query('UPDATE brtm_install SET completed=TRUE WHERE id=1'); await audit(c, u.rows[0], 'aktivasi'); return publicUser(u.rows[0]);
+    }); res.status(201).json({ user: result, pesan: 'Akun BRTM diaktifkan' });
+  }));
+  app.post('/auth/login', wrap(async (req, res) => {
+    const username = String(req.body?.username || '').toLowerCase().slice(0, 50);
+    const key = limit(req, 'login:' + username, 8); limit(req, 'login-total', 40);
+    const r = await pool.query('SELECT * FROM brtm_users WHERE username=$1', [username]); const u = r.rows[0];
+    const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
+    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active) throw fail(401, 'Nama pengguna atau kata sandi salah');
+    attempts.delete(key); const token = crypto.randomBytes(32).toString('hex');
+    await pool.query('DELETE FROM brtm_sessions WHERE expires_at<NOW()');
+    await pool.query(`INSERT INTO brtm_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)`, [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
+    await audit(pool, u, 'masuk'); setCookie(res, token); res.json({ user: publicUser(u) });
+  }));
+  app.get('/auth/me', auth, (req, res) => res.json({ user: publicUser(req.user) }));
+  app.post('/auth/logout', wrap(async (req, res) => { const token = cookieToken(req); if (token) await pool.query('DELETE FROM brtm_sessions WHERE token_hash=$1', [digest(token)]); setCookie(res, '', 0); res.json({ ok: true }); }));
+  app.post('/auth/password', auth, wrap(async (req, res) => {
+    limit(req, 'password:' + req.user.id, 8);
+    if (!(await verify(req.body?.currentPassword, req.user.password_hash))) throw fail(400, 'Kata sandi saat ini salah');
+    if (req.body.currentPassword === req.body.password) throw fail(400, 'Gunakan kata sandi baru yang berbeda');
+    const hash = await passwordHash(req.body?.password);
+    await transaction(async c => { await c.query('UPDATE brtm_users SET password_hash=$1,must_change=FALSE WHERE id=$2', [hash, req.user.id]); await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [req.user.id]); await audit(c, req.user, 'ubah-kata-sandi'); });
+    setCookie(res, '', 0); res.json({ pesan: 'Kata sandi diganti. Silakan masuk kembali.' });
+  }));
+  app.post('/auth/require-password-change', auth, wrap(async (req,res)=>{
+    await transaction(async c=>{await c.query('UPDATE brtm_users SET must_change=TRUE WHERE id=$1',[req.user.id]);await c.query('DELETE FROM brtm_sessions WHERE user_id=$1',[req.user.id]);await audit(c,req.user,'wajib-ganti-kata-sandi');});
+    setCookie(res,'',0);res.json({pesan:'Masuk berikutnya wajib mengganti kata sandi.'});
+  }));
+  app.use('/api', auth, changed);
+  app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
+  app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
+  app.get('/api/akun', owner, wrap(async (req, res) => { const r = await pool.query('SELECT * FROM brtm_users ORDER BY id'); res.json(r.rows.map(publicUser)); }));
+  app.put('/api/akun/:id', owner, wrap(async (req, res) => {
+    const uid = id(req.params.id); const nama = text(req.body.nama, 'Nama akun', true, 100);
+    if (typeof req.body.active !== 'boolean') throw fail(400, 'Status akun tidak valid');
+    const result = await transaction(async c => {
+      const old = (await c.query('SELECT * FROM brtm_users WHERE id=$1 FOR UPDATE', [uid])).rows[0];
+      if (!old) throw fail(404, 'Akun tidak ditemukan');
+      if (old.role === 'owner' && !req.body.active) throw fail(400, 'Akun Owner harus tetap aktif');
+      const r = await c.query('UPDATE brtm_users SET nama=$1,active=$2 WHERE id=$3 RETURNING *', [nama, req.body.active, uid]);
+      if (!req.body.active) await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]);
+      await audit(c, req.user, 'ubah-akun', 'akun', uid, publicUser(old), publicUser(r.rows[0])); return publicUser(r.rows[0]);
+    }); res.json(result);
+  }));
+  app.post('/api/akun/:id/reset', owner, wrap(async (req, res) => {
+    const uid = id(req.params.id); if (uid === String(req.user.id)) throw fail(400, 'Gunakan menu Ganti Kata Sandi untuk akun sendiri');
+    const password = 'Brtm!' + crypto.randomBytes(12).toString('base64url'); const hash = await passwordHash(password);
+    const u = await transaction(async c => {
+      const r = await c.query('UPDATE brtm_users SET password_hash=$1,must_change=TRUE WHERE id=$2 RETURNING *', [hash, uid]);
+      if (!r.rowCount) throw fail(404, 'Akun tidak ditemukan');
+      await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]); await audit(c, req.user, 'reset-kata-sandi', 'akun', uid); return publicUser(r.rows[0]);
+    }); res.json({ user: u, password, pesan: 'Kata sandi awal baru. Ditampilkan satu kali.' });
+  }));
+  async function accessible(req, db = pool) {
+    if (req.user.role === 'owner') return null;
+    if (req.user.role === 'prestasi') return new Set((await rows(db, 'atlet')).filter(a => B.canonical(a.kelompok) === 'Prestasi Class').map(a => a.id));
+    const schedules = await rows(db, 'jadwal'); return new Set(schedules.filter(s => String(s.coachId) === String(req.user.id)).flatMap(s => s.atletIds || []).map(String));
+  }
+  async function payments(db = pool, lock = false) {
+    const list = await rows(db, 'pembayaran', lock);
+    const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' AND data->>'paketId' IS NOT NULL GROUP BY data->>'paketId'`)).rows;
+    const used = Object.fromEntries(counts.map(x => [x.paket, Number(x.jumlah)])); return list.map(x => B.packageView(x, used[x.id] || 0));
+  }
+  function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }
+  async function athleteList(req) {
+    const allowed = await accessible(req); const list = (await rows(pool, 'atlet')).filter(a => !allowed || allowed.has(a.id)); const packs = await payments();
+    return list.map(a => {
+      const related = packs.filter(p => athleteLink(p, a)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+      const active = related.find(p => p.status === 'Lunas' && p.statusMasaBerlaku === 'Aktif'); const latest = active || related[0];
+      const isPrestasi = B.canonical(a.kelompok) === 'Prestasi Class';
+      const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === B.today().slice(0, 7) && p.jenisKelas === 'Prestasi Class');
+      const op = isPrestasi ? { statusPaket: 'Bulanan', sisaPertemuan: null, berlakuSampai: B.monthEnd(B.today()) } : { statusPaket: latest ? latest.statusMasaBerlaku : 'Belum ada paket', sisaPertemuan: latest?.sisaPertemuan ?? null, berlakuSampai: latest?.berlakuSampai || '' };
+      const finance = { statusSPP: isPrestasi ? paidMonth ? 'Lunas' : 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? B.monthEnd(B.today()) : latest?.berlakuSampai || '', paketId: active?.id || '' };
+      if (req.user.role === 'owner') return { ...a, kelompok: B.canonical(a.kelompok), ...op, ...finance };
+      return { id: a.id, nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op };
+    });
+  }
+  app.get('/api/backup', owner, wrap(async (req, res) => {
+    const all = await pool.query('SELECT * FROM data_klub ORDER BY id'); const log = await pool.query('SELECT * FROM brtm_audit ORDER BY id');
+    res.attachment(`BRTM-cadangan-${B.today()}.json`).json({ version: APP_VERSION, dieksporPada: new Date().toISOString(), data: all.rows, audit: log.rows });
+  }));
+  app.get('/api/audit', owner, wrap(async (req, res) => { res.json((await pool.query('SELECT id,username,action,jenis,record_id,created_at FROM brtm_audit ORDER BY id DESC LIMIT 200')).rows); }));
+  app.get('/api/:jenis', wrap(async (req, res) => {
+    const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
+    if (req.user.role !== 'owner' && ['pembayaran','pelatih'].includes(kind)) throw fail(403, 'Hanya Owner yang dapat melihat bagian ini');
+    if (kind === 'atlet') return res.json(await athleteList(req)); if (kind === 'pembayaran') return res.json(await payments());
+    const allowed = await accessible(req); let list = await rows(pool, kind);
+    if (allowed) {
+      if (kind === 'jadwal') list = list.filter(s => req.user.role === 'coach' ? String(s.coachId) === String(req.user.id) : B.canonical(s.jenisKelas) === 'Prestasi Class' || s.atletIds?.some(a => allowed.has(String(a))));
+      else if (kind === 'program') list = req.user.role === 'prestasi' ? list : list.filter(p => p.dibuatOleh === req.user.username || p.jenis === 'Program');
+      else list = list.filter(x => allowed.has(String(x.atletId)) && (req.user.role !== 'coach' || kind !== 'absensi' || x.coachId === String(req.user.id)));
+    } res.json(list);
+  }));
+  async function validate(req, db, kind, input, old) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Isi formulir tidak valid');
+    const user = req.user, isOwner = user.role === 'owner';
+    if (!isOwner) {
+      const writeKinds = user.role === 'coach' ? ['absensi','perkembangan'] : ['absensi','perkembangan','catatanwaktu','program'];
+      if (!writeKinds.includes(kind)) throw fail(403, 'Anda tidak memiliki izin mengubah bagian ini');
+      if (old && old.dibuatOleh !== user.username) throw fail(403, 'Anda hanya dapat memperbaiki catatan sendiri');
+    }
+    const out = { ...old }; delete out.id;
+    if (kind === 'atlet') {
+      out.nama = text(input.nama, 'Nama atlet', true, 150); out.kelompok = B.canonical(input.kelompok);
+      if (!Object.hasOwn(B.CLASSES, out.kelompok)) throw fail(400, 'Pilih jenis kelas');
+      if (!['Aktif','Nonaktif'].includes(input.status)) throw fail(400, 'Status atlet tidak valid'); out.status = input.status;
+      for (const k of ['tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
+      out.tanggalLahir = input.tanggalLahir ? date(input.tanggalLahir, 'Tanggal lahir') : '';
+      if (out.tanggalLahir > B.today()) throw fail(400, 'Tanggal lahir tidak boleh di masa depan');
+      if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nomor WhatsApp orang tua tidak valid');
+      if (old && out.kelompok !== B.canonical(old.kelompok) && (await payments(db)).some(p => athleteLink(p, old) && p.statusMasaBerlaku === 'Aktif' && p.status === 'Lunas')) throw fail(400, 'Kelas baru dapat diganti setelah paket aktif selesai');
+      return out;
+    }
+    if (kind === 'pelatih') { for (const [k,label] of [['nama','Nama pelatih'],['noHp','Nomor HP'],['spesialisasi','Spesialisasi']]) out[k] = text(input[k], label, k === 'nama', 200); return out; }
+    if (kind === 'jadwal') {
+      out.nama = text(input.nama, 'Nama sesi', true, 150); out.tanggal = date(input.tanggal); out.mulai = text(input.mulai, 'Jam mulai', true, 5); out.selesai = text(input.selesai, 'Jam selesai', true, 5);
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(out.mulai) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(out.selesai) || out.mulai >= out.selesai) throw fail(400, 'Jam selesai harus setelah jam mulai');
+      out.lokasi = text(input.lokasi, 'Lokasi', true, 200); out.coachId = id(input.coachId);
+      const u = (await db.query('SELECT * FROM brtm_users WHERE id=$1 AND active=TRUE', [out.coachId])).rows[0]; if (!u) throw fail(400, 'Pilih akun pelatih aktif');
+      out.pelatih = u.nama; out.hari = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' }).format(new Date(out.tanggal + 'T12:00:00+07:00')); out.jam = `${out.mulai}–${out.selesai}`;
+      out.jenisKelas = B.canonical(input.jenisKelas); if (!Object.hasOwn(B.CLASSES, out.jenisKelas)) throw fail(400, 'Pilih kelas sesi');
+      if (!Array.isArray(input.atletIds) || !input.atletIds.length || input.atletIds.length > 200) throw fail(400, 'Pilih minimal satu atlet untuk sesi');
+      out.atletIds = [...new Set(input.atletIds.map(id))];
+      for (const aid of out.atletIds) { const a = await record(db, 'atlet', aid); if (a.status === 'Nonaktif' || B.canonical(a.kelompok) !== out.jenisKelas) throw fail(400, 'Atlet sesi harus aktif dan sesuai jenis kelas'); }
+      out.catatan = text(input.catatan, 'Catatan', false, 2000);
+      const moving = old && (old.tanggal !== out.tanggal || old.mulai !== out.mulai || old.selesai !== out.selesai || old.coachId !== out.coachId || old.jenisKelas !== out.jenisKelas || JSON.stringify(old.atletIds) !== JSON.stringify(out.atletIds));
+      if (moving) {
+        if ((await rows(db, 'absensi')).some(a => a.jadwalId === old.id)) throw fail(400, 'Sesi yang sudah memiliki absensi tidak boleh dipindah. Buat sesi berikutnya.');
+        out.alasanPerubahan = text(input.alasanPerubahan, 'Alasan jadwal/pelatih pengganti', true, 500); out.jadwalSebelumnya = { tanggal: old.tanggal, mulai: old.mulai, selesai: old.selesai, coachId: old.coachId };
+      }
+      const clash = (await rows(db, 'jadwal')).find(s => s.id !== old?.id && s.tanggal === out.tanggal && s.mulai < out.selesai && s.selesai > out.mulai && (s.coachId === out.coachId || s.atletIds?.some(a => out.atletIds.includes(String(a)))));
+      if (clash) throw fail(400, 'Jadwal bentrok dengan sesi ' + clash.nama); return out;
+    }
+    if (kind === 'pembayaran') {
+      const athlete = await record(db, 'atlet', id(input.atletId || old?.atletId)); out.atletId = athlete.id; out.namaAtlet = athlete.nama;
+      try { Object.assign(out, B.price(input, athlete)); } catch (e) { throw fail(400, e.message); }
+      if (out.jenisKelas !== B.canonical(athlete.kelompok)) throw fail(400, 'Kelas pembayaran harus sama dengan kelas atlet');
+      const packs = await payments(db), previous = old && packs.find(p => p.id === old.id);
+      if (previous?.terpakai > 0 && (out.atletId !== old.atletId || out.jenisKelas !== B.canonical(old.jenisKelas) || out.tanggal !== old.tanggal || out.status !== 'Lunas')) throw fail(400, 'Identitas, tanggal, kelas, dan status paket yang telah dipakai tidak boleh diganti');
+      out.pemakaianAwal = previous?.pemakaianAwal || 0; delete out.sisaPertemuan; if (old) out.pengecualian = old.pengecualian || null;
+      const duplicate = packs.find(p => p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
+      if (duplicate) throw fail(409, 'Tagihan atlet untuk tanggal/periode ini sudah ada. Edit tagihan tersebut.');
+      out.catatan = text(input.catatan, 'Catatan pembayaran', false, 1000); out.dibayarPada = out.status === 'Lunas' ? old?.status === 'Lunas' ? old.dibayarPada || old.tanggal : B.today() : null; return out;
+    }
+    if (['absensi','perkembangan','catatanwaktu'].includes(kind)) {
+      const aid = id(input.atletId || old?.atletId), athlete = await record(db, 'atlet', aid), allowed = await accessible(req, db);
+      if (allowed && !allowed.has(aid)) throw fail(403, 'Atlet belum ditugaskan kepada akun ini');
+      out.atletId = aid; out.namaAtlet = athlete.nama; out.tanggal = date(input.tanggal || old?.tanggal);
+      if (out.tanggal > B.today()) throw fail(400, 'Catatan kehadiran/perkembangan/waktu tidak boleh di masa depan');
+      if (old && ((old.atletId && old.atletId !== aid) || (old.tanggal && old.tanggal !== out.tanggal))) throw fail(400, 'Atlet dan tanggal catatan tidak dapat diganti');
+      if (kind === 'catatanwaktu') {
+        if (B.canonical(athlete.kelompok) !== 'Prestasi Class') throw fail(400, 'Catatan waktu hanya untuk atlet Prestasi');
+        if (!['Bebas','Punggung','Dada','Kupu-kupu','Ganti'].includes(input.gaya)) throw fail(400, 'Pilih gaya renang');
+        out.gaya = input.gaya; out.jarak = Number(input.jarak); out.kolam = Number(input.kolam); out.detik = Number(input.detik);
+        if (![25,50,100,200,400,800,1500].includes(out.jarak) || ![25,50].includes(out.kolam) || !Number.isFinite(out.detik) || out.detik <= 0 || out.detik > 86400) throw fail(400, 'Jarak, panjang kolam, atau waktu tidak valid');
+        out.event = text(input.event, 'Event/latihan', false, 200); out.catatan = text(input.catatan, 'Catatan', false, 1000); return out;
+      }
+      out.jadwalId = id(input.jadwalId || old?.jadwalId); const schedule = await record(db, 'jadwal', out.jadwalId, true);
+      if (!schedule.atletIds?.map(String).includes(aid)) throw fail(400, 'Atlet tidak terdaftar pada sesi ini');
+      if (schedule.tanggal !== out.tanggal) throw fail(400, 'Tanggal harus sesuai jadwal sesi');
+      if (!isOwner && String(schedule.coachId) !== String(user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
+      if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
+      out.coachId = String(user.id); out.pelatih = user.nama; out.catatan = text(input.catatan, 'Catatan', false, 2000);
+      if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000); return out; }
+      if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
+      if (out.status === 'Hadir' && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
+        const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && p.status === 'Lunas' && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (old?.status === 'Hadir' && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
+        if (!packs.length) throw fail(400, 'Tidak ada paket lunas dengan sisa pertemuan pada tanggal sesi. Hubungi Owner.'); out.paketId = packs[0].id;
+      } return out;
+    }
+    if (kind === 'program') {
+      if (!isOwner && user.role !== 'prestasi') throw fail(403, 'Khusus tim Prestasi'); out.judul = text(input.judul, 'Judul', true, 200); out.tanggal = date(input.tanggal);
+      if (!['Program','Event'].includes(input.jenis)) throw fail(400, 'Pilih Program atau Event'); out.jenis = input.jenis; out.detail = text(input.detail, 'Isi program / informasi keberangkatan', true, 10000); out.lokasi = text(input.lokasi, 'Lokasi', false, 300); return out;
+    } throw fail(404, 'Bagian tidak ditemukan');
+  }
+  app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
+    const result = await transaction(async c => {
+      const old = await record(c, 'pembayaran', req.params.id, true), alasan = text(req.body.alasan, 'Alasan pengecualian', true, 1000);
+      if (alasan.length < 8) throw fail(400, 'Alasan minimal 8 karakter'); const berlakuSampai = date(req.body.berlakuSampai);
+      if (berlakuSampai < B.today() || berlakuSampai <= old.tanggalBerakhir) throw fail(400, 'Tanggal pengecualian harus setelah masa berlaku asli dan tidak lewat');
+      const pengecualian = { alasan, berlakuSampai, oleh: req.user.username, pada: new Date().toISOString() };
+      return B.packageView(await save(c, req.user, 'pembayaran', { ...old, pengecualian }, old));
+    }); res.json({ pesan: 'Masa berlaku diperpanjang tanpa menambah pertemuan', data: result });
+  }));
+  app.post('/api/:jenis', wrap(async (req, res) => {
+    const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const data = await validate(req, c, kind, req.body, null); return save(c, req.user, kind, data, null); }); res.status(201).json({ pesan: 'Data berhasil disimpan', data: result });
+  }));
+  app.put('/api/:jenis/:id', wrap(async (req, res) => {
+    const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true); const data = await validate(req, c, kind, req.body, old); return save(c, req.user, kind, data, old); }); res.json({ pesan: 'Perubahan tersimpan', data: result });
+  }));
+  app.delete('/api/:jenis/:id', owner, wrap(async (req, res) => {
+    const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
+    await transaction(async c => {
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true);
+      if (kind === 'atlet') {
+        const linked = (await c.query(`SELECT data FROM data_klub WHERE jenis <> 'atlet'`)).rows.some(r => String(r.data.atletId) === old.id || r.data.atletIds?.map(String).includes(old.id) || r.data.namaAtlet?.trim().toLowerCase() === old.nama?.trim().toLowerCase());
+        if (linked) throw fail(400, 'Atlet memiliki riwayat. Ubah status menjadi Nonaktif.');
+      }
+      if (kind === 'jadwal' && (await rows(c, 'absensi')).some(a => a.jadwalId === old.id)) throw fail(400, 'Jadwal dengan absensi tidak boleh dihapus');
+      if (kind === 'pembayaran' && (await payments(c)).find(p => p.id === old.id)?.terpakai > 0) throw fail(400, 'Paket yang telah dipakai tidak boleh dihapus');
+      await c.query('DELETE FROM data_klub WHERE jenis=$1 AND id=$2', [kind, old.id]); await audit(c, req.user, 'hapus', kind, old.id, old, null);
+    }); res.json({ pesan: 'Data dihapus dan dicatat dalam riwayat' });
+  }));
+  app.use('/api', (req,res) => res.status(404).json({ pesan: 'Endpoint tidak ditemukan' }));
+  app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
+  app.use((error, req, res, next) => {
+    if (res.headersSent) return next(error); const status = error.status || (error.code === '23505' ? 409 : 500);
+    if (status >= 500) console.error('BRTM request failed:', error.code || error.name);
+    res.status(status).json({ pesan: error.code === '23505' ? 'Data sudah tercatat. Muat ulang daftar sebelum menyimpan lagi.' : status >= 500 ? 'Server belum dapat memproses data. Coba lagi.' : error.message });
+  }); return app;
 }
-
-res.json(daftarData);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      pesan: "Gagal mengambil data"
-    });
-  }
-});
-
-app.post("/api/:jenis", async (req, res) => {
-  try {
-    const { jenis } = req.params;
-
-    if (!tabel.includes(jenis)) {
-      return res.status(404).json({
-        pesan: "Jenis data tidak ditemukan"
-      });
-    }
-
-    if (
-      !req.body ||
-      typeof req.body !== "object" ||
-      Array.isArray(req.body)
-    ) {
-      return res.status(400).json({
-        pesan: "Data tidak valid"
-      });
-    }
-
-    const hasil = await pool.query(
-      "INSERT INTO data_klub (jenis, data) VALUES ($1, $2) RETURNING id, data",
-      [jenis, JSON.stringify(req.body)]
-    );
-
-    res.status(201).json({
-      pesan: "Data berhasil disimpan",
-      data: {
-        ...hasil.rows[0].data,
-        id: String(hasil.rows[0].id)
-      }
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      pesan: "Gagal menyimpan data"
-    });
-  }
-});
-// API EDIT DATA
-app.put("/api/:jenis/:id", async (req, res) => {
-  try {
-    const { jenis, id } = req.params;
-
-    if (!tabel.includes(jenis)) {
-      return res.status(404).json({
-        pesan: "Jenis data tidak ditemukan"
-      });
-    }
-
-    if (!/^\d+$/.test(id)) {
-      return res.status(400).json({
-        pesan: "ID tidak valid"
-      });
-    }
-
-    if (
-      !req.body ||
-      typeof req.body !== "object" ||
-      Array.isArray(req.body)
-    ) {
-      return res.status(400).json({
-        pesan: "Data tidak valid"
-      });
-    }
-
-    const hasil = await pool.query(
-      `UPDATE data_klub
-       SET data = $1
-       WHERE jenis = $2 AND id = $3
-       RETURNING id, data`,
-      [JSON.stringify(req.body), jenis, Number(id)]
-    );
-
-    if (hasil.rowCount === 0) {
-      return res.status(404).json({
-        pesan: "Data tidak ditemukan"
-      });
-    }
-
-    res.json({
-      pesan: "Data berhasil diperbarui",
-      data: {
-        ...hasil.rows[0].data,
-        id: String(hasil.rows[0].id)
-      }
-    });
-  } catch (error) {
-    console.error("Gagal mengedit data:", error);
-
-    res.status(500).json({
-      pesan: "Gagal memperbarui data"
-    });
-  }
-});
-app.put("/api/:jenis/:id", async (req, res) => {
-  try {
-    const { jenis, id } = req.params;
-
-    if (!tabel.includes(jenis)) {
-      return res.status(400).json({
-        pesan: "Jenis data tidak ditemukan"
-      });
-    }
-
-    if (!/^\d+$/.test(id)) {
-      return res.status(400).json({
-        pesan: "ID tidak valid"
-      });
-    }
-
-    if (
-      !req.body ||
-      typeof req.body !== "object" ||
-      Array.isArray(req.body)
-    ) {
-      return res.status(400).json({
-        pesan: "Data tidak valid"
-      });
-    }
-
-    const hasil = await pool.query(
-      `UPDATE data_klub
-       SET data = $1
-       WHERE jenis = $2 AND id = $3
-       RETURNING id, data`,
-      [
-        JSON.stringify(req.body),
-        jenis,
-        Number(id)
-      ]
-    );
-
-    if (hasil.rowCount === 0) {
-      return res.status(404).json({
-        pesan: "Data tidak ditemukan"
-      });
-    }
-
-    res.json({
-      pesan: "Data berhasil diperbarui",
-      data: {
-        ...hasil.rows[0].data,
-        id: String(hasil.rows[0].id)
-      }
-    });
-
-  } catch (error) {
-    console.error("Gagal memperbarui data:", error);
-
-    res.status(500).json({
-      pesan: "Gagal memperbarui data"
-    });
-  }
-});
-app.delete("/api/:jenis/:id", async (req, res) => {
-  try {
-    const { jenis, id } = req.params;
-
-    if (!tabel.includes(jenis)) {
-      return res.status(404).json({
-        pesan: "Jenis data tidak ditemukan"
-      });
-    }
-
-    if (!/^\d+$/.test(id)) {
-      return res.status(400).json({
-        pesan: "ID tidak valid"
-      });
-    }
-
-    const hasil = await pool.query(
-      "DELETE FROM data_klub WHERE jenis = $1 AND id = $2 RETURNING id",
-      [jenis, Number(id)]
-    );
-
-    if (hasil.rowCount === 0) {
-      return res.status(404).json({
-        pesan: "Data tidak ditemukan"
-      });
-    }
-
-    res.json({
-      pesan: "Data berhasil dihapus"
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      pesan: "Gagal menghapus data"
-    });
-  }
-});
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-async function mulaiServer() {
-  try {
-    await siapkanDatabase();
-
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(
-        `BARATHRUM APP berjalan pada port ${PORT}`
-      );
-    });
-  } catch (error) {
-    console.error("Gagal menyiapkan database:", error);
-    process.exit(1);
-  }
+if (require.main === module) {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false, max: 10 });
+  initDb(pool).then(() => {
+    const app = createApp({ pool }); const server = app.listen(process.env.PORT || 3000, '0.0.0.0', () => console.log('BRTM v' + APP_VERSION + ' ready'));
+    process.on('SIGTERM', () => server.close(() => pool.end().then(() => process.exit(0))));
+  }).catch(e => { console.error('BRTM database initialization failed:', e.code || e.name); process.exit(1); });
 }
-
-mulaiServer();
+module.exports = { createApp, initDb, passwordHash, verify };
