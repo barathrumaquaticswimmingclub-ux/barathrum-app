@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node preview-server.cjs",
-    "test": "node integration.test.js"
+    "test": "node integration.test.js && node pwa.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",

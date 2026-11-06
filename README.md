@@ -45,3 +45,9 @@ Pendaftaran anggota baru opsional Rp50.000. Diskon Rp25.000 hanya untuk sekolah 
 Produksi memerlukan `DATABASE_URL` PostgreSQL dan `PORT` (dari Railway). `NODE_ENV=production` dianjurkan. Skema kompatibel dengan versi lama; tidak ada penghapusan data otomatis. Aktivasi Owner satu kali memakai token acak yang hanya verifikator SHA-256-nya disimpan dalam `bootstrap.json`; token asli tidak berada di repository. Endpoint aktivasi ditutup setelah selesai. Tidak ada password default publik. Kredensial serah-terima disampaikan langsung kepada pemilik.
 
 Uji mencakup login, perubahan/revokasi sesi, akses per peran, tarif server, diskon, paket 4/8 sesi, absensi ganda, kuota habis, koreksi kuota, kedaluwarsa, pengecualian, data lama, audit, backup, serta buka ulang database. Integrasi bank, pengiriman WhatsApp otomatis, dan akun orang tua tidak termasuk rilis ini.
+
+## Memasang di HP Android
+
+Buka situs BRTM melalui Google Chrome, ketuk **Pasang BRTM**, lalu konfirmasi **Instal**. Jika Chrome belum menampilkan dialog, gunakan menu ⋮ → Instal dan buat pintasan → Instal (pada versi lain: Instal aplikasi / Tambahkan ke layar utama). Buka ikon BRTM dari layar utama dan gunakan akun yang sama.
+
+Manifest memakai tampilan standalone, ikon PNG 192/512 dan maskable. Service worker hanya menyimpan halaman pemberitahuan offline beserta aset publiknya. Data klub, API, login, dan respons berisi identitas/pembayaran tidak di-cache. Internet diperlukan untuk membaca dan menyimpan data klub.

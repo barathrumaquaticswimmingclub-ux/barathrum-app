@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "BRTM Aquatic Swimming Club",
+  "short_name": "BRTM",
+  "description": "Kelola atlet, jadwal latihan, absensi, SPP, dan prestasi klub BRTM.",
+  "lang": "id",
+  "dir": "ltr",
+  "start_url": "/?source=installed",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#092d40",
+  "theme_color": "#092d40",
+  "prefer_related_applications": false,
+  "categories": ["sports", "productivity"],
+  "icons": [
+    { "src": "/icons/brtm-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/brtm-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/brtm-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
