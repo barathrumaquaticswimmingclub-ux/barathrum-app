@@ -1,6 +1,6 @@
 'use strict';
 // Only public offline-page assets are cached. Club data and credentials always use the network.
-const CACHE = 'brtm-offline-v2';
+const CACHE = 'brtm-offline-v3';
 const OFFLINE_ASSETS = ['/offline.html', '/offline.css', '/icons/brtm-brand-192.png', '/icons/brtm-brand-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(OFFLINE_ASSETS)).then(() => self.skipWaiting()));

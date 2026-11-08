@@ -6,7 +6,7 @@ const request = require('supertest');
 const { createApp } = require('./server');
 async function main() {
   const manifest = JSON.parse(fs.readFileSync('public/manifest.webmanifest','utf8'));
-  assert.equal(manifest.display,'standalone'); assert.equal(manifest.scope,'/'); assert.equal(manifest.id,'/');
+  assert.equal(manifest.display,'standalone'); assert.equal(manifest.scope,'/club/'); assert.equal(manifest.id,'/');
   for (const size of [192,512]) assert(manifest.icons.some(i => i.sizes===`${size}x${size}` && i.purpose==='any'));
   assert(manifest.icons.some(i => i.purpose==='maskable'));
   for (const icon of manifest.icons) {
@@ -38,14 +38,14 @@ async function main() {
     const button={disabled:false,classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name),add:name=>classes.add(name)},addEventListener:(event,fn)=>clicks[event]=fn};
     const dialog={open:false,showModal(){this.open=true},close(){this.open=false}};
     const nodes={installButton:button,installHelp:dialog,closeInstallHelp:{addEventListener:(event,fn)=>clicks.close=fn}};
-    const nav={serviceWorker:{register:(url,options)=>{registration={url,options};return Promise.resolve()}}};
-    const scope={navigator:nav,window:{navigator:nav,isSecureContext:true,matchMedia:()=>({matches:standalone}),addEventListener:(event,fn)=>events[event]=fn},document:{getElementById:id=>nodes[id]}};
+    const nav={serviceWorker:{getRegistrations:async()=>[],register:(url,options)=>{registration={url,options};return Promise.resolve()}}};
+    const scope={URL,Promise,navigator:nav,window:{navigator:nav,isSecureContext:true,matchMedia:()=>({matches:standalone}),addEventListener:(event,fn)=>events[event]=fn},document:{getElementById:id=>nodes[id]}};
     vm.createContext(scope);vm.runInContext(fs.readFileSync('public/install.js','utf8'),scope);
-    return {events,clicks,classes,dialog,registration};
+    return {events,clicks,classes,dialog,get registration(){return registration;}};
   }
   const ui=installHarness();await ui.clicks.click();assert.equal(ui.dialog.open,true);ui.clicks.close();assert.equal(ui.dialog.open,false);
   let prompted=false,prevented=false;ui.events.beforeinstallprompt({preventDefault(){prevented=true},prompt:async()=>{prompted=true},userChoice:Promise.resolve({outcome:'accepted'})});await ui.clicks.click();assert(prompted&&prevented);assert(ui.classes.has('hidden'));
-  assert.equal(ui.registration.url,'/sw.js');assert.equal(ui.registration.options.updateViaCache,'none');assert(installHarness(true).classes.has('hidden'));
+  await new Promise(r=>setImmediate(r));assert.equal(ui.registration.url,'/club/sw.js');assert.equal(ui.registration.options.updateViaCache,'none');assert(installHarness(true).classes.has('hidden'));
   console.log('PASS: install manifest and PNG sizes; public asset delivery/CSP; offline fallback; API, auth, POST and cross-origin requests never intercepted; cache isolation; install prompt and fallback guide; installed-mode button hidden.');
 }
 main().catch(error=>{console.error(error);process.exit(1)});

@@ -3,13 +3,17 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const B = require('./business');
+const P = require('./profile');
 const digest = x => crypto.createHash('sha256').update(x).digest('hex');
 const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 const phone = x => String(x || '').replace(/\D/g, '').replace(/^0/, '62');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const system = { id: null, username: 'google-form' };
 async function initDb(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_swim_owner_sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES brtm_users(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL)`);
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_photos (athlete_id INTEGER PRIMARY KEY REFERENCES data_klub(id) ON DELETE CASCADE, mime TEXT NOT NULL, base64 TEXT NOT NULL)`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_parents (id SERIAL PRIMARY KEY, athlete_id INTEGER UNIQUE NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE)`);
+  await db.query(`ALTER TABLE brtm_parents ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_parent_sessions (token_hash TEXT PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES brtm_parents(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL)`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_form_keys (kind TEXT PRIMARY KEY CHECK (kind IN ('prestasi','nonprestasi')), token_hash TEXT NOT NULL, form_id TEXT, form_url TEXT, last_received_at TIMESTAMPTZ)`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_registrations (id SERIAL PRIMARY KEY, kind TEXT NOT NULL, response_id TEXT NOT NULL, payload JSONB NOT NULL, status TEXT NOT NULL, athlete_id INTEGER REFERENCES data_klub(id) ON DELETE SET NULL, note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(kind,response_id))`);
@@ -28,7 +32,9 @@ function mount(app, h) {
   const parentAuth = wrap(async (req, res, next) => {
     const token = cookieToken(req);
     if (!token || !/^[a-f0-9]{64}$/.test(token)) throw fail(401, 'Silakan masuk ke BRTM SWIM');
-    const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [digest(token)]);
+    const ownerSession = (await pool.query(`SELECT u.* FROM brtm_swim_owner_sessions s JOIN brtm_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.active=TRUE AND u.role='owner' AND u.must_change=FALSE`, [digest(token)])).rows[0];
+    if (ownerSession) { req.swimOwner = ownerSession; return next(); }
+    const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND p.deleted=FALSE AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [digest(token)]);
     if (!r.rows[0]) throw fail(401, 'Silakan masuk ke BRTM SWIM'); req.parent = r.rows[0]; next();
   });
   async function provision(db, athlete) {
@@ -43,9 +49,16 @@ function mount(app, h) {
   app.post('/swim/api/login', wrap(async (req, res) => {
     const username = norm(req.body?.username).slice(0, 200);
     limit(req, 'swim:' + username, 8); limit(req, 'swim-total', 40);
+    const staff = (await pool.query("SELECT * FROM brtm_users WHERE username=$1 AND role='owner' AND active=TRUE AND must_change=FALSE", [username])).rows[0];
+    if (staff && await verify(req.body?.password,staff.password_hash)) {
+      const token=crypto.randomBytes(32).toString('hex');
+      await pool.query('DELETE FROM brtm_swim_owner_sessions WHERE expires_at<NOW()');
+      await pool.query('INSERT INTO brtm_swim_owner_sessions VALUES ($1,$2,$3)',[digest(token),staff.id,new Date(Date.now()+7*86400000)]);
+      await audit(pool,staff,'masuk-owner-swim'); cookie(res,token); return res.json({ok:true,role:'owner'});
+    }
     const u = (await pool.query(`SELECT p.* FROM brtm_parents p JOIN data_klub a ON a.id=p.athlete_id WHERE p.username=$1 AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [username])).rows[0];
     const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
-    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active) throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.');
+    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active || u.deleted) throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.');
     const token = crypto.randomBytes(32).toString('hex');
     await pool.query('DELETE FROM brtm_parent_sessions WHERE expires_at<NOW()');
     await pool.query('INSERT INTO brtm_parent_sessions VALUES ($1,$2,$3)', [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
@@ -53,10 +66,11 @@ function mount(app, h) {
   }));
   app.post('/swim/api/logout', wrap(async (req, res) => {
     const token = cookieToken(req); if (token) await pool.query('DELETE FROM brtm_parent_sessions WHERE token_hash=$1', [digest(token)]);
+    if (token) await pool.query('DELETE FROM brtm_swim_owner_sessions WHERE token_hash=$1',[digest(token)]);
     cookie(res, '', 0); res.json({ ok: true });
   }));
-  app.get('/swim/api/dashboard', parentAuth, wrap(async (req, res) => {
-    const a = await record(pool, 'atlet', req.parent.athlete_id), today = B.today(), month = today.slice(0, 7);
+  async function dashboard(req, res, athleteId) {
+    const a = await record(pool, 'atlet', athleteId), today = B.today(), month = today.slice(0, 7);
     const prestasi = B.canonical(a.kelompok) === 'Prestasi Class';
     const allAthletes = await rows(pool, 'atlet');
     const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
@@ -70,12 +84,54 @@ function mount(app, h) {
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
     const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ today, updatedAt: new Date().toISOString(), profil: { nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status || 'Aktif', tanggalLahir: a.tanggalLahir || '', sekolah: a.sekolah || '' },
+    res.json({ today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih })),
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
       evaluasi: evaluations.map(x => ({ tanggal: x.tanggal, pelatih: x.pelatih, teknik: x.teknik, fisik: x.fisik, attitude: x.attitude, catatan: x.catatan })) });
+  }
+  const swimOwner = (req,res,next) => req.swimOwner ? next() : next(fail(403,'Hanya Owner BRTM SWIM'));
+  async function putPhoto(db,athleteId,value) {
+    const image=P.photo(value);
+    await db.query('INSERT INTO brtm_photos (athlete_id,mime,base64) VALUES ($1,$2,$3) ON CONFLICT(athlete_id) DO UPDATE SET mime=EXCLUDED.mime,base64=EXCLUDED.base64',[athleteId,image.mime,image.base64]);
+  }
+  app.get('/swim/api/dashboard',parentAuth,wrap(async(req,res)=>{
+    if (!req.swimOwner) return dashboard(req,res,req.parent.athlete_id);
+    const athletes=await rows(pool,'atlet');
+    const accounts=(await pool.query('SELECT athlete_id,username,active,deleted FROM brtm_parents')).rows;
+    const active=athletes.filter(a=>a.status!=='Nonaktif');
+    res.json({role:'owner',today:B.today(),updatedAt:new Date().toISOString(),counts:{prestasi:active.filter(a=>B.canonical(a.kelompok)==='Prestasi Class').length,pemula:active.filter(a=>B.canonical(a.kelompok)!=='Prestasi Class').length},atlet:athletes.map(a=>{const p=accounts.find(p=>String(p.athlete_id)===a.id);return {id:a.id,nama:a.nama,namaPanggilan:a.namaPanggilan||'',kelompok:B.canonical(a.kelompok),status:a.status||'Aktif',username:p?.username||'',active:p?.active||false,deleted:p?.deleted||false};})});
+  }));
+  app.get('/swim/api/owner/atlet/:id',parentAuth,swimOwner,wrap(async(req,res)=>dashboard(req,res,req.params.id)));
+  app.put('/swim/api/owner/atlet/:id',parentAuth,swimOwner,wrap(async(req,res)=>{
+    await transaction(async c=>{
+      const old=await record(c,'atlet',req.params.id,true),data=P.cleanProfile(req.body,old);
+      await save(c,req.swimOwner,'atlet',data,old);
+      if(req.body.foto) {await putPhoto(c,old.id,req.body.foto);await audit(c,req.swimOwner,'ubah-foto-swim','atlet',old.id);}
+    });res.json({pesan:'Biodata anak diperbarui'});
+  }));
+  app.put('/swim/api/owner/akun/:id',parentAuth,swimOwner,wrap(async(req,res)=>{
+    if(typeof req.body.active!=='boolean')throw fail(400,'Status akun tidak valid');
+    await transaction(async c=>{
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const a=await record(c,'atlet',req.params.id);
+      await provision(c,a);await c.query('UPDATE brtm_parents SET active=$1,deleted=FALSE WHERE athlete_id=$2',[req.body.active,a.id]);
+      await c.query('DELETE FROM brtm_parent_sessions WHERE parent_id IN (SELECT id FROM brtm_parents WHERE athlete_id=$1)',[a.id]);
+      await audit(c,req.swimOwner,req.body.active?'aktifkan-akun-swim':'nonaktifkan-akun-swim','atlet',a.id);
+    });res.json({pesan:'Status akun diperbarui'});
+  }));
+  app.delete('/swim/api/owner/akun/:id',parentAuth,swimOwner,wrap(async(req,res)=>{
+    await transaction(async c=>{
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const a=await record(c,'atlet',req.params.id);
+      await provision(c,a);await c.query('UPDATE brtm_parents SET active=FALSE,deleted=TRUE WHERE athlete_id=$1',[a.id]);
+      await c.query('DELETE FROM brtm_parent_sessions WHERE parent_id IN (SELECT id FROM brtm_parents WHERE athlete_id=$1)',[a.id]);
+      await audit(c,req.swimOwner,'hapus-dashboard-akun-swim','atlet',a.id);
+    });res.json({pesan:'Dashboard dan akun disembunyikan. Riwayat latihan dan pembayaran klub tetap tersimpan; Owner dapat memulihkan akses.'});
+  }));
+  app.get('/swim/api/photo/:id',parentAuth,wrap(async(req,res)=>{
+    if(!req.swimOwner&&String(req.parent.athlete_id)!==req.params.id)throw fail(403,'Foto tidak dapat diakses');
+    const p=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[req.params.id])).rows[0];
+    if(!p)return res.sendStatus(404);res.type(p.mime).send(Buffer.from(p.base64,'base64'));
   }));
   app.use('/swim/api', (req, res) => res.status(404).json({ pesan: 'Bagian tidak ditemukan' }));
   app.get(/^\/swim$/, (req, res) => res.redirect('/swim/'));
@@ -97,7 +153,7 @@ function mount(app, h) {
     if (typeof req.body.active !== 'boolean') throw fail(400, 'Status tidak valid');
     await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const a = await record(c, 'atlet', req.params.id);
-      await provision(c, a); await c.query('UPDATE brtm_parents SET active=$1 WHERE athlete_id=$2', [req.body.active, a.id]);
+      await provision(c, a); await c.query('UPDATE brtm_parents SET active=$1,deleted=FALSE WHERE athlete_id=$2', [req.body.active, a.id]);
       await c.query('DELETE FROM brtm_parent_sessions WHERE parent_id IN (SELECT id FROM brtm_parents WHERE athlete_id=$1)', [a.id]);
       await audit(c, req.user, req.body.active ? 'aktifkan-orangtua' : 'nonaktifkan-orangtua', 'atlet', a.id);
     }); res.json({ pesan: 'Akses orang tua diperbarui' });
@@ -112,20 +168,26 @@ function mount(app, h) {
       await audit(c, req.user, 'siapkan-integrasi-form');
     });
     const base = (secureCookies ? 'https' : req.protocol) + '://' + req.get('host');
-    const script = fs.readFileSync(path.join(__dirname, 'scripts/google-forms.gs'), 'utf8').replace('__BRTM_CONFIG__', JSON.stringify({ base, keys }));
+    const script = fs.readFileSync(path.join(__dirname, 'scripts/google-forms.gs'), 'utf8').replace('__BRTM_CONFIG__', JSON.stringify({ base, keys })).replace('__BRTM_RULES__', fs.readFileSync(path.join(__dirname,'scripts/form-rules.json'),'utf8').trim());
     res.attachment('BRTM-Google-Forms.gs').type('text/plain').send(script);
   }));
   function cleanPayload(input, kind) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Data formulir tidak valid');
     const out = {};
-    for (const k of ['nama','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','kelompok']) {
+    for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok']) {
       if (input[k] != null && typeof input[k] !== 'string') throw fail(400, 'Isian tidak valid');
       out[k] = String(input[k] || '').trim(); if (out[k].length > (k === 'nama' ? 150 : 500)) throw fail(400, 'Isian terlalu panjang');
     }
+    if (/^\d{2}-\d{2}-\d{4}$/.test(out.tanggalLahir)) out.tanggalLahir=out.tanggalLahir.split('-').reverse().join('-');
     if (!out.nama || !B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today() || !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nama, tanggal lahir, dan WhatsApp orang tua wajib valid');
     if (!['Laki-laki','Perempuan'].includes(out.jk)) throw fail(400, 'Jenis kelamin tidak valid');
     out.kelompok = kind === 'prestasi' ? 'Prestasi Class' : B.canonical(out.kelompok);
     if (!Object.hasOwn(B.CLASSES, out.kelompok) || kind === 'nonprestasi' && out.kelompok === 'Prestasi Class') throw fail(400, 'Kelas tidak sesuai formulir');
+    if(input.versiKetentuan){
+      const required=['namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
+      if(required.some(k=>!out[k])||out.persetujuan!=='Saya telah membaca dan menyetujui ketentuan BRTM.'||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');
+    }
+    if(input.foto)out.foto=P.photo(input.foto);
     return out;
   }
   async function applyRegistration(db, registration, target) {
@@ -134,14 +196,16 @@ function mount(app, h) {
     catch (e) { if (target === 'new') throw e; p = {}; }
     let a;
     if (target === 'new') {
-      a = await save(db, system, 'atlet', { ...p, status: 'Aktif', sumber: 'Google Form' }, null);
+      const profile={...p};delete profile.foto;
+      a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: 'Google Form' }, null);
     } else {
       const old = await record(db, 'atlet', target, true);
       // Keep existing class, name, status and training/financial history. Fill missing profile fields only.
       const data = { ...old };
-      for (const k of ['tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan']) if (!data[k] && p[k]) data[k] = p[k];
+      for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan']) if (!data[k] && p[k]) data[k] = p[k];
       a = await save(db, system, 'atlet', data, old);
     }
+    if(p.foto && (target==='new'||!(await db.query('SELECT athlete_id FROM brtm_photos WHERE athlete_id=$1',[a.id])).rows.length)) await putPhoto(db,a.id,p.foto);
     await provision(db, a);
     await db.query("UPDATE brtm_registrations SET status='Tersambung',athlete_id=$1,note=$2 WHERE id=$3", [a.id, target === 'new' ? 'Atlet baru dibuat' : 'Terhubung ke atlet lama; riwayat dipertahankan', registration.id]);
     return a;
@@ -163,7 +227,7 @@ function mount(app, h) {
     catch (e) {
       if (e.status !== 400 || !req.body.data || typeof req.body.data !== 'object' || Array.isArray(req.body.data)) throw e;
       validationError = e.message; data = {};
-      for (const k of ['nama','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','kelompok']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
+      for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
     }
     const result = await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');

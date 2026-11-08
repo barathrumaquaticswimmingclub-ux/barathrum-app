@@ -22,6 +22,6 @@
   });
   document.getElementById('closeInstallHelp').addEventListener('click', () => dialog.close());
   if ('serviceWorker' in navigator && window.isSecureContext) {
-    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(() => { /* Chrome's menu still provides the installation entry point. */ });
+    navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.filter(r=>new URL(r.scope).pathname==='/').map(r=>r.unregister()))).then(()=>navigator.serviceWorker.register('/club/sw.js', { scope: '/club/', updateViaCache: 'none' })).catch(() => { /* Chrome's menu still provides the installation entry point. */ });
   }
 })();

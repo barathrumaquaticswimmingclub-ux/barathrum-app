@@ -47,6 +47,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
+  app.use('/integrations/google-forms',express.json({limit:'8mb'}));
+  app.use('/swim/api/owner',express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
@@ -136,13 +138,15 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (!(await verify(req.body?.currentPassword, req.user.password_hash))) throw fail(400, 'Kata sandi saat ini salah');
     if (req.body.currentPassword === req.body.password) throw fail(400, 'Gunakan kata sandi baru yang berbeda');
     const hash = await passwordHash(req.body?.password);
-    await transaction(async c => { await c.query('UPDATE brtm_users SET password_hash=$1,must_change=FALSE WHERE id=$2', [hash, req.user.id]); await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [req.user.id]); await audit(c, req.user, 'ubah-kata-sandi'); });
+    await transaction(async c => { await c.query('UPDATE brtm_users SET password_hash=$1,must_change=FALSE WHERE id=$2', [hash, req.user.id]); await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [req.user.id]); await c.query('DELETE FROM brtm_swim_owner_sessions WHERE user_id=$1',[req.user.id]); await audit(c, req.user, 'ubah-kata-sandi'); });
     setCookie(res, '', 0); res.json({ pesan: 'Kata sandi diganti. Silakan masuk kembali.' });
   }));
   app.post('/auth/require-password-change', auth, wrap(async (req,res)=>{
     await transaction(async c=>{await c.query('UPDATE brtm_users SET must_change=TRUE WHERE id=$1',[req.user.id]);await c.query('DELETE FROM brtm_sessions WHERE user_id=$1',[req.user.id]);await audit(c,req.user,'wajib-ganti-kata-sandi');});
     setCookie(res,'',0);res.json({pesan:'Masuk berikutnya wajib mengganti kata sandi.'});
   }));
+  app.get('/club/',(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
+  app.get('/club/sw.js',(req,res)=>res.sendFile(path.join(__dirname,'public/sw.js')));
   require('./swim').mount(app, { pool, wrap, auth, owner, changed, transaction, rows, record, save, audit, payments, passwordHash, verify, limit, secureCookies });
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
@@ -163,7 +167,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const nextUsername = username ?? old.username;
       const r = await c.query('UPDATE brtm_users SET nama=$1,active=$2,username=$3,password_hash=$4,must_change=$5 WHERE id=$6 RETURNING *', [nama, req.body.active, nextUsername, hash || old.password_hash, hash ? false : old.must_change, uid]);
       const revoke = !req.body.active || nextUsername !== old.username || !!hash;
-      if (revoke) await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]);
+      if (revoke) {await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]);await c.query('DELETE FROM brtm_swim_owner_sessions WHERE user_id=$1',[uid]);}
       await audit(c, req.user, 'ubah-akun', 'akun', uid, publicUser(old), publicUser(r.rows[0]));
       if (hash) await audit(c, req.user, 'atur-kata-sandi', 'akun', uid);
       return { ...publicUser(r.rows[0]), sessionRevoked: revoke && uid === String(req.user.id) };
@@ -175,7 +179,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const u = await transaction(async c => {
       const r = await c.query('UPDATE brtm_users SET password_hash=$1,must_change=TRUE WHERE id=$2 RETURNING *', [hash, uid]);
       if (!r.rowCount) throw fail(404, 'Akun tidak ditemukan');
-      await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]); await audit(c, req.user, 'reset-kata-sandi', 'akun', uid); return publicUser(r.rows[0]);
+      await c.query('DELETE FROM brtm_sessions WHERE user_id=$1', [uid]); await c.query('DELETE FROM brtm_swim_owner_sessions WHERE user_id=$1',[uid]); await audit(c, req.user, 'reset-kata-sandi', 'akun', uid); return publicUser(r.rows[0]);
     }); res.json({ user: u, password, pesan: 'Kata sandi awal baru. Ditampilkan satu kali.' });
   }));
   async function accessible(req, db = pool) {
@@ -232,7 +236,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.nama = text(input.nama, 'Nama atlet', true, 150); out.kelompok = B.canonical(input.kelompok);
       if (!Object.hasOwn(B.CLASSES, out.kelompok)) throw fail(400, 'Pilih jenis kelas');
       if (!['Aktif','Nonaktif'].includes(input.status)) throw fail(400, 'Status atlet tidak valid'); out.status = input.status;
-      for (const k of ['tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
+      for (const k of ['namaPanggilan','namaOrtu','riwayatRenang','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
       out.tanggalLahir = input.tanggalLahir ? date(input.tanggalLahir, 'Tanggal lahir') : '';
       if (out.tanggalLahir > B.today()) throw fail(400, 'Tanggal lahir tidak boleh di masa depan');
       if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nomor WhatsApp orang tua tidak valid');
