@@ -78,7 +78,7 @@ function configureFilter() {
   if(k==='catatanwaktu')values=['Bebas','Punggung','Dada','Kupu-kupu','Ganti'];
   if(k==='program')values=['Program','Event'];
   $('filter').innerHTML='<option value="">Semua</option>'+values.map(v=>`<option>${esc(v)}</option>`).join(''); $('filter').classList.toggle('hidden',!values.length);
-  $('monthFilter').classList.toggle('hidden',!['laporan','pembayaran','absensi'].includes(k));
+  $('monthFilter').classList.toggle('hidden',!['laporan','pembayaran','absensi','program'].includes(k));
 }
 function renderCurrent() {
   if (!S.user || !S.config) return;
@@ -92,7 +92,7 @@ function filteredRows() {
   const k=S.section,q=$('search').value.toLowerCase(),f=$('filter').value,m=$('monthFilter').value;
   return (S.records[k]||[]).filter(x=>{
     if(q&&!Object.values(x).filter(v=>typeof v!=='object').join(' ').toLowerCase().includes(q))return false;
-    if(m&&['absensi','pembayaran'].includes(k)&&x.tanggal?.slice(0,7)!==m)return false;
+    if(m&&['absensi','pembayaran','program'].includes(k)&&x.tanggal?.slice(0,7)!==m)return false;
     if(!f)return true;
     if(k==='jadwal')return f==='Hari ini'?x.tanggal===S.config.today:f==='Mendatang'?x.tanggal>=S.config.today:x.tanggal<S.config.today;
     return [x.status,x.kelompok,x.statusMasaBerlaku,x.gaya,x.jenis].includes(f);
@@ -131,7 +131,7 @@ function card(row) {
     const best=Math.min(...group.map(x=>Number(x.detik)));tag=Number(row.detik)===best?'<span class="pb">PERSONAL BEST</span>':'';
     content=`<div class="total">${esc(formatTime(row.detik))}</div>`+details([['Tanggal',displayDate(row.tanggal)],['Event',row.event||'Latihan'],['Pencatat',row.dibuatOleh]]);
   }
-  if(k==='program'){name=row.judul;sub=displayDate(row.tanggal);tag=badge(row.jenis);content=details([['Lokasi',row.lokasi],['Pencatat',row.dibuatOleh]])+`<p class="detail">${esc(row.detail)}</p>`;}
+  if(k==='program'){name=row.judul;sub=displayDate(row.tanggal);tag=badge(row.jenis);content=details([['Kelas / grup',row.grup],['Lokasi',row.lokasi],['Pencatat',row.dibuatOleh]])+[['Dryland',row.dryland],['Swimming',row.swimming],['Evaluasi',row.evaluasi],['Informasi',row.detail]].filter(([,v])=>v).map(([k,v])=>`<h4>${k}</h4><p class="detail">${esc(v)}</p>`).join('')+(['owner','prestasi'].includes(S.user.role)?`<div class="actions"><a href="/api/prestasi/program/${row.id}/word" download>Unduh Word</a>${row.fotoProgram?`<a href="/api/prestasi/program/${row.id}/photo" target="_blank" rel="noopener">Foto asli</a>`:''}</div>`:'');}
   if(k==='akun'){name=row.nama;sub='@'+row.username;tag=badge(row.active?'Aktif':'Nonaktif');content=details([['Akses',roleName(row.role)],['Kata sandi',row.mustChangePassword?'Wajib ganti saat masuk':'Sudah diganti']]);}
   if(k==='pelatih'){name=row.nama;sub=row.spesialisasi||'Pelatih BRTM';tag='';content=details([['Telepon',row.noHp]]);}
   if(k==='audit'){name=({tambah:'Tambah data',ubah:'Ubah data',hapus:'Hapus data',masuk:'Masuk ke akun','reset-kata-sandi':'Reset kata sandi','ubah-kata-sandi':'Ganti kata sandi',aktivasi:'Aktivasi klub','ubah-akun':'Ubah akun'}[row.action]||row.action);sub='@'+row.username;tag=`<span class="tag">${esc(row.jenis||'Akun')}</span>`;content=details([['Waktu',new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(row.created_at))],['ID data',row.record_id]]);}
@@ -184,7 +184,7 @@ function openForm(kind, row = null){
     f+=field('catatan','Catatan khusus','textarea',v.catatan,{required:false,full:true});
     if(!schedules.length)f='<div class="readonly-notice">Belum ada sesi yang dapat diisi. Owner perlu menambahkan jadwal bertanggal hari ini atau sebelumnya dan menentukan pesertanya.</div>'+f;
   }
-  if(kind==='catatanwaktu')f=field('atletId','Atlet Prestasi',athleteOptions((S.records.atlet||[]).filter(a=>a.kelompok==='Prestasi Class')),v.atletId,{full:true,disabled:!!row?.atletId})+field('tanggal','Tanggal','date',v.tanggal||S.config.today,{readonly:!!row})+field('gaya','Gaya',['Bebas','Punggung','Dada','Kupu-kupu','Ganti'],v.gaya)+field('jarak','Jarak (meter)',[25,50,100,200,400,800,1500],v.jarak||50)+field('kolam','Panjang kolam (meter)',[25,50],v.kolam||25)+field('detik','Waktu total (detik)','number',v.detik,{help:'Contoh: 65,42 detik untuk 1 menit 5,42 detik.'})+field('event','Nama event / latihan','text',v.event,{required:false})+field('catatan','Catatan evaluasi','textarea',v.catatan,{required:false,full:true,max:1000});
+  if(kind==='catatanwaktu')f=field('atletId','Atlet Prestasi',athleteOptions((S.records.atlet||[]).filter(a=>a.kelompok==='Prestasi Class')),v.atletId,{full:true,disabled:!!row?.atletId})+field('tanggal','Tanggal','date',v.tanggal||S.config.today,{readonly:!!row})+field('gaya','Gaya',['Bebas','Punggung','Dada','Kupu-kupu','Ganti'],v.gaya)+field('jarak','Jarak (meter)',[25,50,100,200,400,800,1500,2000],v.jarak||50)+field('kolam','Panjang kolam (meter)',[25,50],v.kolam||25)+field('detik','Waktu total (detik)','number',v.detik,{help:'Contoh: 65,42 detik untuk 1 menit 5,42 detik.'})+field('event','Nama event / latihan','text',v.event,{required:false})+field('catatan','Catatan evaluasi','textarea',v.catatan,{required:false,full:true,max:1000});
   if(kind==='program')f=field('judul','Judul program / event','text',v.judul,{full:true})+field('jenis','Jenis',['Program','Event'],v.jenis||'Program')+field('tanggal','Tanggal','date',v.tanggal||S.config.today)+field('lokasi','Lokasi','text',v.lokasi,{required:false,full:true,max:300})+field('detail','Program / detail keberangkatan','textarea',v.detail,{full:true,max:10000,help:'Untuk event: tulis peserta, waktu kumpul, kendaraan, bekal, dan catatan keberangkatan.'});
   if(kind==='akun')f=field('nama','Nama pelatih / akun','text',v.nama,{full:true,max:100})+field('username','ID login','text',v.username,{max:40,help:'3–40 huruf kecil atau angka; boleh titik, garis bawah, dan tanda hubung.'})+(v.id!==S.user.id?field('password','Kata sandi baru','password','',{required:false,help:'Kosongkan jika tidak ingin mengganti kata sandi. Minimal 5 karakter.'}):'')+`<div class="field full">${check('active','Akun aktif',v.active)}</div><div class="readonly-notice">Akses: ${roleName(v.role)}. Mengganti ID atau kata sandi mengakhiri sesi login akun ini.</div>`;
   if(kind==='pelatih')f=field('nama','Nama pelatih','text',v.nama,{full:true})+field('noHp','Telepon','tel',v.noHp,{required:false})+field('spesialisasi','Spesialisasi','text',v.spesialisasi,{required:false});
@@ -204,6 +204,7 @@ async function submitForm(event){event.preventDefault();if(S.busy)return;S.busy=
   try{const body=formPayload(),kind=S.formKind;
     if(kind==='password'){if(body.password!==body.confirmPassword)throw Error('Pengulangan kata sandi tidak sama.');const d=await request('/auth/password',{method:'POST',body:JSON.stringify(body)});$('editor').close();showLogin();$('loginMessage').textContent=d.pesan;$('password').value='';return;}
     let url='/api/'+kind+(S.edit?'/'+S.edit.id:''),method=S.edit?'PUT':'POST';
+    if(kind==='program'&&$('programPhoto')?.files[0])body.fotoProgram=await photoValue($('programPhoto').files[0]);
     if(kind==='exception'){url='/api/pembayaran/'+S.edit.id+'/pengecualian';method='POST';}
     const d=await request(url,{method,body:JSON.stringify(body)});$('editor').close();if(kind==='akun'&&d.sessionRevoked){showLogin();$('username').value=d.username;$('password').value='';$('loginMessage').textContent='ID akun diperbarui. Silakan masuk kembali.';return;}notice(d.pesan||'Perubahan tersimpan.');try{await load();}catch(e){notice('Data sudah tersimpan, tetapi daftar belum termuat ulang. '+e.message,true);}
   }catch(e){$('formMessage').textContent=e.message;}finally{S.busy=false;$('saveButton').disabled=false;}

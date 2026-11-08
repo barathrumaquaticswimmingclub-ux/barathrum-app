@@ -49,6 +49,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   });
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
+  app.use(['/api/program','/api/prestasi/ocr'],express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
@@ -284,7 +285,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
         if (B.canonical(athlete.kelompok) !== 'Prestasi Class') throw fail(400, 'Catatan waktu hanya untuk atlet Prestasi');
         if (!['Bebas','Punggung','Dada','Kupu-kupu','Ganti'].includes(input.gaya)) throw fail(400, 'Pilih gaya renang');
         out.gaya = input.gaya; out.jarak = Number(input.jarak); out.kolam = Number(input.kolam); out.detik = Number(input.detik);
-        if (![25,50,100,200,400,800,1500].includes(out.jarak) || ![25,50].includes(out.kolam) || !Number.isFinite(out.detik) || out.detik <= 0 || out.detik > 86400) throw fail(400, 'Jarak, panjang kolam, atau waktu tidak valid');
+        if (![25,50,100,200,400,800,1500,2000].includes(out.jarak) || ![25,50].includes(out.kolam) || !Number.isFinite(out.detik) || out.detik <= 0 || out.detik > 86400) throw fail(400, 'Jarak, panjang kolam, atau waktu tidak valid');
+        out.testName = text(input.testName, 'Nama periode tes', false, 150);
         out.event = text(input.event, 'Event/latihan', false, 200); out.catatan = text(input.catatan, 'Catatan', false, 1000); return out;
       }
       out.jadwalId = id(input.jadwalId || old?.jadwalId); const schedule = await record(db, 'jadwal', out.jadwalId, true);
@@ -302,9 +304,13 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     }
     if (kind === 'program') {
       if (!isOwner && user.role !== 'prestasi') throw fail(403, 'Khusus tim Prestasi'); out.judul = text(input.judul, 'Judul', true, 200); out.tanggal = date(input.tanggal);
-      if (!['Program','Event'].includes(input.jenis)) throw fail(400, 'Pilih Program atau Event'); out.jenis = input.jenis; out.detail = text(input.detail, 'Isi program / informasi keberangkatan', true, 10000); out.lokasi = text(input.lokasi, 'Lokasi', false, 300); return out;
+      if (!['Program','Event'].includes(input.jenis)) throw fail(400, 'Pilih Program atau Event'); out.jenis = input.jenis; out.detail = text(input.detail, 'Isi program / informasi keberangkatan', input.jenis==='Event', 10000);
+      for(const k of ['grup','dryland','swimming','evaluasi'])out[k]=text(input[k]??old?.[k],k,false,k==='grup'?150:10000);
+      if(out.jenis==='Program'&&!out.detail&&!out.dryland&&!out.swimming)throw fail(400,'Isi latihan dryland atau swimming');
+      if(input.fotoProgram)out.fotoProgram=require('./profile').photo(input.fotoProgram); out.lokasi = text(input.lokasi, 'Lokasi', false, 300); return out;
     } throw fail(404, 'Bagian tidak ditemukan');
   }
+  require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
     const result = await transaction(async c => {
       const old = await record(c, 'pembayaran', req.params.id, true), alasan = text(req.body.alasan, 'Alasan pengecualian', true, 1000);

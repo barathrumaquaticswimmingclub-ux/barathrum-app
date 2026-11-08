@@ -84,3 +84,26 @@ $('profileForm').onsubmit=async e=>{e.preventDefault();const b=$('saveProfile');
  const file=form.get('foto');if(file?.size){if(file.size>5*1024*1024)throw Error('Foto maksimal 5 MB.');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});body.foto={mime:file.type,base64:data.split(',')[1]};}
  await request('owner/atlet/'+selectedId,body,'PUT');$('profileDialog').close();await refresh();
  }catch(err){$('profileMessage').textContent=err.message;}finally{b.disabled=false;}};
+
+let parentTab='dashboard',reportPool=25;
+const photoDialog=document.createElement('dialog');photoDialog.id='photoViewer';photoDialog.innerHTML='<button id="closePhoto" aria-label="Tutup foto">× Tutup</button><img id="fullPhoto" alt=""><p>Foto anak</p>';document.body.append(photoDialog);
+$('closePhoto').onclick=()=>{photoDialog.close();$('fullPhoto').removeAttribute('src');};photoDialog.addEventListener('close',()=>$('fullPhoto').removeAttribute('src'));
+function openPhoto(image){if(!image?.matches('.child-photo'))return;$('fullPhoto').src=image.src;$('fullPhoto').alt=image.alt;photoDialog.showModal();}
+$('content').addEventListener('click',e=>openPhoto(e.target));
+$('content').addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)&&e.target.matches('.child-photo')){e.preventDefault();openPhoto(e.target);}});
+const renderWithProfile=render;
+render=function(d){
+ renderWithProfile(d);if(!d.profil)return;
+ const img=$('content').querySelector('.child-photo');if(img){img.tabIndex=0;img.setAttribute('role','button');img.setAttribute('aria-label','Lihat foto '+d.profil.nama+' satu layar');img.closest('.initial').removeAttribute('aria-hidden');}
+ if(!d.latihan.prestasi)return;
+ const body=document.createElement('div');body.id='parentDashboard';while($('content').firstChild)body.append($('content').firstChild);$('content').append(body);
+ const nav=document.createElement('nav');nav.className='parent-tabs';nav.setAttribute('aria-label','Laporan anak');nav.innerHTML='<button data-parent-tab="dashboard">Dashboard</button><button data-parent-tab="times">Laporan waktu pribadi</button>';$('content').prepend(nav);
+ const report=document.createElement('section');report.id='parentTimes';report.className='panel';$('content').append(report);
+ const draw=()=>{
+ body.hidden=parentTab!=='dashboard';report.hidden=parentTab!=='times';nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.parentTab===parentTab)));
+ const records=d.catatanwaktu||[];
+ report.innerHTML=`<p class="eyebrow">PRESTASI • LAPORAN PRIBADI</p><h2>Setiap detik, ada kemajuan.</h2><p>Base time adalah hasil pertama yang tercatat. Personal best adalah waktu tercepat pada nomor dan panjang kolam yang sama. Hasil tes terakhir ditampilkan per nomor karena tes dapat berlangsung beberapa hari.</p><label>Panjang kolam <select id="reportPool"><option value="25">25 m</option><option value="50">50 m</option></select></label><p>Format menit:detik.sentidetik. Tanda — berarti belum ada hasil tes.</p><div class="time-scroll" tabindex="0" aria-label="Laporan waktu, geser ke samping"><table class="time-table"><thead><tr><th>Nomor renang</th><th>Base time</th><th>Personal best</th><th>Tes terakhir</th><th>Perubahan</th></tr></thead><tbody>${BRTMTime.report(records,reportPool).map(r=>`<tr><th>${esc(r.label)}</th><td>${BRTMTime.format(r.base?.detik)}<small>${r.base?date(r.base.tanggal):'Belum tes'}</small></td><td>${BRTMTime.format(r.best?.detik)}<small>${r.best?date(r.best.tanggal):'Belum tes'}</small></td><td>${BRTMTime.format(r.last?.detik)}<small>${r.last?date(r.last.tanggal):'Belum tes'}</small></td><td class="${r.delta===null?'':r.delta<0?'faster':r.delta>0?'slower':'same'}">${r.delta===null?'Belum pembanding':r.delta===0?'Tetap':(r.delta<0?'Lebih cepat ':'Lebih lambat ')+Math.abs(r.delta).toFixed(2)+' dtk'}</td></tr>`).join('')}</tbody></table></div><p>Perubahan dibanding hasil tes sebelumnya, pada nomor dan kolam yang sama.</p><details><summary>Riwayat lengkap tes</summary>${records.length?[...records].sort((a,b)=>BRTMTime.order(b,a)).map(x=>`<div class="entry"><strong>${esc(date(x.tanggal))} • ${x.jarak} m ${esc(x.gaya)}</strong><p>${BRTMTime.format(x.detik)} • Kolam ${x.kolam} m${x.testName?' • '+esc(x.testName):''}</p></div>`).join(''):'<p>Pelatih belum mencatat hasil tes.</p>'}</details>`;
+ $('reportPool').value=String(reportPool);$('reportPool').onchange=e=>{reportPool=Number(e.target.value);draw();};
+ };
+ nav.onclick=e=>{const b=e.target.closest('[data-parent-tab]');if(b){parentTab=b.dataset.parentTab;draw();}};draw();
+};

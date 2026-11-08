@@ -24,7 +24,7 @@ function siapkanBRTM() {
       let logo=find('BARATHRUM AQUATIC SWIMMING CLUB');if(!logo)logo=form.addImageItem().setTitle('BARATHRUM AQUATIC SWIMMING CLUB').setImage(UrlFetchApp.fetch(BRTM.base+'/brand/barathrum-logo.png').getBlob().setContentType('image/jpeg')).setWidth(400);
       form.moveItem(logo,0);
       let terms=find('Ketentuan BRTM');if(!terms)terms=form.addSectionHeaderItem().setTitle('Ketentuan BRTM');else terms=terms.asSectionHeaderItem();
-      terms.setHelpText(RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);form.moveItem(terms,1);
+      terms.setHelpText('Baca BRTM Rules Parent Edition (naskah pemeriksaan akhir): '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);form.moveItem(terms,1);
       let agree=find(QUESTIONS.persetujuan);if(!agree)agree=form.addCheckboxItem().setTitle(QUESTIONS.persetujuan);else agree=agree.asCheckboxItem();
       agree.setChoiceValues(['Saya telah membaca dan menyetujui ketentuan BRTM.']).setRequired(true);form.moveItem(agree,2);
       const keys=['nama','namaPanggilan','tanggalLahir','jk','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan','foto'];if(kind==='nonprestasi')keys.push('kelompok');
@@ -48,6 +48,8 @@ function siapkanBRTM() {
       form.getItems().filter(function(i){return i.getTitle()==='Tempat lahir'||kind==='prestasi'&&(i.getTitle()===QUESTIONS.tujuan||i.getTitle()===ALIASES.tujuan);}).forEach(function(i){form.deleteItem(i);});
       props.setProperty('schema_'+kind,RULES.version);
     }
+    const termsNow=form.getItems().find(function(i){return i.getTitle()==='Ketentuan BRTM';});
+    if(termsNow)termsNow.asSectionHeaderItem().setHelpText('Baca BRTM Rules Parent Edition (naskah pemeriksaan akhir): '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);
     if(!ScriptApp.getProjectTriggers().some(function(t){return t.getHandlerFunction()==='kirimBRTM'&&t.getTriggerSourceId()===form.getId();}))ScriptApp.newTrigger('kirimBRTM').forForm(form).onFormSubmit().create();
     postBRTM(kind,{action:'register',formId:form.getId(),formUrl:form.getPublishedUrl()});console.log(kind+': '+form.getPublishedUrl());
   });
@@ -66,7 +68,7 @@ function kirimSatuBRTM(kind,response){
       if(key==='foto'){
         if(String(item.getItem().getType())!=='FILE_UPLOAD')throw new Error('Kolom Foto anak belum disetel menjadi Upload file.');
         const fileId=item.getResponse()[0];if(!fileId)throw new Error('Foto anak belum diunggah');
-        const file=DriveApp.getFileById(fileId);let blob=file.getThumbnail();
+        const file=DriveApp.getFileById(fileId);let blob=file.getSize()<=5*1024*1024?file.getBlob():file.getThumbnail();
         if(!blob){if(file.getSize()>5*1024*1024)throw new Error('Pratinjau foto belum siap; akan dicoba kembali.');blob=file.getBlob();}
         data.foto={mime:blob.getContentType(),base64:Utilities.base64Encode(blob.getBytes())};
       }else data[key]=String(item.getResponse()||'');
