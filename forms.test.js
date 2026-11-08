@@ -1,0 +1,15 @@
+'use strict';
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const props=new Map(),forms=new Map(),triggers=[],posts=[];let failures=false;
+function item(){const out={};for(const n of ['setTitle','setRequired','setHelpText','setValidation','setChoiceValues'])out[n]=()=>out;return out;}
+function form(id){const out={responses:[],getId:()=>id,getPublishedUrl:()=>`https://docs.google.com/forms/d/e/${id}/viewform`,getResponses:since=>out.responses.filter(r=>r.getTimestamp()>since)};for(const n of ['setDescription','setConfirmationMessage','setCollectEmail','setLimitOneResponsePerUser','setPublishingSummary','setAllowResponseEdits'])out[n]=()=>out;for(const n of ['addTextItem','addMultipleChoiceItem','addListItem','addParagraphTextItem'])out[n]=()=>item();return out;}
+const context={console:{log(){}},PropertiesService:{getScriptProperties:()=>({getProperty:k=>props.get(k)||null,setProperty(k,v){props.set(k,v);}})},FormApp:{create(){const id='form_'+forms.size;const f=form(id);forms.set(id,f);return f;},openById:id=>forms.get(id),createTextValidation:()=>({requireTextMatchesPattern:()=>({build:()=>({})})})},ScriptApp:{getProjectTriggers:()=>triggers,newTrigger:handler=>{const t={handler,form:null,getHandlerFunction:()=>handler,getTriggerSourceId:()=>t.form?.getId()};for(const n of ['onFormSubmit','timeBased','everyMinutes'])t[n]=()=>t;t.forForm=f=>{t.form=f;return t;};t.create=()=>triggers.push(t);return t;}},UrlFetchApp:{fetch(url,o){if(failures)throw Error('network down');posts.push({url,body:JSON.parse(o.payload),headers:o.headers});return {getResponseCode:()=>200};}},LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock(){}})}};
+vm.createContext(context);vm.runInContext(fs.readFileSync('scripts/google-forms.gs','utf8').replace('__BRTM_CONFIG__',JSON.stringify({base:'https://brtm.test',keys:{prestasi:'p',nonprestasi:'n'}})),context);
+vm.runInContext('siapkanBRTM();siapkanBRTM();',context);assert.equal(forms.size,2);assert.equal(triggers.length,3);assert.equal(posts.length,4);
+function response(id,time){return {getId:()=>id,getTimestamp:()=>new Date(time),getItemResponses:()=>[{getItem:()=>({getTitle:()=> 'Nama lengkap anak'}),getResponse:()=> 'Contoh'}]};}
+// More than one batch with identical timestamps must drain completely.
+forms.get('form_0').responses=Array.from({length:120},(_,i)=>response('response_'+i,1000));posts.length=0;
+vm.runInContext('ulangKirimBRTM();ulangKirimBRTM();ulangKirimBRTM();ulangKirimBRTM();',context);assert.equal(posts.length,120);assert.equal(new Set(posts.map(x=>x.body.responseId)).size,120);
+forms.get('form_0').responses.push(response('recover',2000));failures=true;assert.throws(()=>vm.runInContext('ulangKirimBRTM()',context),/network down/);failures=false;vm.runInContext('ulangKirimBRTM()',context);assert.equal(posts.at(-1).body.responseId,'recover');
+assert.throws(()=>vm.runInContext('kirimBRTM({})',context),/otomatis/);
+console.log('PASS Google Forms installer/retry simulation: two stable forms, deduplicated triggers, 120 same-time responses, failed-send recovery. Live Google authorization remains required.');

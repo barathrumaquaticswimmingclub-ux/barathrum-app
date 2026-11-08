@@ -1,0 +1,198 @@
+'use strict';
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const B = require('./business');
+const digest = x => crypto.createHash('sha256').update(x).digest('hex');
+const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+const phone = x => String(x || '').replace(/\D/g, '').replace(/^0/, '62');
+const fail = (status, message) => Object.assign(new Error(message), { status });
+const system = { id: null, username: 'google-form' };
+async function initDb(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_parents (id SERIAL PRIMARY KEY, athlete_id INTEGER UNIQUE NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE)`);
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_parent_sessions (token_hash TEXT PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES brtm_parents(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL)`);
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_form_keys (kind TEXT PRIMARY KEY CHECK (kind IN ('prestasi','nonprestasi')), token_hash TEXT NOT NULL, form_id TEXT, form_url TEXT, last_received_at TIMESTAMPTZ)`);
+  await db.query(`CREATE TABLE IF NOT EXISTS brtm_registrations (id SERIAL PRIMARY KEY, kind TEXT NOT NULL, response_id TEXT NOT NULL, payload JSONB NOT NULL, status TEXT NOT NULL, athlete_id INTEGER REFERENCES data_klub(id) ON DELETE SET NULL, note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(kind,response_id))`);
+}
+function mount(app, h) {
+  const { pool, wrap, auth, owner, changed, transaction, rows, record, save, audit, payments, passwordHash, verify, limit, secureCookies } = h;
+  // Parent sessions never authenticate the staff API; the two cookies and tables are separate.
+  const cookie = (res, value, age = 7 * 86400) => res.setHeader('Set-Cookie', `brtm_swim_session=${value}; HttpOnly; SameSite=Strict; Path=/swim; Max-Age=${age}${secureCookies ? '; Secure' : ''}`);
+  const cookieToken = req => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('brtm_swim_session='))?.slice(18);
+  app.use('/swim/api', (req, res, next) => {
+    if (!['GET', 'HEAD'].includes(req.method)) {
+      if (req.get('X-BRTM-Request') !== '1') return next(fail(403, 'Muat ulang halaman'));
+      try { if (req.get('origin') && new URL(req.get('origin')).host !== req.get('host')) return next(fail(403, 'Asal permintaan tidak diizinkan')); } catch { return next(fail(403, 'Asal permintaan tidak valid')); }
+    } next();
+  });
+  const parentAuth = wrap(async (req, res, next) => {
+    const token = cookieToken(req);
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) throw fail(401, 'Silakan masuk ke BRTM SWIM');
+    const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [digest(token)]);
+    if (!r.rows[0]) throw fail(401, 'Silakan masuk ke BRTM SWIM'); req.parent = r.rows[0]; next();
+  });
+  async function provision(db, athlete) {
+    const existing = (await db.query('SELECT id,username,active FROM brtm_parents WHERE athlete_id=$1', [athlete.id])).rows[0];
+    if (existing) return existing;
+    const base = norm(athlete.nama); let username = base;
+    if ((await db.query('SELECT id FROM brtm_parents WHERE username=$1', [username])).rows.length) username = base + ' #' + athlete.id;
+    // The suffix loop also handles a child's literal name already containing a suffix.
+    while ((await db.query('SELECT id FROM brtm_parents WHERE username=$1', [username])).rows.length) username += '-';
+    return (await db.query('INSERT INTO brtm_parents (athlete_id,username,password_hash) VALUES ($1,$2,$3) RETURNING id,username,active', [athlete.id, username, await passwordHash('brtm', 4)])).rows[0];
+  }
+  app.post('/swim/api/login', wrap(async (req, res) => {
+    const username = norm(req.body?.username).slice(0, 200);
+    limit(req, 'swim:' + username, 8); limit(req, 'swim-total', 40);
+    const u = (await pool.query(`SELECT p.* FROM brtm_parents p JOIN data_klub a ON a.id=p.athlete_id WHERE p.username=$1 AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [username])).rows[0];
+    const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
+    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active) throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.');
+    const token = crypto.randomBytes(32).toString('hex');
+    await pool.query('DELETE FROM brtm_parent_sessions WHERE expires_at<NOW()');
+    await pool.query('INSERT INTO brtm_parent_sessions VALUES ($1,$2,$3)', [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
+    cookie(res, token); res.json({ ok: true });
+  }));
+  app.post('/swim/api/logout', wrap(async (req, res) => {
+    const token = cookieToken(req); if (token) await pool.query('DELETE FROM brtm_parent_sessions WHERE token_hash=$1', [digest(token)]);
+    cookie(res, '', 0); res.json({ ok: true });
+  }));
+  app.get('/swim/api/dashboard', parentAuth, wrap(async (req, res) => {
+    const a = await record(pool, 'atlet', req.parent.athlete_id), today = B.today(), month = today.slice(0, 7);
+    const prestasi = B.canonical(a.kelompok) === 'Prestasi Class';
+    const allAthletes = await rows(pool, 'atlet');
+    const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
+    const packs = (await payments()).filter(p => p.atletId ? String(p.atletId) === a.id : uniqueName && norm(p.namaAtlet) === norm(a.nama)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    const paid = packs.filter(p => p.status === 'Lunas').sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
+    const pack = packs.find(p => p.status === 'Lunas' && p.statusMasaBerlaku === 'Aktif') || packs[0];
+    const attendance = (await rows(pool, 'absensi')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    const present = attendance.filter(x => x.status === 'Hadir');
+    const evaluations = (await rows(pool, 'perkembangan')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    const schedules = (await rows(pool, 'jadwal')).filter(x => x.atletIds?.map(String).includes(a.id) && x.tanggal >= today).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
+    const unpaid = packs.filter(p => p.status === 'Belum Lunas');
+    const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
+    // Explicit projection: no contacts, other children, staff notes, or raw financial records.
+    res.json({ today, updatedAt: new Date().toISOString(), profil: { nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status || 'Aktif', tanggalLahir: a.tanggalLahir || '', sekolah: a.sekolah || '' },
+      latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
+      pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
+      jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih })),
+      absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
+      evaluasi: evaluations.map(x => ({ tanggal: x.tanggal, pelatih: x.pelatih, teknik: x.teknik, fisik: x.fisik, attitude: x.attitude, catatan: x.catatan })) });
+  }));
+  app.use('/swim/api', (req, res) => res.status(404).json({ pesan: 'Bagian tidak ditemukan' }));
+  app.get(/^\/swim$/, (req, res) => res.redirect('/swim/'));
+  app.get('/swim/', (req, res) => res.sendFile(path.join(__dirname, 'public/swim/index.html')));
+
+  const admin = [auth, changed, owner];
+  app.get('/api/orangtua', ...admin, wrap(async (req, res) => {
+    const accounts = (await pool.query('SELECT athlete_id,username,active FROM brtm_parents ORDER BY id')).rows;
+    res.json((await rows(pool, 'atlet')).map(a => ({ id: a.id, nama: a.nama, status: a.status, ...(accounts.find(p => String(p.athlete_id) === a.id) || { username: '', active: false }) })));
+  }));
+  app.post('/api/orangtua/siapkan', ...admin, wrap(async (req, res) => {
+    const count = await transaction(async c => {
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); let n = 0;
+      for (const a of await rows(c, 'atlet')) if (a.status !== 'Nonaktif') { await provision(c, a); n++; }
+      await audit(c, req.user, 'siapkan-akun-orangtua', 'akun'); return n;
+    }); res.json({ pesan: `${count} akun atlet aktif siap digunakan. Kata sandi: brtm.` });
+  }));
+  app.put('/api/orangtua/:id', ...admin, wrap(async (req, res) => {
+    if (typeof req.body.active !== 'boolean') throw fail(400, 'Status tidak valid');
+    await transaction(async c => {
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const a = await record(c, 'atlet', req.params.id);
+      await provision(c, a); await c.query('UPDATE brtm_parents SET active=$1 WHERE athlete_id=$2', [req.body.active, a.id]);
+      await c.query('DELETE FROM brtm_parent_sessions WHERE parent_id IN (SELECT id FROM brtm_parents WHERE athlete_id=$1)', [a.id]);
+      await audit(c, req.user, req.body.active ? 'aktifkan-orangtua' : 'nonaktifkan-orangtua', 'atlet', a.id);
+    }); res.json({ pesan: 'Akses orang tua diperbarui' });
+  }));
+  app.get('/api/pendaftaran', ...admin, wrap(async (req, res) => res.json((await pool.query('SELECT * FROM brtm_registrations ORDER BY id DESC')).rows)));
+  app.get('/api/formulir', ...admin, wrap(async (req, res) => res.json((await pool.query('SELECT kind,form_url,last_received_at FROM brtm_form_keys ORDER BY kind')).rows)));
+  app.post('/api/formulir/siapkan', ...admin, wrap(async (req, res) => {
+    const kinds = ['prestasi', 'nonprestasi'], keys = {};
+    // Downloading a replacement explicitly rotates the old credentials.
+    await transaction(async c => {
+      for (const kind of kinds) { keys[kind] = crypto.randomBytes(32).toString('hex'); await c.query('INSERT INTO brtm_form_keys (kind,token_hash) VALUES ($1,$2) ON CONFLICT(kind) DO UPDATE SET token_hash=EXCLUDED.token_hash', [kind, digest(keys[kind])]); }
+      await audit(c, req.user, 'siapkan-integrasi-form');
+    });
+    const base = (secureCookies ? 'https' : req.protocol) + '://' + req.get('host');
+    const script = fs.readFileSync(path.join(__dirname, 'scripts/google-forms.gs'), 'utf8').replace('__BRTM_CONFIG__', JSON.stringify({ base, keys }));
+    res.attachment('BRTM-Google-Forms.gs').type('text/plain').send(script);
+  }));
+  function cleanPayload(input, kind) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Data formulir tidak valid');
+    const out = {};
+    for (const k of ['nama','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','kelompok']) {
+      if (input[k] != null && typeof input[k] !== 'string') throw fail(400, 'Isian tidak valid');
+      out[k] = String(input[k] || '').trim(); if (out[k].length > (k === 'nama' ? 150 : 500)) throw fail(400, 'Isian terlalu panjang');
+    }
+    if (!out.nama || !B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today() || !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nama, tanggal lahir, dan WhatsApp orang tua wajib valid');
+    if (!['Laki-laki','Perempuan'].includes(out.jk)) throw fail(400, 'Jenis kelamin tidak valid');
+    out.kelompok = kind === 'prestasi' ? 'Prestasi Class' : B.canonical(out.kelompok);
+    if (!Object.hasOwn(B.CLASSES, out.kelompok) || kind === 'nonprestasi' && out.kelompok === 'Prestasi Class') throw fail(400, 'Kelas tidak sesuai formulir');
+    return out;
+  }
+  async function applyRegistration(db, registration, target) {
+    let p;
+    try { p = cleanPayload(registration.payload, registration.kind); }
+    catch (e) { if (target === 'new') throw e; p = {}; }
+    let a;
+    if (target === 'new') {
+      a = await save(db, system, 'atlet', { ...p, status: 'Aktif', sumber: 'Google Form' }, null);
+    } else {
+      const old = await record(db, 'atlet', target, true);
+      // Keep existing class, name, status and training/financial history. Fill missing profile fields only.
+      const data = { ...old };
+      for (const k of ['tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan']) if (!data[k] && p[k]) data[k] = p[k];
+      a = await save(db, system, 'atlet', data, old);
+    }
+    await provision(db, a);
+    await db.query("UPDATE brtm_registrations SET status='Tersambung',athlete_id=$1,note=$2 WHERE id=$3", [a.id, target === 'new' ? 'Atlet baru dibuat' : 'Terhubung ke atlet lama; riwayat dipertahankan', registration.id]);
+    return a;
+  }
+  app.post('/integrations/google-forms/:kind', wrap(async (req, res) => {
+    const kind = req.params.kind; if (!['prestasi','nonprestasi'].includes(kind)) throw fail(404, 'Formulir tidak ditemukan');
+    limit(req, 'form-total', 300);
+    const token = String(req.get('authorization') || '').replace(/^Bearer /, '');
+    const key = (await pool.query('SELECT * FROM brtm_form_keys WHERE kind=$1', [kind])).rows[0];
+    if (!/^[a-f0-9]{64}$/.test(token) || !key || !crypto.timingSafeEqual(Buffer.from(digest(token)), Buffer.from(key.token_hash))) throw fail(401, 'Kunci integrasi tidak valid');
+    if (req.body?.action === 'register') {
+      const formId = String(req.body.formId || ''), url = String(req.body.formUrl || '');
+      if (!/^[\w-]{10,200}$/.test(formId) || !/^https:\/\/docs\.google\.com\/forms\/d\/(e\/)?[\w-]+\/(viewform|edit)$/.test(url)) throw fail(400, 'Alamat formulir tidak valid');
+      await pool.query('UPDATE brtm_form_keys SET form_id=$1,form_url=$2 WHERE kind=$3', [formId, url, kind]); return res.json({ ok: true });
+    }
+    const responseId = String(req.body?.responseId || ''); if (!/^[\w-]{1,250}$/.test(responseId)) throw fail(400, 'ID jawaban tidak valid');
+    let data, validationError = '';
+    try { data = cleanPayload(req.body.data, kind); }
+    catch (e) {
+      if (e.status !== 400 || !req.body.data || typeof req.body.data !== 'object' || Array.isArray(req.body.data)) throw e;
+      validationError = e.message; data = {};
+      for (const k of ['nama','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','kelompok']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
+    }
+    const result = await transaction(async c => {
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      const old = (await c.query('SELECT id,status FROM brtm_registrations WHERE kind=$1 AND response_id=$2', [kind, responseId])).rows[0];
+      if (old) return { status: old.status, duplicate: true };
+      const r = (await c.query("INSERT INTO brtm_registrations (kind,response_id,payload,status) VALUES ($1,$2,$3,'Perlu diperiksa') RETURNING *", [kind, responseId, JSON.stringify(data)])).rows[0];
+      if (validationError) {
+        await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2', ['Data belum valid: ' + validationError + '. Perbaiki profil atlet di BRTM, lalu hubungkan ke atlet yang benar.', r.id]);
+        await c.query('UPDATE brtm_form_keys SET last_received_at=NOW() WHERE kind=$1', [kind]);
+        return { status: 'Perlu diperiksa' };
+      }
+      const sameName = (await rows(c, 'atlet')).filter(a => norm(a.nama) === norm(data.nama));
+      const exact = sameName.filter(a => a.tanggalLahir === data.tanggalLahir && phone(a.noHpOrtu) === phone(data.noHpOrtu) && B.canonical(a.kelompok) === data.kelompok && a.status !== 'Nonaktif');
+      if (!sameName.length) await applyRegistration(c, r, 'new');
+      else if (sameName.length === 1 && exact.length === 1) await applyRegistration(c, r, exact[0].id);
+      else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2', ['Nama sudah ada. Owner perlu mencocokkan identitas/kelas sebelum menghubungkan.', r.id]);
+      await c.query('UPDATE brtm_form_keys SET last_received_at=NOW() WHERE kind=$1', [kind]);
+      return { status: !sameName.length || sameName.length === 1 && exact.length === 1 ? 'Tersambung' : 'Perlu diperiksa' };
+    }); res.json({ ok: true, ...result });
+  }));
+  app.post('/api/pendaftaran/:id/hubungkan', ...admin, wrap(async (req, res) => {
+    await transaction(async c => {
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      const r = (await c.query('SELECT * FROM brtm_registrations WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+      if (!r) throw fail(404, 'Pendaftaran tidak ditemukan'); if (r.status !== 'Perlu diperiksa') throw fail(409, 'Pendaftaran sudah diproses');
+      if (req.body.atletId !== 'new' && !/^[1-9]\d{0,14}$/.test(String(req.body.atletId))) throw fail(400, 'Pilih atlet tujuan');
+      const a = await applyRegistration(c, r, req.body.atletId);
+      await audit(c, req.user, 'hubungkan-pendaftaran', 'atlet', a.id, null, { registrationId: r.id });
+    }); res.json({ pesan: 'Data formulir berhasil dihubungkan' });
+  }));
+}
+module.exports = { initDb, mount };

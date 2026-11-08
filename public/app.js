@@ -4,9 +4,9 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;'
 const rupiah = value => 'Rp' + Number(value || 0).toLocaleString('id-ID');
 const displayDate = value => { if(!value)return '—';const d=new Date(value+'T12:00:00+07:00');return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jakarta'}).format(d):String(value); };
 const canonical = value => String(value || '').replace(/^Reguler Class/, 'Regular Class');
-const title = { dashboard:'Ringkasan klub', atlet:'Data atlet', jadwal:'Jadwal latihan', absensi:'Absensi sesi', pembayaran:'SPP & paket', perkembangan:'Perkembangan atlet', catatanwaktu:'Catatan waktu', program:'Program & event', akun:'Akun tim', pelatih:'Direktori pelatih', laporan:'Laporan klub', audit:'Riwayat aktivitas' };
-const icons = { dashboard:'◫', atlet:'♧', jadwal:'▦', absensi:'✓', pembayaran:'↗', perkembangan:'≋', catatanwaktu:'◷', program:'⚑', akun:'◎', pelatih:'♙', laporan:'▤', audit:'↺' };
-const descriptions = { dashboard:'Pantau latihan, atlet, dan aktivitas klub dalam satu tempat.', atlet:'Identitas, kelas, dan perjalanan latihan setiap atlet.', jadwal:'Tentukan sesi, peserta, lokasi, serta pelatih yang bertugas.', absensi:'Catat kehadiran satu kali per atlet pada setiap sesi.', pembayaran:'Tagihan penuh, masa berlaku, dan sisa pertemuan.', perkembangan:'Catatan teknik, fisik, attitude, dan evaluasi sesi.', catatanwaktu:'Catat hasil latihan atau lomba dan pantau personal best.', program:'Program latihan Prestasi dan informasi keberangkatan event.', akun:'Tujuh akun Coach individual dan akses tim Prestasi.', pelatih:'Kontak pelatih yang tersimpan dari aplikasi sebelumnya.', laporan:'Rekap penerimaan, tagihan, kehadiran, dan cadangan data.', audit:'Jejak aktivitas akun dan perubahan data klub.' };
+const title = { dashboard:'Ringkasan klub', atlet:'Data atlet', jadwal:'Jadwal latihan', absensi:'Absensi sesi', pembayaran:'SPP & paket', perkembangan:'Perkembangan atlet', catatanwaktu:'Catatan waktu', program:'Program & event', akun:'Akun tim', pelatih:'Direktori pelatih', laporan:'Laporan klub', audit:'Riwayat aktivitas', orangtua:'Akses orang tua', pendaftaran:'Data formulir', formulir:'Google Form' };
+const icons = { dashboard:'◫', atlet:'♧', jadwal:'▦', absensi:'✓', pembayaran:'↗', perkembangan:'≋', catatanwaktu:'◷', program:'⚑', akun:'◎', pelatih:'♙', laporan:'▤', audit:'↺', orangtua:'◎', pendaftaran:'▤', formulir:'↗' };
+const descriptions = { dashboard:'Pantau latihan, atlet, dan aktivitas klub dalam satu tempat.', atlet:'Identitas, kelas, dan perjalanan latihan setiap atlet.', jadwal:'Tentukan sesi, peserta, lokasi, serta pelatih yang bertugas.', absensi:'Catat kehadiran satu kali per atlet pada setiap sesi.', pembayaran:'Tagihan penuh, masa berlaku, dan sisa pertemuan.', perkembangan:'Catatan teknik, fisik, attitude, dan evaluasi sesi.', catatanwaktu:'Catat hasil latihan atau lomba dan pantau personal best.', program:'Program latihan Prestasi dan informasi keberangkatan event.', akun:'Tujuh akun Coach individual dan akses tim Prestasi.', pelatih:'Kontak pelatih yang tersimpan dari aplikasi sebelumnya.', laporan:'Rekap penerimaan, tagihan, kehadiran, dan cadangan data.', audit:'Jejak aktivitas akun dan perubahan data klub.', orangtua:'Akun anak untuk membuka dashboard BRTM SWIM.', pendaftaran:'Jawaban formulir dan pencocokan atlet lama.', formulir:'Dua formulir yang sama untuk atlet aktif dan peserta baru.' };
 const S = { user:null, config:null, records:{}, section:'dashboard', edit:null, formKind:null, busy:false, viewToken:0 };
 const isOwner = () => S.user?.role === 'owner';
 const roleName = role => ({ owner:'Owner', coach:'Coach', prestasi:'Prestasi' }[role] || role);
@@ -34,7 +34,7 @@ function renderNav() {
 async function load() {
   const uid = S.user?.id; if (!uid) return;
   $('loading').classList.remove('hidden');
-  const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
+  const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua','pendaftaran','formulir'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
   try {
     const results = await Promise.all(kinds.map(async kind => [kind, await request('/api/'+kind)]));
     if (S.user?.id !== uid) return;
@@ -49,7 +49,7 @@ async function start(user) {
   $('dateLabel').textContent = new Intl.DateTimeFormat('id-ID',{ weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Jakarta' }).format(new Date()).toUpperCase();
   S.section = 'dashboard'; $('notice').classList.add('hidden'); renderNav(); await load();
 }
-function canWrite(kind) { return isOwner() ? !['dashboard','laporan','audit'].includes(kind) : S.user?.role==='coach' ? ['absensi','perkembangan'].includes(kind) : ['absensi','perkembangan','catatanwaktu','program'].includes(kind); }
+function canWrite(kind) { return isOwner() ? !['dashboard','laporan','audit','orangtua','pendaftaran','formulir'].includes(kind) : S.user?.role==='coach' ? ['absensi','perkembangan'].includes(kind) : ['absensi','perkembangan','catatanwaktu','program'].includes(kind); }
 function badge(value) { const good=['Lunas','Aktif','Hadir','Bulanan'].includes(value), bad=['Nonaktif','Kedaluwarsa','Habis','Alpa'].includes(value); return `<span class="tag ${good?'good':bad?'bad':'warn'}">${esc(value||'—')}</span>`; }
 function mini(titleText, detail, right = '', bottom='') { return `<div class="mini-row"><div><strong>${esc(titleText)}</strong><small>${esc(detail)}</small></div><div class="right">${right}<br><small>${esc(bottom)}</small></div></div>`; }
 function empty(heading, detail = '') { return `<div class="empty"><strong>${esc(heading)}</strong>${esc(detail)}</div>`; }
@@ -140,6 +140,7 @@ function card(row) {
 function formatTime(v) {const n=Number(v);return n>=60?Math.floor(n/60)+':'+(n%60).toFixed(2).padStart(5,'0'):n.toFixed(2)+' detik';}
 function renderList() {
   const k=S.section;
+  if(['orangtua','pendaftaran','formulir'].includes(k)){renderIntake();return;}
   if(k==='laporan'){renderReports();return;}
   const list=filteredRows();
   const banners={jadwal:'Jadwal dibuat per tanggal. Coach pengganti ditentukan Owner melalui Edit. Memindah jadwal tidak menambah kuota paket.',absensi:'Hanya Hadir yang mengurangi kuota. Paket nonprestasi harus lunas, belum habis, dan berlaku pada tanggal sesi. Prestasi menggunakan SPP bulanan.',pembayaran:'Tarif dan diskon dihitung server. Tidak ada DP/cicilan. Status Belum Lunas berarti tagihan belum dibayar. Masa paket satu bulan; sisa hangus setelah berakhir.',akun:'Coach 1–7 dapat bergantian mengajar atlet yang sama sesuai penugasan jadwal. Ubah nama akun lalu buat kata sandi awal untuk diberikan kepada pelatih.',pelatih:'Data kontak dari aplikasi lama. Penugasan jadwal memakai akun individual pada menu Akun tim.',catatanwaktu:'Personal best dibandingkan untuk atlet, gaya, jarak, dan panjang kolam yang sama.',audit:'Menampilkan 200 aktivitas terbaru. Riwayat lengkap ikut dalam unduhan cadangan.'};

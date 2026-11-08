@@ -18,8 +18,8 @@ function text(value, label, required = true, max = 500) {
 function date(value, label = 'Tanggal') { if (!B.validDate(value)) throw fail(400, `${label} tidak valid`); return value; }
 function id(value) { const v = String(value || ''); if (!/^[1-9]\d{0,14}$/.test(v)) throw fail(400, 'ID tidak valid'); return v; }
 function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change }; }
-async function passwordHash(password) {
-  if (typeof password !== 'string' || password.length < 5 || password.length > 128) throw fail(400, 'Kata sandi harus 5–128 karakter');
+async function passwordHash(password, minimum = 5) {
+  if (typeof password !== 'string' || password.length < minimum || password.length > 128) throw fail(400, 'Kata sandi harus 5–128 karakter');
   const salt = crypto.randomBytes(16).toString('hex');
   return salt + ':' + (await scrypt(password, salt, 64)).toString('hex');
 }
@@ -39,6 +39,7 @@ async function initDb(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS brtm_data_kind ON data_klub (jenis)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS brtm_sessions_expiry ON brtm_sessions (expires_at)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_attendance_unique ON data_klub ((data->>'jadwalId'), (data->>'atletId')) WHERE jenis='absensi' AND data->>'jadwalId' IS NOT NULL AND data->>'atletId' IS NOT NULL`);
+  await require('./swim').initDb(pool);
 }
 function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID } = {}) {
   const app = express();
@@ -142,6 +143,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await transaction(async c=>{await c.query('UPDATE brtm_users SET must_change=TRUE WHERE id=$1',[req.user.id]);await c.query('DELETE FROM brtm_sessions WHERE user_id=$1',[req.user.id]);await audit(c,req.user,'wajib-ganti-kata-sandi');});
     setCookie(res,'',0);res.json({pesan:'Masuk berikutnya wajib mengganti kata sandi.'});
   }));
+  require('./swim').mount(app, { pool, wrap, auth, owner, changed, transaction, rows, record, save, audit, payments, passwordHash, verify, limit, secureCookies });
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
