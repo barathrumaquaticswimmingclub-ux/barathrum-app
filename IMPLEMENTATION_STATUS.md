@@ -1,15 +1,17 @@
-# Pending release — 8 November 2026
+# Release status — 9 November 2026 (WIB)
 
-Local commits 248c9d9 and 9c36605 contain separate /club/ and /swim/ installs/icons, full parent biodata and authenticated private photos, Owner SWIM dashboard/counts/edit/reversible account removal, and the new Forms migration/consent/profile/photo transport.
+Application release d8beec43d6f804e175d20b4589bcb6ed63aa3e1e is now on main and deployed on Railway. The live SWIM manifest, JavaScript and distinct swim-192 icon match tested source. /club/ and /swim/ load successfully. Existing source and data were preserved.
 
-Validation: 119 staff API checks, 81 parent/form checks, 23 Owner SWIM checks, PWA suite, Forms migration/retry mock all pass. Browser QA at http://127.0.0.1:4173/preview/swimowner verified Owner list, counts, child biodata, edit/save. Preview daemon running via sites-preview. Actual production source still unchanged: git push origin main was rejected by automatic approval review; explicit publication approval requested. Do not retry until user approves updating main/Railway.
+Validation: 119 staff API checks, 81 parent/form checks, 23 Owner SWIM checks, PWA suite and Forms migration/retry mock passed on the restored source tree e471d16c512ecc85d6dd3ef961535f6cf461a370. Live Owner login, live form migration and photo sync still need verification.
 
-Live Google Forms: blue custom #003ca6 theme saved to both existing forms. Existing questionnaires/consent/photo are NOT yet migrated. After approved code deployment, download the new private installer from Owner > Google Form (rotates keys); replace code in the SAME Apps Script project, preserving script properties and form IDs. Run siapkanBRTM; new Drive permissions require live review/consent. Then convert Foto anak (bebas) placeholder in EACH Form to required File upload, images, single file. Verify logo, rules, consent, all fields required, and live photo sync. Original responses are snapshotted privately by migration. Do not create replacement forms.
+Google Forms remain pending. Cloud Google account was signed out. Secure password submission reached an optional selfie-enrollment screen; choosing Later returned to signed-out account chooser. A fresh Forms tab also showed Signed out. Manual Google sign-in is required before further form changes. No installer keys have been rotated in this continuation, and no live forms have been changed.
+
+Next: after successful Google login, sign into the existing BRTM Owner account securely, download the current private installer from Owner > Google Form (rotates keys), replace code in the SAME Apps Script project, preserving properties and form IDs, and run siapkanBRTM. The expanded Drive permissions require review. Convert Foto anak (bebas) placeholder in BOTH forms to required File upload, images, one file. Verify logo, terms, required consent/fields and DD-MM-YYYY, then live photo synchronization. Do not create replacement forms or duplicate children. The migration snapshots prior answers privately before removing superseded questions; consider preserving historical questions instead if a separate irreversible-deletion confirmation would be necessary.
 
 Apps Script project: 1OawOAg2YdfI4U2RKwmntImsNwkyg58Mfh9qvh1ynGEhN2qVpqGb27THb
-Prestasi form editor: https://docs.google.com/forms/d/1qI0F3VVyN3p4blI2YsRQq6yOseKPwyhlr_Dv_8YEVs8/edit
-Nonprestasi form editor: https://docs.google.com/forms/d/1Zup98fj8v48JFzw8kLXKB0XUTm9_sxmOTiAFWi9VIVA/edit
-Production: https://barathrum-app-production.up.railway.app/
-Browser retained tabs: 8 Apps Script, 9 authenticated Owner, 14 synthetic SWIM preview, 15 Prestasi editor, 16 Nonprestasi editor. Google login and staff Owner login were successful earlier. Owner SWIM reuses current staff Owner credentials, no new password is embedded. User requests brtm / 898900; verify login after deploy, do not claim password changed.
+Prestasi editor: https://docs.google.com/forms/d/1qI0F3VVyN3p4blI2YsRQq6yOseKPwyhlr_Dv_8YEVs8/edit
+Nonprestasi editor: https://docs.google.com/forms/d/1Zup98fj8v48JFzw8kLXKB0XUTm9_sxmOTiAFWi9VIVA/edit
+Staff: https://barathrum-app-production.up.railway.app/club/
+Parents and SWIM Owner: https://barathrum-app-production.up.railway.app/swim/
 
-User goal: two installs with different icons; branded Forms with mandatory consent; all requested biodata/photo and DD-MM-YYYY birth date; full child photo/biodata in SWIM; Owner active Prestasi/pemula counts and manage every child's dashboard/account. User prefers completion with minimal manual steps.
+User goal: separate installs/icons, branded existing forms with all mandatory biodata/photo and consent, full child profile in SWIM, and Owner active Prestasi/pemula counts with edit/reversible account removal. Use existing Owner credentials; no password has been changed.
