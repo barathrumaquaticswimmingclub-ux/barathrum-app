@@ -11,7 +11,9 @@ Implemented and verified on isolated sample data:
 
 Validation: existing full test suite plus prestasi.test.js; browser sample tests for batch save, program fields, private report, photo viewer and rules. No production child data was created or altered during tests.
 
-Live Google Form descriptions are being updated separately to include the Parent Edition link and registration summary. Check the live descriptions before reporting completion. No new mandatory consent to unverified book sections.
+Release f38aa9f92359fa98bbce2b3e8ab282eabeb4c437 is deployed on Railway. Live staff UI verified: progression table and program photo/OCR controls are present. Both existing Google Form descriptions now include a clickable /rules/parent/ reading link; verified on both public respondent pages. Existing consent wording was preserved. Automatic approval review rejected publishing additional payment/expiry/attendance summaries because exact final wording is unresolved; the broader summary initially entered in Prestasi was removed and replaced by the reading link only. Do not publish the incomplete book as new mandatory consent until the user supplies the final I.1, II.1 and II.2 wording. The public reading page clearly marks the source as under review.
+
+Full suite passed: 119 staff checks, PWA suite, 81 SWIM/form checks, Forms mock, 23 Owner checks and new Prestasi suite. Local OCR printed-image smoke test passed. Browser QA used isolated sample records, then live staff read-only checks; no production tests were saved. OCR handwriting quality and replacement of the previously deployed Apps Script remain unverified.
 
 ---
 Previous release context follows (historical):
