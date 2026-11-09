@@ -40,7 +40,7 @@ async function main(){
   const schedule=(await body(write(owner,'post','/api/jadwal',{nama:'Sesi A',tanggal:today,mulai:'15:00',selesai:'16:00',lokasi:'Kolam A',coachId:staff.id,atletIds:[a.id],jenisKelas:'Private Class'}),201)).data;
   const attendance=(await body(write(owner,'post','/api/absensi',{atletId:a.id,jadwalId:schedule.id,tanggal:today,status:'Hadir'}),201)).data;
   await body(write(owner,'post','/api/perkembangan',{atletId:a.id,jadwalId:schedule.id,tanggal:today,teknik:'Meluncur membaik',fisik:'Stabil',attitude:'Baik',catatan:'Lanjutkan latihan'}),201);
-  d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,3);assert.equal(d.latihan.terpakaiPaket,1);assert.equal(d.pembayaran.terakhirBayar,today);assert.equal(d.jadwal.length,1);assert.equal(d.evaluasi[0].teknik,'Meluncur membaik');checks++;
+  d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,3);assert.equal(d.latihan.terpakaiPaket,1);assert.equal(d.pembayaran.terakhirBayar,today);assert.equal(d.jadwal.length,1);assert.equal(d.evaluasi[0].teknik,'Catatan pelatih untuk Adik Anak Satu: Meluncur membaik');checks++;
   await body(write(owner,'put','/api/absensi/'+attendance.id,{...attendance,status:'Izin'}));
   d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,4);assert.equal(d.latihan.hadirBulanIni,0);checks++;
   await body(write(owner,'put','/api/orangtua/'+a.id,{active:false}));await body(parent.get('/swim/api/dashboard'),401);
@@ -52,7 +52,7 @@ async function main(){
   const script=await expect(write(owner,'post','/api/formulir/siapkan'),200);
   const config=JSON.parse(script.text.match(/const BRTM = (.*);/)[1]);assert(config.keys.prestasi);checks++;
   const send=(kind,payload,token=config.keys[kind])=>anon.post('/integrations/google-forms/'+kind).set('Authorization','Bearer '+token).send(payload);
-  const payload={nama:'Form Baru',tanggalLahir:'2018-02-10',jk:'Laki-laki',noHpOrtu:'081234567899',kelompok:'Group Class',alamat:'Alamat privat'};
+  const payload={foto:{mime:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7V8AAAAASUVORK5CYII='},nama:'Form Baru',tanggalLahir:'2018-02-10',jk:'Laki-laki',noHpOrtu:'081234567899',kelompok:'Group Class',alamat:'Alamat privat'};
   await body(send('nonprestasi',{responseId:'test-1',data:payload},'bad'),401);
   assert.equal((await body(send('nonprestasi',{responseId:'invalid',data:{...payload,kelompok:'Prestasi Class'}}))).status,'Perlu diperiksa');checks++;
   let r=await body(send('nonprestasi',{responseId:'test-1',data:payload}));assert.equal(r.status,'Tersambung');checks++;
@@ -74,7 +74,7 @@ async function main(){
   const revised={...payload,nama:'Form Profil Lengkap',namaPanggilan:'Profil',namaOrtu:'Wali Profil',tanggalLahir:'21-05-2018',sekolah:'SD Contoh',kelasSekolah:'2',tujuan:'Belajar renang',foto:photo,persetujuan:'Saya telah membaca dan menyetujui ketentuan BRTM.',versiKetentuan:'BRTM-2026-11-08'};
   assert.equal((await body(send('nonprestasi',{responseId:'revised-no-consent',data:{...revised,persetujuan:''}}))).status,'Perlu diperiksa');
   assert.equal((await body(send('nonprestasi',{responseId:'revised-valid',data:revised}))).status,'Tersambung');
-  const full=(await body(owner.get('/api/atlet'))).find(x=>x.nama===revised.nama);assert.equal(full.tanggalLahir,'2018-05-21');assert.equal(full.namaPanggilan,'Profil');assert(!full.foto);
+  const full=(await body(owner.get('/api/atlet'))).find(x=>x.nama===revised.nama);assert.equal(full.tanggalLahir,'2018-05-21');assert.equal(full.namaPanggilan,'Profil');assert.equal(full.foto,'/api/atlet/'+full.id+'/foto');
   const fullPhoto=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[full.id])).rows[0];assert.equal(fullPhoto.mime,'image/png');
   await body(write(owner,'post','/api/formulir/siapkan'));await body(send('prestasi',{responseId:'stale',data:payload}),401);
   const nonactive=(await body(owner.get('/api/atlet'))).find(x=>x.id===a.id);await body(write(owner,'put','/api/atlet/'+a.id,{...nonactive,status:'Nonaktif'}));

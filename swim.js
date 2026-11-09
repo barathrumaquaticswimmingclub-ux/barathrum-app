@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const B = require('./business');
 const P = require('./profile');
+const N = require('./notifications');
+const {parentEvaluation}=require('./evaluation');
 const digest = x => crypto.createHash('sha256').update(x).digest('hex');
 const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 const phone = x => String(x || '').replace(/\D/g, '').replace(/^0/, '62');
@@ -76,11 +78,12 @@ function mount(app, h) {
     const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
     const packs = (await payments()).filter(p => p.atletId ? String(p.atletId) === a.id : uniqueName && norm(p.namaAtlet) === norm(a.nama)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const paid = packs.filter(p => p.status === 'Lunas').sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
-    const pack = packs.find(p => p.status === 'Lunas' && p.statusMasaBerlaku === 'Aktif') || packs[0];
+    const pack = packs.find(p => p.statusMasaBerlaku === 'Aktif') || packs[0];
     const attendance = (await rows(pool, 'absensi')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const present = attendance.filter(x => x.status === 'Hadir');
     const evaluations = (await rows(pool, 'perkembangan')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
-    const schedules = (await rows(pool, 'jadwal')).filter(x => x.atletIds?.map(String).includes(a.id) && x.tanggal >= today).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
+    const allSchedules=await rows(pool,'jadwal');
+    const schedules = allSchedules.filter(x => x.atletIds?.map(String).includes(a.id) && x.tanggal >= today).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
     const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
@@ -88,9 +91,9 @@ function mount(app, h) {
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
-      jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih })),
+      jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih, statusSesi:x.statusSesi||'Terjadwal', alasanLibur:x.alasanLibur||'' })),
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
-      evaluasi: evaluations.map(x => ({ tanggal: x.tanggal, pelatih: x.pelatih, teknik: x.teknik, fisik: x.fisik, attitude: x.attitude, catatan: x.catatan })) });
+      evaluasi: evaluations.map(x => parentEvaluation(x,a,allSchedules.find(s=>s.id===x.jadwalId))) });
   }
   const swimOwner = (req,res,next) => req.swimOwner ? next() : next(fail(403,'Hanya Owner BRTM SWIM'));
   async function putPhoto(db,athleteId,value) {
@@ -133,6 +136,26 @@ function mount(app, h) {
     if(!req.swimOwner&&String(req.parent.athlete_id)!==req.params.id)throw fail(403,'Foto tidak dapat diakses');
     const p=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[req.params.id])).rows[0];
     if(!p)return res.sendStatus(404);res.type(p.mime).send(Buffer.from(p.base64,'base64'));
+  }));
+  app.get('/swim/api/notifications',parentAuth,wrap(async(req,res)=>{
+    if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
+    res.json((await pool.query('SELECT id,title,body,created_at FROM brtm_notifications WHERE athlete_id=$1 ORDER BY id DESC LIMIT 50',[req.parent.athlete_id])).rows);
+  }));
+  app.get('/swim/api/push/key',parentAuth,wrap(async(req,res)=>{
+    if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
+    res.json({publicKey:(await pool.query('SELECT public_key FROM brtm_push_keys WHERE id=1')).rows[0].public_key});
+  }));
+  app.post('/swim/api/push/subscribe',parentAuth,wrap(async(req,res)=>{
+    if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
+    const s=req.body.subscription;
+    let url;try{url=new URL(s?.endpoint);}catch{throw fail(400,'Langganan notifikasi tidak valid');}
+    const allowed=url.hostname==='fcm.googleapis.com'||url.hostname==='updates.push.services.mozilla.com'||url.hostname.endsWith('.push.apple.com')||url.hostname==='web.push.apple.com'||url.hostname==='wns2-par02p.notify.windows.com'||url.hostname.endsWith('.notify.windows.com');
+    if(url.protocol!=='https:'||url.port||url.username||url.password||!allowed||!s.keys||!/^[-_a-zA-Z0-9]{16,200}$/.test(s.keys.auth)||!/^[-_a-zA-Z0-9]{50,200}$/.test(s.keys.p256dh))throw fail(400,'Langganan notifikasi tidak valid');
+    await pool.query('INSERT INTO brtm_push_subscriptions(endpoint,parent_id,subscription) VALUES($1,$2,$3) ON CONFLICT(endpoint) DO UPDATE SET parent_id=EXCLUDED.parent_id,subscription=EXCLUDED.subscription',[url.href,req.parent.id,JSON.stringify({endpoint:url.href,keys:s.keys})]);
+    res.json({pesan:'Notifikasi HP diaktifkan'});
+  }));
+  app.post('/swim/api/push/unsubscribe',parentAuth,wrap(async(req,res)=>{
+    if(req.parent)await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1 AND parent_id=$2',[req.body.endpoint,req.parent.id]);res.json({ok:true});
   }));
   app.use('/swim/api', (req, res) => res.status(404).json({ pesan: 'Bagian tidak ditemukan' }));
   app.get(/^\/swim$/, (req, res) => res.redirect('/swim/'));
@@ -188,7 +211,8 @@ function mount(app, h) {
       const required=['namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
       if(required.some(k=>!out[k])||out.persetujuan!=='Saya telah membaca dan menyetujui ketentuan BRTM.'||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');
     }
-    if(input.foto)out.foto=P.photo(input.foto);
+    if(!input.foto)throw fail(400,'Foto anak wajib diunggah (foto bebas)');
+    out.foto=P.photo(input.foto);
     return out;
   }
   async function applyRegistration(db, registration, target) {
@@ -206,7 +230,7 @@ function mount(app, h) {
       for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan']) if (!data[k] && p[k]) data[k] = p[k];
       a = await save(db, system, 'atlet', data, old);
     }
-    if(p.foto && (target==='new'||!(await db.query('SELECT athlete_id FROM brtm_photos WHERE athlete_id=$1',[a.id])).rows.length)) await putPhoto(db,a.id,p.foto);
+    if(p.foto) await putPhoto(db,a.id,p.foto);
     await provision(db, a);
     await db.query("UPDATE brtm_registrations SET status='Tersambung',athlete_id=$1,note=$2 WHERE id=$3", [a.id, target === 'new' ? 'Atlet baru dibuat' : 'Terhubung ke atlet lama; riwayat dipertahankan', registration.id]);
     return a;

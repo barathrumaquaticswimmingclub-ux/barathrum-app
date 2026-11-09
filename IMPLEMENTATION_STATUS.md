@@ -1,3 +1,22 @@
+# Prepared update — 9 November 2026: parent operations
+
+Implemented in a review branch; NOT deployed. Direct main push was blocked by automatic approval review. Request approval before merging/deploying. No production tester reset executed.
+
+- Durable parent inbox and opt-in Web Push for attendance, payment received, due bills/package renewal and holiday sessions. Generic lock-screen push body; details only after parent login. Automatic worker runs every minute; deduplicated events, bounded delivery retries and removal of expired subscriptions. Actual phone delivery requires parent permission and a live device test (not yet done).
+- Owner custom package quota and price (1–100 meetings, integer rupiah, required explanation); current quota usage cannot be reduced below meetings already used.
+- Regular remains 4/8 meetings per one-month rolling package. Only Hadir consumes quota, duplicate attendance rejected and correction restores quota. Recorded unpaid packages can be attended with remaining valid quota; the invoice stays Belum Lunas. This matches the approved rule that unpaid fees do not block training. Owner must record the next package before attendance when no valid package exists.
+- Parent evaluation wording uses recorded schedule time and child nickname/name; original staff observations remain unchanged. Known keywords are expanded deterministically, without inventing diagnoses or actions taken.
+- Shared protected photo endpoint for Owner/assigned coach/Prestasi only. Form intake requires a photo; existing API photo synchronization tested locally. Real Google Form photo sync remains blocked on Google authorization.
+- Reversible tester archive/reset and Owner restore in Reports. Staff accounts, form keys, coaching directory and training programs are retained. Reset is fingerprint-guarded; restore is supported before new athlete/history data exists. Production data was not removed.
+- Juara class filtering tightened for schedule roster and photo access, with server-side non-Prestasi mutation denial.
+- Added peraturan dapat berubah sewaktu-waktu clause to the rules page and form installer. Public page preserves the existing approved summary; historical incomplete source remains in repository without inventing missing clauses.
+
+Validation: npm test passed (119 staff API checks, PWA, 81 SWIM/form checks, Forms retry simulation, 23 Owner checks, Prestasi suite, plus new launch.test.js for custom packages, notifications, mock push delivery, holiday extensions, Juara isolation and reversible reset). Local browser preview could not be reached by the cloud browser; no browser QA of the new app was claimed.
+
+Live Google Forms: both existing forms now have a real required FILE_UPLOAD question Foto anak (bebas), one file, image restriction and free-photo description. Existing answers preserved. New Apps Script photo mapping was prepared but running it requested Google reauthentication on Redmi Note 10 Pro (number 33) and new Drive permission. Preserve working existing code until authorization completes; do not leave triggers requiring unapproved scopes. Existing form metadata migration (nickname, date format and Prestasi history) still needs running after authorization. No replacement forms were created and no form keys were rotated.
+
+---
+
 # Update — 9 November 2026 (WIB): Prestasi and Parent Rules
 
 Implemented and verified on isolated sample data:
