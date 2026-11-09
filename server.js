@@ -41,6 +41,7 @@ async function initDb(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS brtm_sessions_expiry ON brtm_sessions (expires_at)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_attendance_unique ON data_klub ((data->>'jadwalId'), (data->>'atletId')) WHERE jenis='absensi' AND data->>'jadwalId' IS NOT NULL AND data->>'atletId' IS NOT NULL`);
   await require('./swim').initDb(pool);
+  await require('./operations').initDb(pool);
   await N.initDb(pool);
   await require('./tester-reset').initDb(pool);
 }
@@ -51,7 +52,10 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
+  app.use('/swim/api/viewed',express.json({limit:'1mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
+  app.use('/api/prestasi/times',express.json({limit:'1mb'}));
+  app.use('/api/prestasi/attendance',express.json({limit:'1mb'}));
   app.use('/api/program',express.json({limit:'30mb'}));
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
@@ -102,6 +106,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     return { ...r.rows[0].data, id: String(r.rows[0].id) };
   }
   async function save(db, user, kind, data, previous) {
+    if(kind==='program')data=await require('./images').program({...data,grupProgram:data.grupProgram?.map(g=>({...g}))},previous);
     const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id;
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
@@ -219,8 +224,17 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if(!p)return res.sendStatus(404);res.type(p.mime).send(Buffer.from(p.base64,'base64'));
   }));
   app.get('/api/backup', owner, wrap(async (req, res) => {
-    const all = await pool.query('SELECT * FROM data_klub ORDER BY id'); const log = await pool.query('SELECT * FROM brtm_audit ORDER BY id');
-    res.attachment(`BRTM-cadangan-${B.today()}.json`).json({ version: APP_VERSION, dieksporPada: new Date().toISOString(), data: all.rows, audit: log.rows });
+    const snapshot=await transaction(async c=>{
+      await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      const tables={};
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views']){
+        tables[table]=(await c.query('SELECT * FROM '+table)).rows;
+      }
+      tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
+      tables.brtm_users=(await c.query('SELECT id,username,nama,role,active FROM brtm_users')).rows;
+      return tables;
+    });
+    res.attachment(`BRTM-cadangan-${B.today()}.json`).json({version:APP_VERSION,dieksporPada:new Date().toISOString(),data:snapshot.data_klub,audit:snapshot.brtm_audit,tables:snapshot,catatan:'Cadangan data operasional dan foto; kredensial dan sesi tidak disertakan.'});
   }));
   app.get('/api/audit', owner, wrap(async (req, res) => { res.json((await pool.query('SELECT id,username,action,jenis,record_id,created_at FROM brtm_audit ORDER BY id DESC LIMIT 200')).rows); }));
   app.get('/api/:jenis', wrap(async (req, res) => {
@@ -303,16 +317,20 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (['absensi','perkembangan','catatanwaktu'].includes(kind)) {
       const aid = id(input.atletId || old?.atletId), athlete = await record(db, 'atlet', aid), allowed = await accessible(req, db);
       if (allowed && !allowed.has(aid)) throw fail(403, 'Atlet belum ditugaskan kepada akun ini');
-      out.atletId = aid; out.namaAtlet = athlete.nama; out.tanggal = date(input.tanggal || old?.tanggal);
+      out.atletId = aid; out.namaAtlet = athlete.nama; out.tanggal = date(kind==='perkembangan'&&user.role==='prestasi' ? old?.tanggal||B.today() : input.tanggal || old?.tanggal);
       if (out.tanggal > B.today()) throw fail(400, 'Catatan kehadiran/perkembangan/waktu tidak boleh di masa depan');
       if (old && ((old.atletId && old.atletId !== aid) || (old.tanggal && old.tanggal !== out.tanggal))) throw fail(400, 'Atlet dan tanggal catatan tidak dapat diganti');
       if (kind === 'catatanwaktu') {
         if (B.canonical(athlete.kelompok) !== 'Prestasi Class') throw fail(400, 'Catatan waktu hanya untuk atlet Prestasi');
         if (!['Bebas','Punggung','Dada','Kupu-kupu','Ganti'].includes(input.gaya)) throw fail(400, 'Pilih gaya renang');
-        out.gaya = input.gaya; out.jarak = Number(input.jarak); out.kolam = Number(input.kolam); out.detik = Number(input.detik);
+        out.gaya = input.gaya; out.jarak = Number(input.jarak); out.kolam = old?.kolam || 25; out.detik = Number(input.detik);
         if (![25,50,100,200,400,800,1500,2000].includes(out.jarak) || ![25,50].includes(out.kolam) || !Number.isFinite(out.detik) || out.detik <= 0 || out.detik > 86400) throw fail(400, 'Jarak, panjang kolam, atau waktu tidak valid');
         out.testName = text(input.testName, 'Nama periode tes', false, 150);
         out.event = text(input.event, 'Event/latihan', false, 200); out.catatan = text(input.catatan, 'Catatan', false, 1000); return out;
+      }
+      if(kind==='perkembangan' && (user.role==='prestasi'||isOwner&&old) && !old?.jadwalId){
+        if(athlete.status!=='Aktif')throw fail(400,'Pilih atlet aktif');
+        out.coachId=old?.coachId||String(user.id);out.pelatih=old?.pelatih||user.nama;out.catatan=text(input.catatan,'Noted',true,2000);return out;
       }
       out.jadwalId = id(input.jadwalId || old?.jadwalId); const schedule = await record(db, 'jadwal', out.jadwalId, true);
       if(schedule.statusSesi==='Libur')throw fail(400,'Sesi diliburkan; tidak ada pengurangan kuota');
@@ -333,6 +351,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       return require('./program').prepare(input,old);
     } throw fail(404, 'Bagian tidak ditemukan');
   }
+  require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
     const result = await transaction(async c => {

@@ -52,7 +52,7 @@ async function main(){
   const script=await expect(write(owner,'post','/api/formulir/siapkan'),200);
   const config=JSON.parse(script.text.match(/const BRTM = (.*);/)[1]);assert(config.keys.prestasi);checks++;
   const send=(kind,payload,token=config.keys[kind])=>anon.post('/integrations/google-forms/'+kind).set('Authorization','Bearer '+token).send(payload);
-  const payload={foto:{mime:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7V8AAAAASUVORK5CYII='},nama:'Form Baru',tanggalLahir:'2018-02-10',jk:'Laki-laki',noHpOrtu:'081234567899',kelompok:'Group Class',alamat:'Alamat privat'};
+  const payload={foto:{mime:'image/png',base64:require('fs').readFileSync('public/icons/brtm-brand-512.png').toString('base64')},nama:'Form Baru',tanggalLahir:'2018-02-10',jk:'Laki-laki',noHpOrtu:'081234567899',kelompok:'Group Class',alamat:'Alamat privat'};
   await body(send('nonprestasi',{responseId:'test-1',data:payload},'bad'),401);
   assert.equal((await body(send('nonprestasi',{responseId:'invalid',data:{...payload,kelompok:'Prestasi Class'}}))).status,'Perlu diperiksa');checks++;
   let r=await body(send('nonprestasi',{responseId:'test-1',data:payload}));assert.equal(r.status,'Tersambung');checks++;
@@ -70,12 +70,12 @@ async function main(){
   await body(send('prestasi',{action:'register',formId:'test_form_id_123',formUrl:'https://docs.google.com/forms/d/e/test_form_id_123/viewform'}));
   assert.equal((await body(owner.get('/api/formulir'))).find(x=>x.kind==='prestasi').form_url,'https://docs.google.com/forms/d/e/test_form_id_123/viewform');checks++;
   await body(send('prestasi',{action:'register',formId:'test_form_id_123',formUrl:'https://evil.test/viewform'}),400);
-  const photo={mime:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7V8AAAAASUVORK5CYII='};
+  const photo={mime:'image/png',base64:require('fs').readFileSync('public/icons/brtm-brand-512.png').toString('base64')};
   const revised={...payload,nama:'Form Profil Lengkap',namaPanggilan:'Profil',namaOrtu:'Wali Profil',tanggalLahir:'21-05-2018',sekolah:'SD Contoh',kelasSekolah:'2',tujuan:'Belajar renang',foto:photo,persetujuan:'Saya telah membaca dan menyetujui ketentuan BRTM.',versiKetentuan:'BRTM-2026-11-08'};
   assert.equal((await body(send('nonprestasi',{responseId:'revised-no-consent',data:{...revised,persetujuan:''}}))).status,'Perlu diperiksa');
   assert.equal((await body(send('nonprestasi',{responseId:'revised-valid',data:revised}))).status,'Tersambung');
   const full=(await body(owner.get('/api/atlet'))).find(x=>x.nama===revised.nama);assert.equal(full.tanggalLahir,'2018-05-21');assert.equal(full.namaPanggilan,'Profil');assert.equal(full.foto,'/api/atlet/'+full.id+'/foto');
-  const fullPhoto=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[full.id])).rows[0];assert.equal(fullPhoto.mime,'image/png');
+  const fullPhoto=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[full.id])).rows[0];assert.equal(fullPhoto.mime,'image/webp');
   await body(write(owner,'post','/api/formulir/siapkan'));await body(send('prestasi',{responseId:'stale',data:payload}),401);
   const nonactive=(await body(owner.get('/api/atlet'))).find(x=>x.id===a.id);await body(write(owner,'put','/api/atlet/'+a.id,{...nonactive,status:'Nonaktif'}));
   await body(write(parent,'post','/swim/api/login',{username:account.username,password:'brtm'}),401);

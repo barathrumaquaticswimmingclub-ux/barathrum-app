@@ -8,7 +8,7 @@ function mount(app,{wrap,transaction,validate,save,record,rows,limit}){
  const permitted=(req,res,next)=>['owner','prestasi'].includes(req.user.role)?next():next(fail(403,'Khusus tim Prestasi'));
  app.post('/api/prestasi/times',permitted,wrap(async(req,res)=>{
   const {entries,batchId}=req.body;
-  if(!Array.isArray(entries)||!entries.length||entries.length>17||!/^[-\w]{10,80}$/.test(batchId||''))throw fail(400,'Isi minimal satu hasil tes');
+  if(!Array.isArray(entries)||!entries.length||entries.length>2000||!/^[-\w]{10,80}$/.test(batchId||''))throw fail(400,'Isi minimal satu hasil tes');
   const result=await transaction(async c=>{
    await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
    const all=await rows(c,'catatanwaktu');

@@ -11,7 +11,9 @@ function prepare(input,old){
  out.judul=old?.judul||`${out.jenis} Prestasi · ${out.tanggal}`;
  out.detail=words(input.detail,'Detail event');if(out.jenis==='Event'&&!out.detail)throw fail('Isi detail event');
  for(const k of ['dryland','evaluasi','swimming','grup'])out[k]=words(input[k]??old?.[k],k,k==='grup'?150:10000);
- out.lokasi=words(input.lokasi,'Lokasi',300);
+ out.sesi=input.sesi||old?.sesi||'Sore';
+ if(!['Pagi','Sore'].includes(out.sesi))throw fail('Pilih sesi Pagi atau Sore');
+ out.lokasi=out.jenis==='Program'?(out.sesi==='Pagi'?'Kolam Kalitaman':'Kolam Renang Pondok Selfie'):words(input.lokasi,'Lokasi',300);
  if(Object.hasOwn(input,'grupProgram')){
   if(!Array.isArray(input.grupProgram)||input.grupProgram.length>4)throw fail('Maksimal empat grup program');
   const previous=groups(old||{}),seen=new Set();

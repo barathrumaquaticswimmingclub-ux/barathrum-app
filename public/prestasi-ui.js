@@ -6,9 +6,9 @@ renderList=function(){
  if(S.section!=='catatanwaktu')return;
  const athletes=(S.records.atlet||[]).filter(a=>a.kelompok==='Prestasi Class');
  if(!athletes.some(a=>a.id===timeAthlete))timeAthlete=athletes[0]?.id||'';
- $('sectionSummary').innerHTML=`<div class="panel"><h3>Progression • Catatan waktu</h3><p>Isi hasil sesuai tanggal tes, termasuk tes yang berlangsung beberapa hari. Kolam 25 m dan 50 m dilaporkan terpisah.</p><div class="time-filters"><label>Atlet<select id="timeAthlete">${athletes.map(a=>`<option value="${a.id}"${a.id===timeAthlete?' selected':''}>${esc(a.nama)}</option>`).join('')}</select></label><label>Panjang kolam<select id="timePool"><option value="25">25 m</option><option value="50"${timePool==='50'?' selected':''}>50 m</option></select></label></div>${canWrite('catatanwaktu')?'<button type="button" id="bulkTimes" class="primary">Isi tabel tes</button>':''}<div id="progressionTable"></div></div>`;
+ $('sectionSummary').innerHTML=`<div class="panel"><h3>Progression • Catatan waktu</h3><p>Isi hasil sesuai tanggal tes, termasuk tes yang berlangsung beberapa hari. Pencatatan baru memakai kolam 25 m.</p><div class="time-filters"><label>Atlet<select id="timeAthlete">${athletes.map(a=>`<option value="${a.id}"${a.id===timeAthlete?' selected':''}>${esc(a.nama)}</option>`).join('')}</select></label><label>Panjang kolam<select id="timePool"><option value="25">25 m</option></select></label></div>${canWrite('catatanwaktu')?'<button type="button" id="bulkTimes" class="primary">Isi tabel tes</button>':''}<div id="progressionTable"></div></div>`;
  $('timeAthlete').onchange=e=>{timeAthlete=e.target.value;drawTimeTable();};$('timePool').value=timePool;$('timePool').onchange=e=>{timePool=e.target.value;drawTimeTable();};
- if($('bulkTimes'))$('bulkTimes').onclick=openTimeTable;
+ if($('bulkTimes'))$('bulkTimes').onclick=()=>S.user.role==='prestasi'?openTeamEntry('catatanwaktu'):openTimeTable();
  drawTimeTable();
 };
 function drawTimeTable(){
@@ -36,12 +36,14 @@ const oldOpenForm=openForm;
 let programOcrBusy=0;
 openForm=function(kind,row){oldOpenForm(kind,row);if(kind!=='program'||!canWrite(kind))return;
  const v=row||{},groups=v.grupProgram||[{nomor:1,swimming:v.swimming||'',adaFoto:!!v.fotoProgram}];
- $('formFields').insertAdjacentHTML('beforeend',field('dryland','Dryland • latihan darat (ketik langsung)','textarea',v.dryland,{required:false,full:true,max:10000})+'<div class="field full"><h3>Swimming • program per grup</h3><p>Unggah foto whiteboard pada grup yang sesuai. Tersedia empat grup, satu foto per grup (maksimal 5 MB per foto). Isi grup yang digunakan saja.</p></div>'+[1,2,3,4].map(n=>{
+ $('formFields').insertAdjacentHTML('beforeend',field('sesi','Sesi latihan',['Sore','Pagi'],v.sesi||'Sore',{help:'Sore: Pondok Selfie. Pagi: Kalitaman. Pilihan pagi tidak membuat jadwal rutin baru.'})+field('dryland','Dryland • latihan darat (ketik langsung)','textarea',v.dryland,{required:false,full:true,max:10000})+'<div class="field full"><h3>Swimming • program per grup</h3><p>Unggah foto whiteboard pada grup yang sesuai. Tersedia empat grup, satu foto per grup (maksimal 5 MB per foto). Isi grup yang digunakan saja.</p></div>'+[1,2,3,4].map(n=>{
   const g=groups.find(g=>g.nomor===n)||{};
   return `<section class="field full program-group-editor"><h3>Grup ${n}</h3>${field('swimming_'+n,'Swimming Grup '+n,'textarea',g.swimming,{required:false,max:10000})}<label for="programPhoto_${n}">Foto program Grup ${n}</label><input id="programPhoto_${n}" type="file" accept="image/jpeg,image/png,image/webp">${g.adaFoto?`<a href="/api/prestasi/program/${v.id}/photo/${n}" target="_blank" rel="noopener">Lihat foto tersimpan</a>${check('removePhoto_'+n,'Hapus foto Grup '+n,false)}`:''}<button type="button" class="secondary" id="readProgramPhoto_${n}">Baca foto ke Swimming Grup ${n}</button><p id="ocrStatus_${n}" role="status">Hasil baca foto hanya masuk ke Swimming grup ini. Periksa kembali tulisan, jarak dan interval.</p></section>`;
  }).join('')+field('evaluasi','Evaluasi program','textarea',v.evaluasi,{required:false,full:true,max:10000}));
+ const syncLocation=()=>{if($('f_jenis').value==='Program'){$('f_lokasi').value=$('f_sesi').value==='Pagi'?'Kolam Kalitaman':'Kolam Renang Pondok Selfie';$('f_lokasi').readOnly=true;}else $('f_lokasi').readOnly=false;};
+ $('f_sesi').onchange=syncLocation;syncLocation();
  $('f_detail').required=$('f_jenis').value==='Event';
- $('f_jenis').onchange=()=>$('f_detail').required=$('f_jenis').value==='Event';
+ $('f_jenis').onchange=()=>{$('f_detail').required=$('f_jenis').value==='Event';syncLocation();};
  for(const n of [1,2,3,4])$('readProgramPhoto_'+n).onclick=()=>readProgramPhoto(n);
  const label=$('programDate');
  if(row)label.textContent=displayDate(v.tanggal)+' · tanggal pencatatan asli';
