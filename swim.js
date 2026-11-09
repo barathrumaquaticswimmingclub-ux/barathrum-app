@@ -153,7 +153,7 @@ function mount(app, h) {
   }));
   app.get('/swim/api/notifications',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
-    res.json((await pool.query('SELECT id,title,body,created_at FROM brtm_notifications WHERE athlete_id=$1 ORDER BY id DESC LIMIT 50',[req.parent.athlete_id])).rows);
+    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id])).rows);
   }));
   app.get('/swim/api/push/key',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');

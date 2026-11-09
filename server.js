@@ -57,6 +57,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
   app.use('/api/prestasi/times',express.json({limit:'1mb'}));
   app.use('/api/prestasi/attendance',express.json({limit:'1mb'}));
+  app.use('/api/community/announcements',express.json({limit:'8mb'}));
   app.use('/api/program',express.json({limit:'30mb'}));
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
@@ -229,7 +230,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications']){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications']){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;

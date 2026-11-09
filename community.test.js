@@ -52,7 +52,33 @@ async function main(){
  const legacy=(await pool.query("INSERT INTO data_klub(jenis,data,dibuat_pada) VALUES('atlet',$1,'2025-06-01') RETURNING id",[JSON.stringify({nama:'Atlet Lama',status:'Nonaktif',kelompok:'Private Class'})])).rows[0];
  await C.initDb(pool);const history=await send(owner,'get','/api/community/members?year=2025');assert.equal(history.throughYear,1);assert.equal(history.newInYear,1);assert.equal(history.members.find(m=>m.athlete_id===legacy.id).member_id,C.memberId(legacy.id));
  await pool.query("INSERT INTO data_klub(jenis,data) VALUES('absensi',$1),('absensi',$1)",[JSON.stringify({atletId:a.id,status:'Hadir',tanggal:'2025-05-01'})]);assert.equal((await send(owner,'get','/api/community/members?year=2025')).trainedInYear,1);
- const backup=await send(owner,'get','/api/backup');for(const t of ['brtm_members','brtm_feedback','brtm_feedback_replies','brtm_announcements'])assert(backup.tables[t].length);
+ // Multiple speed-test dates are sorted/deduplicated, with weekdays derived from the dates.
+ const speed={requestId:'speed-test-multiple-001',kind:'speed-test',className:'Prestasi Class',dates:[B.addDays(B.today(),4),B.today(),B.addDays(B.today(),2),B.today()],title:'Jadwal speed test',body:'Mohon mempersiapkan atlet untuk tes.'};
+ const speedOut=await send(owner,'post','/api/community/announcements',speed,201);assert.equal(speedOut.dates.length,3);assert.equal(speedOut.dates[0],B.today());assert.equal(speedOut.recipient_count,2);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-wrong-class',className:'Semua kelas'},400);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-past-dates',dates:['2020-01-01']},400);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-invalid-date',dates:['2027-02-30']},400);
+ const png=await require('sharp')({create:{width:1200,height:800,channels:3,background:'blue'}}).png().toBuffer();
+ const promo={requestId:'promotion-photo-test-001',kind:'selamat',className:'Prestasi Class',dates:['2026-01-01'],title:'Selamat kepada atlet BRTM',body:'Selamat atas Juara 1 nomor 50 m gaya bebas pada event contoh.',photo:{mime:'image/png',base64:png.toString('base64')}};
+ const promoOut=await send(owner,'post','/api/community/announcements',promo,201);assert.equal((await send(owner,'post','/api/community/announcements',promo,201)).id,promoOut.id);
+ await send(owner,'post','/api/community/announcements',{...promo,photo:null},409);
+ const inbox=await send(parent,'get','/swim/api/notifications');const photoNotice=inbox.find(n=>n.photo_id===promoOut.id);assert(photoNotice);assert.match(inbox.find(n=>n.title===speed.title).body,new RegExp(new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(B.today()+'T12:00:00+07:00'))));
+ let photoResponse=await parent.get('/swim/api/announcements/'+promoOut.id+'/photo');assert.equal(photoResponse.status,200);assert.match(photoResponse.headers['content-type'],/image\/webp/);assert.equal((await require('sharp')(photoResponse.body).metadata()).width,1000);
+ assert.equal((await request(app).get('/swim/api/announcements/'+promoOut.id+'/photo')).status,401);
+ const pemula=request.agent(app);await send(pemula,'post','/swim/api/login',{username:'Pemula',password:'brtm'});assert.equal((await pemula.get('/swim/api/announcements/'+promoOut.id+'/photo')).status,404);
+ assert.equal((await coach.get('/api/community/announcements/'+promoOut.id+'/photo')).status,403);
+ assert.equal((await owner.get('/api/community/announcements/'+promoOut.id+'/photo')).status,200);
+ const pushed=[];await N.deliver(pool,async(s,payload)=>pushed.push(JSON.parse(payload)));assert(pushed.some(p=>p.image==='/swim/api/announcements/'+promoOut.id+'/photo'));assert(pushed.every(p=>Buffer.byteLength(JSON.stringify(p))<4000));
+ const allOut=await send(owner,'post','/api/community/announcements',{...promo,requestId:'promotion-all-class-test',className:'Semua kelas'},201);assert.equal(allOut.recipient_count,3);assert((await send(pemula,'get','/swim/api/notifications')).some(n=>n.photo_id===allOut.id));
+ await send(owner,'post','/api/community/announcements',{...promo,requestId:'promotion-broken-photo',photo:{mime:'image/png',base64:Buffer.from('not an image').toString('base64')}},400);
+ assert((await send(owner,'get','/api/community/announcements')).find(n=>n.id===promoOut.id).has_photo);
+ // Worker fetches photos using authentication; an unavailable image still delivers the text.
+ const vm=require('node:vm'),fs=require('node:fs');let listener,notice;
+ const worker={self:{addEventListener(name,fn){if(name==='push')listener=fn;},registration:{async showNotification(title,options){notice=options;}}},fetch:async()=>({ok:true,headers:{get:()=> 'image/webp'},arrayBuffer:async()=>png.buffer.slice(png.byteOffset,png.byteOffset+png.byteLength)}),Uint8Array,AbortSignal,btoa:s=>Buffer.from(s,'binary').toString('base64')};
+ vm.createContext(worker);vm.runInContext(fs.readFileSync('public/swim/sw.js','utf8'),worker);
+ let pending;listener({data:{json:()=>({body:'Selamat juara',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.match(notice.image,/^data:image\/webp;base64,/);
+ worker.fetch=async()=>{throw Error('offline');};listener({data:{json:()=>({body:'Pesan tetap tampil',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.equal(notice.body,'Pesan tetap tampil');assert(!notice.image);
+ const backup=await send(owner,'get','/api/backup');for(const t of ['brtm_members','brtm_feedback','brtm_feedback_replies','brtm_announcements','brtm_announcement_photos'])assert(backup.tables[t].length);
  await db.close();console.log('PASS community: permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching and backups.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});

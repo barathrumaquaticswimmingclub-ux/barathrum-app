@@ -111,7 +111,7 @@ render=function(d){
 let pushChecked=false;
 async function refreshNotifications(){
  $('notificationPanel').hidden=ownerMode;if(ownerMode)return;
- try{const list=await request('notifications');$('notificationList').innerHTML=list.slice(0,20).map(n=>`<article class="entry"><strong>${esc(n.title)}</strong><p>${esc(n.body)}</p><small>${esc(new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(n.created_at)))} WIB</small></article>`).join('')||'<p class="subtle">Belum ada kabar terbaru.</p>';
+ try{const list=await request('notifications');$('notificationList').innerHTML=list.slice(0,20).map(n=>`<article class="entry"><strong>${esc(n.title)}</strong><p class="announcement-body">${esc(n.body)}</p>${n.photo_id?`<a href="/swim/api/announcements/${n.photo_id}/photo" target="_blank" rel="noopener"><img class="announcement-image" src="/swim/api/announcements/${n.photo_id}/photo" alt="Foto pengumuman ${esc(n.title)}" loading="lazy"></a>`:''}<small>${esc(new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(n.created_at)))} WIB</small></article>`).join('')||'<p class="subtle">Belum ada kabar terbaru.</p>';
  if(!pushChecked&&'Notification' in window&&Notification.permission==='granted'){pushChecked=true;await registerPush(false);}
  }catch{$('pushMessage').textContent='Kabar belum dapat dimuat. Coba perbarui data.';}
 }

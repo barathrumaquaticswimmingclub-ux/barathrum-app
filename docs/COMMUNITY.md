@@ -10,6 +10,16 @@ Notifikasi HP memerlukan dukungan browser, izin orang tua, dan langganan perangk
 
 Pengumuman bersifat informasi. Pencatatan Libur dan penambahan masa berlaku paket tetap melalui Jadwal latihan, menggunakan aturan yang sudah ada. Satu pengumuman Prestasi tidak otomatis mengubah jadwal sesi lain.
 
+## Speed test, kabar lomba, dan foto
+
+Pilihan jenis pengumuman mencakup Speed test Prestasi, Mohon doa restu, Hasil lomba & terima kasih, Ucapan selamat, Libur latihan, serta Informasi/promosi lainnya. Speed test selalu ditujukan ke Prestasi Class. Jenis lain dapat ditujukan ke satu kelas atau Semua kelas. Pengumuman memuat 1–12 tanggal kegiatan; tanggal diurutkan dan tanggal ganda digabung. Nama hari berasal dari tanggal dalam zona Asia/Jakarta. Speed test dan libur harus memakai tanggal hari ini/mendatang. Hasil lomba dapat mencantumkan tanggal event yang sudah berlalu.
+
+Owner dapat mengisi nama atlet, nama event, raihan juara/medali, serta nomor lomba lalu menekan Susun contoh pesan. Judul dan pesan tetap dapat diedit. Foto/poster opsional menerima JPG, PNG, GIF, atau WebP hingga 5 MB. Server memvalidasi isi gambar, memutar sesuai orientasi, mengecilkan maksimal 1000 piksel, dan menyimpan WebP. Foto tidak dipublikasikan melalui URL umum: hanya Owner dan orang tua yang menerima pengumuman dapat mengaksesnya. Foto masuk cadangan data Owner.
+
+Sebelum mengirim, Owner wajib membuka pratinjau tanggal, penerima, teks, dan foto. Setiap perubahan membatalkan pratinjau sebelumnya. Tombol Kirim notifikasi sekarang mengirim pada saat ditekan; tanggal kegiatan bukan jadwal otomatis pengiriman/pengingat. Pengumuman speed test tidak otomatis membuat program tes atau mengisi catatan waktu.
+
+Di BRTM SWIM, kabar tampil dengan foto yang dapat dibuka satu layar melalui tautan gambar. Push memuat ringkasan teks dan rujukan gambar kecil; foto lengkap tidak dimasukkan ke payload push. Service worker mengambil foto melalui sesi orang tua dan mencoba menampilkannya pada notifikasi yang mendukung gambar. Jika foto gagal dimuat atau perangkat menolak gambar, notifikasi teks tetap ditampilkan. Teks lengkap dan foto tetap tersedia di dashboard. Penerimaan push dan tampilan gambar pada perangkat nyata masih perlu diuji.
+
 ## ID dan rekap anggota
 
 ID publik `BRTM-000123` berasal dari ID atlet yang sudah ada. Tidak ada penggantian foreign key. Nomor tidak menandakan total anggota dan dapat melompat. Nama, kelas, serta status dapat berubah tanpa mengganti ID. Saat anak bergabung kembali, aktifkan profil lama melalui Owner; jangan membuat profil kedua untuk anak yang sama.
@@ -28,6 +38,6 @@ API menyimpan hingga 100 masukan terbaru per tampilan. Tidak ada penghapusan mas
 
 ## Validasi dan batas pemeriksaan
 
-`npm test` menjalankan pemeriksaan yang ada beserta `community.test.js`: isolasi peran dan anak, pengumuman per kelas, idempotensi, ID permanen saat aktivasi ulang, migrasi profil lama, rekap tahunan, tanggapan, status baca, antrean push, pergantian akun pada perangkat, dan isi cadangan. Pengiriman push diuji menggunakan pengirim tiruan; penerimaan oleh HP nyata harus diuji pada lingkungan percobaan dengan izin perangkat. Pemeriksaan browser visual otomatis belum dapat dijalankan dalam lingkungan ini karena pembatasan proses Chromium.
+`npm test` menjalankan pemeriksaan yang ada beserta `community.test.js`: isolasi peran dan anak, pengumuman per kelas, idempotensi, ID permanen saat aktivasi ulang, migrasi profil lama, rekap tahunan, tanggapan, status baca, antrean push, pergantian akun pada perangkat, dan isi cadangan. Tambahan uji mencakup beberapa tanggal speed test, penentuan hari, pembatasan kelas, tanggal lampau untuk hasil lomba, kompresi foto, foto terlindungi dari orang tua kelas lain, pengiriman semua kelas, payload push bergambar, serta fallback service worker saat foto tidak dapat diambil. Pengiriman push diuji menggunakan pengirim tiruan; penerimaan oleh HP nyata harus diuji pada lingkungan percobaan dengan izin perangkat. Pemeriksaan browser visual otomatis belum dapat dijalankan dalam lingkungan ini karena pembatasan proses Chromium.
 
 Perubahan disiapkan pada branch terpisah. Jangan menganggap fitur telah aktif pada aplikasi produksi hanya karena pull request tersedia.
