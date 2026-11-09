@@ -42,20 +42,20 @@ async function reminders(pool, packs) {
 }
 async function deliver(pool, sender = webpush.sendNotification) {
   const key=(await pool.query('SELECT * FROM brtm_push_keys WHERE id=1')).rows[0];
-  const jobs=(await pool.query(`SELECT j.id,j.attempts,j.endpoint,s.subscription FROM brtm_push_jobs j JOIN brtm_push_subscriptions s ON s.endpoint=j.endpoint JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE j.sent_at IS NULL AND j.attempts<5 AND j.next_attempt<=NOW() AND p.active=TRUE AND p.deleted=FALSE AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif' ORDER BY j.id LIMIT 50`)).rows;
+  const jobs=(await pool.query(`SELECT j.id,j.attempts,j.endpoint,s.subscription,n.event_key,n.title,n.body,photo.announcement_id AS photo_id FROM brtm_push_jobs j JOIN brtm_notifications n ON n.id=j.notification_id LEFT JOIN brtm_announcement_photos photo ON n.event_key='pengumuman:'||photo.announcement_id::text JOIN brtm_push_subscriptions s ON s.endpoint=j.endpoint JOIN brtm_parents p ON p.id=s.parent_id AND p.athlete_id=n.athlete_id JOIN data_klub a ON a.id=p.athlete_id WHERE j.sent_at IS NULL AND j.attempts<5 AND j.next_attempt<=NOW() AND p.active=TRUE AND p.deleted=FALSE AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif' ORDER BY j.id LIMIT 50`)).rows;
   for(const j of jobs) {
     // Claim durably before network IO; recover after a crash without concurrent duplicate sends.
     const claim=await pool.query('UPDATE brtm_push_jobs SET attempts=attempts+1,next_attempt=NOW()+INTERVAL \'5 minutes\' WHERE id=$1 AND next_attempt<=NOW() RETURNING id',[j.id]);
     if(!claim.rows.length)continue;
     try {
-      await sender(j.subscription,JSON.stringify({title:'BRTM SWIM',body:'Ada kabar terbaru dari BRTM. Buka aplikasi untuk melihat informasi anak.',tag:'brtm-'+j.id,url:'/swim/'}),{TTL:3600,timeout:15000,vapidDetails:{subject:'https://barathrum-app-production.up.railway.app',publicKey:key.public_key,privateKey:key.private_key}});
+      await sender(j.subscription,JSON.stringify({title:'BRTM SWIM',body:j.event_key.startsWith('pengumuman:')?[...j.title+' · '+j.body].slice(0,550).join(''):'Ada kabar terbaru dari BRTM. Buka aplikasi untuk melihat informasi anak.',image:j.photo_id?'/swim/api/announcements/'+j.photo_id+'/photo':undefined,tag:'brtm-'+j.id,url:'/swim/'}),{TTL:3600,timeout:15000,vapidDetails:{subject:'https://barathrum-app-production.up.railway.app',publicKey:key.public_key,privateKey:key.private_key}});
       await pool.query('UPDATE brtm_push_jobs SET sent_at=NOW() WHERE id=$1',[j.id]);
     } catch(e) { if([404,410].includes(e.statusCode))await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1',[j.endpoint]); }
   }
 }
 function startWorker(pool,payments) {
   let running=false;
-  async function tick(){if(running)return;running=true;try{await reminders(pool,await payments());await deliver(pool);}catch(e){console.error('BRTM notification worker:',e.code||e.name);}finally{running=false;}}
+  async function tick(){if(running)return;running=true;try{await reminders(pool,await payments());await deliver(pool);await require('./community').deliver(pool);}catch(e){console.error('BRTM notification worker:',e.code||e.name);}finally{running=false;}}
   tick(); const timer=setInterval(tick,60000);timer.unref();return ()=>clearInterval(timer);
 }
 module.exports={initDb,enqueue,afterSave,reminders,deliver,startWorker};

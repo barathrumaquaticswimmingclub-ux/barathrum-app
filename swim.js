@@ -39,6 +39,7 @@ function mount(app, h) {
     const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND p.deleted=FALSE AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [digest(token)]);
     if (!r.rows[0]) throw fail(401, 'Silakan masuk ke BRTM SWIM'); req.parent = r.rows[0]; next();
   });
+  require('./community').mountParent(app,{pool,wrap,parentAuth,transaction,rows,audit,limit});
   async function provision(db, athlete) {
     const existing = (await db.query('SELECT id,username,active FROM brtm_parents WHERE athlete_id=$1', [athlete.id])).rows[0];
     if (existing) return existing;
@@ -87,7 +88,7 @@ function mount(app, h) {
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
     const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
+    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, memberId:require('./community').memberId(a.id), ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
@@ -152,7 +153,7 @@ function mount(app, h) {
   }));
   app.get('/swim/api/notifications',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
-    res.json((await pool.query('SELECT id,title,body,created_at FROM brtm_notifications WHERE athlete_id=$1 ORDER BY id DESC LIMIT 50',[req.parent.athlete_id])).rows);
+    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id])).rows);
   }));
   app.get('/swim/api/push/key',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');

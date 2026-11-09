@@ -1,0 +1,84 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),request=require('supertest');
+const {initDb,createApp,passwordHash}=require('./server'),B=require('./business'),C=require('./community'),N=require('./notifications');
+async function main(){
+ const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};await initDb(pool);
+ for(const [name,role] of [['owner','owner'],['coach','coach'],['other','coach'],['juara','prestasi']])await pool.query('INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES($1,$1,$2,$3,FALSE)',[name,role,await passwordHash('test-password')]);
+ const app=createApp({pool,secureCookies:false}),owner=request.agent(app),coach=request.agent(app),other=request.agent(app),parent=request.agent(app),parent2=request.agent(app);
+ async function send(a,m,url,data,status=200){const r=await a[m](url).set('X-BRTM-Request','1').send(data);assert.equal(r.status,status,JSON.stringify(r.body));return r.body;}
+ for(const [a,u] of [[owner,'owner'],[coach,'coach'],[other,'other']])await send(a,'post','/auth/login',{username:u,password:'test-password'});
+ const create=async(n,k='Prestasi Class',status='Aktif')=>(await send(owner,'post','/api/atlet',{nama:n,kelompok:k,status},201)).data;
+ const a=await create('Atlet Satu'),b=await create('Atlet Dua'),c=await create('Pemula','Private Class');await create('Cuti','Prestasi Class','Nonaktif');
+ await send(owner,'post','/api/orangtua/siapkan',{});await send(parent,'post','/swim/api/login',{username:'Atlet Satu',password:'brtm'});await send(parent2,'post','/swim/api/login',{username:'Atlet Dua',password:'brtm'});
+ let dash=await send(parent,'get','/swim/api/dashboard');const mid=dash.profil.memberId;assert.equal(mid,C.memberId(a.id));assert.match(mid,/^BRTM-\d{6}$/);
+ await send(owner,'put','/api/atlet/'+a.id,{...a,memberId:'FAKE',nama:'Atlet Satu Baru'});assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,mid);
+ await send(owner,'put','/api/atlet/'+a.id,{...a,status:'Nonaktif'});await send(owner,'put','/api/atlet/'+a.id,{...a,status:'Aktif'});assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,mid);
+ let report=await send(owner,'get','/api/community/members');assert.equal(report.total,4);assert.equal(report.active,3);assert.equal(report.newInYear,4);assert.equal(report.trainedInYear,0);
+ await send(coach,'get','/api/community/members',undefined,403);await send(owner,'get','/api/community/members?year=bad',undefined,400);
+ await C.initDb(pool);assert.equal((await send(owner,'get','/api/community/members')).total,4);
+ const ann={requestId:'announcement-test-001',className:'Prestasi Class',trainingDate:B.today(),title:'Latihan Prestasi libur',body:'Latihan hari ini libur karena kolam ditutup.'};
+ await send(coach,'post','/api/community/announcements',ann,403);const out=await send(owner,'post','/api/community/announcements',ann,201);assert.equal(out.recipient_count,2);
+ assert.equal((await send(owner,'post','/api/community/announcements',ann,201)).duplicate,true);
+ await send(owner,'post','/api/community/announcements',{...ann,body:'berbeda'},409);
+ for(const p of [parent,parent2]){const list=await send(p,'get','/swim/api/notifications');assert.equal(list.length,1);assert.equal(list[0].title,ann.title);}
+ assert.equal((await pool.query('SELECT * FROM brtm_notifications WHERE athlete_id=$1',[c.id])).rows.length,0);
+ await send(parent,'post','/swim/api/push/subscribe',{subscription:{endpoint:'https://fcm.googleapis.com/fcm/send/parent',keys:{auth:'a'.repeat(22),p256dh:'a'.repeat(87)}}});
+ const nextAnn={...ann,requestId:'announcement-test-002'};await send(owner,'post','/api/community/announcements',nextAnn,201);let sent=0;
+ await N.deliver(pool,async(s,payload)=>{sent++;assert.match(JSON.parse(payload).body,/Latihan Prestasi libur/);});assert.equal(sent,1);
+ const coaches=await send(parent,'get','/swim/api/feedback/coaches');assert.equal(coaches.length,3);assert(!JSON.stringify(coaches).includes('password'));
+ const feedback={requestId:'parent-feedback-test-001',coachId:'2',body:'Mohon lebih jelas ketika memberi instruksi.',athleteId:b.id};
+ await send(parent,'post','/swim/api/feedback',{...feedback,coachId:'1'},400);
+ const f=await send(parent,'post','/swim/api/feedback',feedback,201);assert.equal((await send(parent,'post','/swim/api/feedback',feedback,201)).id,f.id);
+ await send(parent,'post','/swim/api/feedback',{...feedback,body:'berubah'},409);
+ assert.equal((await send(parent2,'get','/swim/api/feedback')).length,0);
+ const ownFeedback=await send(parent,'get','/swim/api/feedback');assert.equal(ownFeedback[0].athlete_id,Number(a.id));
+ assert.equal((await send(coach,'get','/api/community/feedback')).length,1);assert.equal((await send(other,'get','/api/community/feedback')).length,0);assert.equal((await send(owner,'get','/api/community/feedback')).length,1);
+ const ns=await send(coach,'get','/api/community/notifications');assert.equal(ns.length,1);assert.equal((await send(owner,'get','/api/community/notifications')).length,1);assert.equal((await send(other,'get','/api/community/notifications')).length,0);
+ await send(other,'post','/api/community/notifications/'+ns[0].id+'/read',{});assert.equal((await send(coach,'get','/api/community/notifications'))[0].read_at,null);
+ await send(coach,'post','/api/community/notifications/'+ns[0].id+'/read',{});assert((await send(coach,'get','/api/community/notifications'))[0].read_at);
+ await send(other,'post','/api/community/feedback/'+f.id+'/reply',{body:'Tidak boleh'},404);
+ await send(coach,'post','/api/community/feedback/'+f.id+'/reply',{body:'Terima kasih, akan kami perbaiki.',status:'Ditanggapi'});
+ assert.equal((await send(parent,'get','/swim/api/feedback'))[0].replies[0].body,'Terima kasih, akan kami perbaiki.');
+ await send(owner,'post','/api/community/feedback/'+f.id+'/reply',{body:'Owner sudah meninjau tindak lanjut.',status:'Selesai'});
+ assert.equal((await send(parent,'get','/swim/api/feedback'))[0].status,'Selesai');
+ await send(coach,'post','/api/community/push/subscribe',{subscription:{endpoint:'https://localhost/private',keys:{auth:'a'.repeat(22),p256dh:'a'.repeat(87)}}},400);
+ const sub={endpoint:'https://fcm.googleapis.com/fcm/send/staff',keys:{auth:'a'.repeat(22),p256dh:'a'.repeat(87)}};
+ await send(coach,'post','/api/community/push/subscribe',{subscription:sub});await send(parent,'post','/swim/api/feedback',{...feedback,requestId:'parent-feedback-test-002'},201);
+ let staffSent=0;await C.deliver(pool,async(s,payload)=>{staffSent++;assert(!payload.includes(feedback.body));assert.equal(JSON.parse(payload).url,'/club/');});await C.deliver(pool,async()=>staffSent++);assert.equal(staffSent,1);
+ // Account switching on a shared device must not deliver the old user's pending jobs.
+ await send(parent,'post','/swim/api/feedback',{...feedback,requestId:'parent-feedback-test-003'},201);await send(other,'post','/api/community/push/subscribe',{subscription:sub});await C.deliver(pool,async()=>staffSent++);assert.equal(staffSent,1);
+ await send(owner,'delete','/api/atlet/'+a.id,{},400);
+ await send(owner,'post','/api/tester/reset',{},409);
+ const legacy=(await pool.query("INSERT INTO data_klub(jenis,data,dibuat_pada) VALUES('atlet',$1,'2025-06-01') RETURNING id",[JSON.stringify({nama:'Atlet Lama',status:'Nonaktif',kelompok:'Private Class'})])).rows[0];
+ await C.initDb(pool);const history=await send(owner,'get','/api/community/members?year=2025');assert.equal(history.throughYear,1);assert.equal(history.newInYear,1);assert.equal(history.members.find(m=>m.athlete_id===legacy.id).member_id,C.memberId(legacy.id));
+ await pool.query("INSERT INTO data_klub(jenis,data) VALUES('absensi',$1),('absensi',$1)",[JSON.stringify({atletId:a.id,status:'Hadir',tanggal:'2025-05-01'})]);assert.equal((await send(owner,'get','/api/community/members?year=2025')).trainedInYear,1);
+ // Multiple speed-test dates are sorted/deduplicated, with weekdays derived from the dates.
+ const speed={requestId:'speed-test-multiple-001',kind:'speed-test',className:'Prestasi Class',dates:[B.addDays(B.today(),4),B.today(),B.addDays(B.today(),2),B.today()],title:'Jadwal speed test',body:'Mohon mempersiapkan atlet untuk tes.'};
+ const speedOut=await send(owner,'post','/api/community/announcements',speed,201);assert.equal(speedOut.dates.length,3);assert.equal(speedOut.dates[0],B.today());assert.equal(speedOut.recipient_count,2);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-wrong-class',className:'Semua kelas'},400);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-past-dates',dates:['2020-01-01']},400);
+ await send(owner,'post','/api/community/announcements',{...speed,requestId:'speed-test-invalid-date',dates:['2027-02-30']},400);
+ const png=await require('sharp')({create:{width:1200,height:800,channels:3,background:'blue'}}).png().toBuffer();
+ const promo={requestId:'promotion-photo-test-001',kind:'selamat',className:'Prestasi Class',dates:['2026-01-01'],title:'Selamat kepada atlet BRTM',body:'Selamat atas Juara 1 nomor 50 m gaya bebas pada event contoh.',photo:{mime:'image/png',base64:png.toString('base64')}};
+ const promoOut=await send(owner,'post','/api/community/announcements',promo,201);assert.equal((await send(owner,'post','/api/community/announcements',promo,201)).id,promoOut.id);
+ await send(owner,'post','/api/community/announcements',{...promo,photo:null},409);
+ const inbox=await send(parent,'get','/swim/api/notifications');const photoNotice=inbox.find(n=>n.photo_id===promoOut.id);assert(photoNotice);assert.match(inbox.find(n=>n.title===speed.title).body,new RegExp(new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(B.today()+'T12:00:00+07:00'))));
+ let photoResponse=await parent.get('/swim/api/announcements/'+promoOut.id+'/photo');assert.equal(photoResponse.status,200);assert.match(photoResponse.headers['content-type'],/image\/webp/);assert.equal((await require('sharp')(photoResponse.body).metadata()).width,1000);
+ assert.equal((await request(app).get('/swim/api/announcements/'+promoOut.id+'/photo')).status,401);
+ const pemula=request.agent(app);await send(pemula,'post','/swim/api/login',{username:'Pemula',password:'brtm'});assert.equal((await pemula.get('/swim/api/announcements/'+promoOut.id+'/photo')).status,404);
+ assert.equal((await coach.get('/api/community/announcements/'+promoOut.id+'/photo')).status,403);
+ assert.equal((await owner.get('/api/community/announcements/'+promoOut.id+'/photo')).status,200);
+ const pushed=[];await N.deliver(pool,async(s,payload)=>pushed.push(JSON.parse(payload)));assert(pushed.some(p=>p.image==='/swim/api/announcements/'+promoOut.id+'/photo'));assert(pushed.every(p=>Buffer.byteLength(JSON.stringify(p))<4000));
+ const allOut=await send(owner,'post','/api/community/announcements',{...promo,requestId:'promotion-all-class-test',className:'Semua kelas'},201);assert.equal(allOut.recipient_count,3);assert((await send(pemula,'get','/swim/api/notifications')).some(n=>n.photo_id===allOut.id));
+ await send(owner,'post','/api/community/announcements',{...promo,requestId:'promotion-broken-photo',photo:{mime:'image/png',base64:Buffer.from('not an image').toString('base64')}},400);
+ assert((await send(owner,'get','/api/community/announcements')).find(n=>n.id===promoOut.id).has_photo);
+ // Worker fetches photos using authentication; an unavailable image still delivers the text.
+ const vm=require('node:vm'),fs=require('node:fs');let listener,notice;
+ const worker={self:{addEventListener(name,fn){if(name==='push')listener=fn;},registration:{async showNotification(title,options){notice=options;}}},fetch:async()=>({ok:true,headers:{get:()=> 'image/webp'},arrayBuffer:async()=>png.buffer.slice(png.byteOffset,png.byteOffset+png.byteLength)}),Uint8Array,AbortSignal,btoa:s=>Buffer.from(s,'binary').toString('base64')};
+ vm.createContext(worker);vm.runInContext(fs.readFileSync('public/swim/sw.js','utf8'),worker);
+ let pending;listener({data:{json:()=>({body:'Selamat juara',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.match(notice.image,/^data:image\/webp;base64,/);
+ worker.fetch=async()=>{throw Error('offline');};listener({data:{json:()=>({body:'Pesan tetap tampil',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.equal(notice.body,'Pesan tetap tampil');assert(!notice.image);
+ const backup=await send(owner,'get','/api/backup');for(const t of ['brtm_members','brtm_feedback','brtm_feedback_replies','brtm_announcements','brtm_announcement_photos'])assert(backup.tables[t].length);
+ await db.close();console.log('PASS community: permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching and backups.');
+}
+main().catch(e=>{console.error(e);process.exit(1);});
