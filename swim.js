@@ -87,17 +87,30 @@ function mount(app, h) {
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
     const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
+    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
       jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih, statusSesi:x.statusSesi||'Terjadwal', alasanLibur:x.alasanLibur||'' })),
+      tagihan: packs.map(r=>({id:r.id,jenisKelas:r.jenisKelas,status:r.status,totalTagihan:r.totalTagihan,tanggal:r.tanggal,berlakuSampai:r.berlakuSampai,sisaPertemuan:r.sisaPertemuan})),
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
       evaluasi: evaluations.map(x => parentEvaluation(x,a,allSchedules.find(s=>s.id===x.jadwalId))) });
   }
+  app.post('/swim/api/viewed',parentAuth,wrap(async(req,res)=>{
+    if(req.swimOwner)throw fail(403,'Khusus orang tua');
+    const entries=req.body.entries;
+    if(!Array.isArray(entries)||entries.length>2000)throw fail(400,'Daftar tampilan tidak valid');
+    const aid=String(req.parent.athlete_id);
+    await transaction(async c=>{for(const e of entries){
+      if(!['perkembangan','absensi','pembayaran'].includes(e.kind))throw fail(400,'Jenis tampilan tidak valid');
+      const r=await record(c,e.kind,e.id);
+      if(String(r.atletId)!==aid||require('./operations').revision(r)!==e.revision)continue;
+      await c.query('INSERT INTO brtm_parent_views (athlete_id,kind,record_id,revision) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',[aid,e.kind,String(r.id),e.revision]);
+    }});res.json({ok:true});
+  }));
   const swimOwner = (req,res,next) => req.swimOwner ? next() : next(fail(403,'Hanya Owner BRTM SWIM'));
   async function putPhoto(db,athleteId,value) {
-    const image=P.photo(value);
+    const image=await require('./images').compress(value);
     await db.query('INSERT INTO brtm_photos (athlete_id,mime,base64) VALUES ($1,$2,$3) ON CONFLICT(athlete_id) DO UPDATE SET mime=EXCLUDED.mime,base64=EXCLUDED.base64',[athleteId,image.mime,image.base64]);
   }
   app.get('/swim/api/dashboard',parentAuth,wrap(async(req,res)=>{
@@ -248,7 +261,7 @@ function mount(app, h) {
     }
     const responseId = String(req.body?.responseId || ''); if (!/^[\w-]{1,250}$/.test(responseId)) throw fail(400, 'ID jawaban tidak valid');
     let data, validationError = '';
-    try { data = cleanPayload(req.body.data, kind); }
+    try { data = cleanPayload(req.body.data, kind); data.foto=await require('./images').compress(data.foto); }
     catch (e) {
       if (e.status !== 400 || !req.body.data || typeof req.body.data !== 'object' || Array.isArray(req.body.data)) throw e;
       validationError = e.message; data = {};

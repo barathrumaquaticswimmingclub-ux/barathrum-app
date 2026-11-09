@@ -1,3 +1,20 @@
+# Operations and registration update — 9 November 2026 (WIB)
+
+User explicitly approved publishing the prepared update to the existing public GitHub repository and deploying Railway on 9 November 2026. Source publication and deployment verification are now in progress. Existing database records are retained; schema addition only creates brtm_parent_views. No real athletes/attendance/payments have been created, deleted, or reset during checks.
+
+- Existing Forms updated and verified in respondent preview: exactly 13/14 required fields, no legacy questions in the active flow, submit follows current consent. Both metadata executions completed. Existing Forms updated through the same Apps Script project using a key-free metadata function. Exact introduction/terms, required place of birth, requested question sequence and final consent; 13 Prestasi / 14 nonprestasi fields. Sender aliases were patched in place without copying or rotating integration keys. Legacy questions and answers are retained behind an archive section skipped by submission navigation. Existing photo upload and post-submit install instructions retained. No genuine new parent photo submission was performed.
+- Owner/Prestasi athlete tables, clickable athlete detail and Owner edit/history navigation; schedules grouped by actual date then time with athlete-name search and existing date filters.
+- Owner activity tables sort newest recorded update first and show staff wording plus parent projection. Exact revision view acknowledgements are recorded only after an authenticated parent renders their dashboard; no push-delivery/read equivalence. Historical read times cannot be reconstructed.
+- Juara: no schedule menu; atomic full-active-roster daily attendance with required explicit statuses, absence reasons, deduplicated retry IDs, existing-date duplicate rejection, Sunday and Owner-declared holiday blocks. Routine daily sessions have no invented clock time. Schedule-free Noted uses server date. Bulk times accept multiple athletes; new records use 25 m pools, old pool records are retained.
+- Program location follows chosen Sore/Pagi (Pondok Selfie/Kalitaman); no morning weekly schedule is activated.
+- Server-side photo decoding, autorotation, metadata stripping, bounded resize and WebP compression before new profile/program storage (1000 px profiles, 2000 px whiteboards). Google Drive originals and existing historical photos are not bulk converted. This reduces new application photo storage; it does not reduce original Google Drive quota.
+- Owner data export now includes operational records, audit, profile photos, registration payloads, parent notifications, view acknowledgements and account metadata in a consistent snapshot. Credentials/sessions are excluded; this is an operational export, not a complete PostgreSQL disaster-recovery dump.
+
+Validation: all prior npm suites plus operations.test.js pass, checking roster transactions, retries, role boundaries, Sunday/holiday blocks, server dates, revision read acknowledgements, multi-athlete batches, 25m, actual decoded/resized image output and expanded export. Browser QA used isolated preview records for Owner table/detail, Juara menus/forms and program controls. Automated Railway backups/retention, capacity and restore drills remain unverified and unchanged; they require access to the Railway project. Do not claim backups are active.
+
+
+---
+
 # Prestasi program update — 9 November 2026 (WIB)
 
 Deployed implementation commit 3b911b764dc83db31a3ed7dda9096313539f7fd1. User requested a simpler Juara Program/Event form: no title entry, automatic online date, 2–4 board photos organized per group, and typed Dryland without photo detection.
