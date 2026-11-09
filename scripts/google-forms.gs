@@ -24,7 +24,7 @@ function siapkanBRTM() {
       let logo=find('BARATHRUM AQUATIC SWIMMING CLUB');if(!logo)logo=form.addImageItem().setTitle('BARATHRUM AQUATIC SWIMMING CLUB').setImage(UrlFetchApp.fetch(BRTM.base+'/brand/barathrum-logo.png').getBlob().setContentType('image/jpeg')).setWidth(400);
       form.moveItem(logo,0);
       let terms=find('Ketentuan BRTM');if(!terms)terms=form.addSectionHeaderItem().setTitle('Ketentuan BRTM');else terms=terms.asSectionHeaderItem();
-      terms.setHelpText('Baca BRTM Rules Parent Edition (naskah pemeriksaan akhir): '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);form.moveItem(terms,1);
+      terms.setHelpText('Baca BRTM Rules Parent Edition: '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);form.moveItem(terms,1);
       let agree=find(QUESTIONS.persetujuan);if(!agree)agree=form.addCheckboxItem().setTitle(QUESTIONS.persetujuan);else agree=agree.asCheckboxItem();
       agree.setChoiceValues(['Saya telah membaca dan menyetujui ketentuan BRTM.']).setRequired(true);form.moveItem(agree,2);
       const keys=['nama','namaPanggilan','tanggalLahir','jk','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan','foto'];if(kind==='nonprestasi')keys.push('kelompok');
@@ -38,18 +38,17 @@ function siapkanBRTM() {
           if(k==='kelompok')item.setChoiceValues(['Private Class','Semi Private Class','Group Class','Private Couple Class','Hydro Terapi Class','Regular Class (1x Seminggu)','Regular Class (2x Seminggu)']);
           if(k==='tanggalLahir')item.setHelpText('Contoh: 21-05-2018 (tanggal-bulan-tahun)').setValidation(FormApp.createTextValidation().requireTextMatchesPattern('^[0-9]{2}-[0-9]{2}-[0-9]{4}$').build());
           if(k==='noHpOrtu')item.setHelpText('Contoh: 081234567890').setValidation(FormApp.createTextValidation().requireTextMatchesPattern('^\\+?[0-9 ()-]{8,25}$').build());
-          if(k==='foto')item.setHelpText('Unggah satu foto anak. Foto bebas; tidak harus pasfoto.');
+          if(k==='foto')item.setHelpText('WAJIB unggah satu foto anak. Foto bebas; tidak harus pasfoto. Gunakan kolom Upload file, gambar JPG/PNG/WebP, maksimal 5 MB.');
           if(k==='riwayatRenang')item.setHelpText('Sebutkan tempat/klub sebelumnya. Jika belum pernah, tulis Belum pernah.');
           if(k==='sekolah'||k==='kelasSekolah')item.setHelpText('Jika belum bersekolah, tulis Belum sekolah.');
         }
         form.moveItem(item,index+3);
       });
-      // Remove superseded questions only after the private response snapshot succeeds.
-      form.getItems().filter(function(i){return i.getTitle()==='Tempat lahir'||kind==='prestasi'&&(i.getTitle()===QUESTIONS.tujuan||i.getTitle()===ALIASES.tujuan);}).forEach(function(i){form.deleteItem(i);});
+      // Existing legacy questions and their answers are retained.
       props.setProperty('schema_'+kind,RULES.version);
     }
     const termsNow=form.getItems().find(function(i){return i.getTitle()==='Ketentuan BRTM';});
-    if(termsNow)termsNow.asSectionHeaderItem().setHelpText('Baca BRTM Rules Parent Edition (naskah pemeriksaan akhir): '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);
+    if(termsNow)termsNow.asSectionHeaderItem().setHelpText('Baca BRTM Rules Parent Edition: '+BRTM.base+'/rules/parent/\n\n'+RULES.common+'\n\n'+RULES[kind]+'\n\nVersi '+RULES.version);
     if(!ScriptApp.getProjectTriggers().some(function(t){return t.getHandlerFunction()==='kirimBRTM'&&t.getTriggerSourceId()===form.getId();}))ScriptApp.newTrigger('kirimBRTM').forForm(form).onFormSubmit().create();
     postBRTM(kind,{action:'register',formId:form.getId(),formUrl:form.getPublishedUrl()});console.log(kind+': '+form.getPublishedUrl());
   });

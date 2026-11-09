@@ -26,6 +26,7 @@ function addMonth(value) {
   const [y, m, d] = value.split('-').map(Number);
   return new Date(Date.UTC(y, m, Math.min(d, new Date(Date.UTC(y, m + 1, 0)).getUTCDate()))).toISOString().slice(0, 10);
 }
+function addDays(value, days) { return new Date(new Date(value+'T00:00:00Z').getTime()+days*86400000).toISOString().slice(0,10); }
 function monthEnd(value) {
   const [y, m] = value.split('-').map(Number);
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
@@ -44,13 +45,20 @@ function price(input, athlete) {
   if (wantsDiscount && (jenisKelas === 'Prestasi Class' || !discountSchool(athlete.sekolah))) throw new Error('Diskon Rp25.000 hanya untuk DBS, ABA 5, Ebenhaezer, dan TEC pada kelas nonprestasi');
   const biayaPendaftaran = input.anggotaBaru === true || input.anggotaBaru === 'true' ? 50000 : 0;
   const potonganDiskon = wantsDiscount ? 25000 : 0;
+  const custom = input.paketKhusus === true || input.paketKhusus === 'true';
+  const kuota = custom ? Number(input.kuotaKhusus) : kelas.sesi;
+  const tarif = custom ? Number(input.biayaKhusus) : kelas.tarif;
+  if (custom && (jenisKelas === 'Prestasi Class' || !Number.isInteger(kuota) || kuota < 1 || kuota > 100 || !Number.isSafeInteger(tarif) || tarif < 1 || tarif > 100000000)) throw new Error('Paket khusus nonprestasi: kuota 1–100 dan biaya rupiah bulat harus valid');
+  if(tarif < potonganDiskon)throw new Error('Diskon tidak boleh melebihi biaya paket');
+  const alasanKhusus = custom ? String(input.alasanKhusus || '').trim() : '';
+  if (custom && (alasanKhusus.length < 5 || alasanKhusus.length > 500)) throw new Error('Isi keterangan paket khusus (5–500 karakter)');
   return {
-    jenisKelas, jumlah: kelas.tarif, biayaPendaftaran, potonganDiskon,
-    totalTagihan: kelas.tarif + biayaPendaftaran - potonganDiskon,
+    paketKhusus:custom, alasanKhusus, jenisKelas, jumlah: tarif, biayaPendaftaran, potonganDiskon,
+    totalTagihan: tarif + biayaPendaftaran - potonganDiskon,
     status: input.status, tanggal: input.tanggal,
     tanggalBerakhir: jenisKelas === 'Prestasi Class' ? monthEnd(input.tanggal) : addMonth(input.tanggal),
     jatuhTempo: jenisKelas === 'Prestasi Class' ? monthEnd(input.tanggal) : input.tanggal,
-    periode: input.tanggal.slice(0, 7), totalPertemuan: kelas.sesi,
+    periode: input.tanggal.slice(0, 7), totalPertemuan: kuota,
     statusPendaftaran: biayaPendaftaran ? 'Anggota Baru' : 'Anggota Lama',
     jenisDiskon: wantsDiscount ? 'Diskon Sekolah' : 'Tidak Ada Diskon'
   };
@@ -65,4 +73,4 @@ function packageView(item, attendanceCount = 0) {
   const statusMasaBerlaku = !end ? 'Perlu diperiksa' : end < today() ? 'Kedaluwarsa' : item.tanggal > today() ? 'Belum mulai' : sisa === 0 ? 'Habis' : 'Aktif';
   return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
-module.exports = { CLASSES, canonical, today, validDate, addMonth, monthEnd, discountSchool, price, packageView };
+module.exports = { CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView };
