@@ -52,7 +52,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   });
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
-  app.use(['/api/program','/api/prestasi/ocr'],express.json({limit:'8mb'}));
+  app.use('/api/program',express.json({limit:'30mb'}));
+  app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
@@ -232,7 +233,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       else if (kind === 'program') list = req.user.role === 'prestasi' ? list : list.filter(p => p.dibuatOleh === req.user.username || p.jenis === 'Program');
       else list = list.filter(x => allowed.has(String(x.atletId)) && (req.user.role !== 'coach' || kind !== 'absensi' || x.coachId === String(req.user.id)));
       if(kind==='jadwal')list=list.map(s=>({...s,atletIds:(s.atletIds||[]).filter(a=>allowed.has(String(a)))}));
-    } res.json(list);
+    } res.json(kind==='program'?list.map(require('./program').project):list);
   }));
   async function validate(req, db, kind, input, old) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Isi formulir tidak valid');
@@ -328,11 +329,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       } return out;
     }
     if (kind === 'program') {
-      if (!isOwner && user.role !== 'prestasi') throw fail(403, 'Khusus tim Prestasi'); out.judul = text(input.judul, 'Judul', true, 200); out.tanggal = date(input.tanggal);
-      if (!['Program','Event'].includes(input.jenis)) throw fail(400, 'Pilih Program atau Event'); out.jenis = input.jenis; out.detail = text(input.detail, 'Isi program / informasi keberangkatan', input.jenis==='Event', 10000);
-      for(const k of ['grup','dryland','swimming','evaluasi'])out[k]=text(input[k]??old?.[k],k,false,k==='grup'?150:10000);
-      if(out.jenis==='Program'&&!out.detail&&!out.dryland&&!out.swimming)throw fail(400,'Isi latihan dryland atau swimming');
-      if(input.fotoProgram)out.fotoProgram=require('./profile').photo(input.fotoProgram); out.lokasi = text(input.lokasi, 'Lokasi', false, 300); return out;
+      if (!isOwner && user.role !== 'prestasi') throw fail(403, 'Khusus tim Prestasi');
+      return require('./program').prepare(input,old);
     } throw fail(404, 'Bagian tidak ditemukan');
   }
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
@@ -347,11 +345,11 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }));
   app.post('/api/:jenis', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
-    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const data = await validate(req, c, kind, req.body, null); return save(c, req.user, kind, data, null); }); res.status(201).json({ pesan: 'Data berhasil disimpan', data: result });
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const data = await validate(req, c, kind, req.body, null); return save(c, req.user, kind, data, null); }); res.status(201).json({ pesan: 'Data berhasil disimpan', data: kind==='program'?require('./program').project(result):result });
   }));
   app.put('/api/:jenis/:id', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
-    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true); const data = await validate(req, c, kind, req.body, old); return save(c, req.user, kind, data, old); }); res.json({ pesan: 'Perubahan tersimpan', data: result });
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true); const data = await validate(req, c, kind, req.body, old); return save(c, req.user, kind, data, old); }); res.json({ pesan: 'Perubahan tersimpan', data: kind==='program'?require('./program').project(result):result });
   }));
   app.delete('/api/:jenis/:id', owner, wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');

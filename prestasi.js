@@ -2,6 +2,7 @@
 const path=require('path');
 const {Document,Packer,Paragraph,HeadingLevel}=require('docx');
 const P=require('./profile');
+const G=require('./program');
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 function mount(app,{wrap,transaction,validate,save,record,rows,limit}){
  const permitted=(req,res,next)=>['owner','prestasi'].includes(req.user.role)?next():next(fail(403,'Khusus tim Prestasi'));
@@ -20,11 +21,16 @@ function mount(app,{wrap,transaction,validate,save,record,rows,limit}){
  }));
  app.get('/api/prestasi/program/:id/word',permitted,wrap(async(req,res)=>{
   const p=await record(null,'program',req.params.id);
-  const doc=new Document({sections:[{children:[new Paragraph({text:'BARATHRUM • PROGRAM LATIHAN',heading:HeadingLevel.TITLE}),...['Tanggal: '+p.tanggal,'Kelas / grup: '+(p.grup||'Prestasi'),p.judul,'DRYLAND (LATIHAN DARAT)',p.dryland||'Belum diisi','SWIMMING (LATIHAN RENANG)',p.swimming||p.detail||'Belum diisi','EVALUASI',p.evaluasi||'Belum diisi'].flatMap(t=>t.split('\n').map(text=>new Paragraph({text})))]}]});
+  const doc=new Document({sections:[{children:[new Paragraph({text:'BARATHRUM • PROGRAM LATIHAN',heading:HeadingLevel.TITLE}),...['Tanggal: '+p.tanggal,'Kelas / grup: '+(p.grup||'Prestasi'),p.judul,'DRYLAND (LATIHAN DARAT)',p.dryland||'Belum diisi','SWIMMING (LATIHAN RENANG)',G.groups(p).length?'':p.swimming||p.detail||'',...G.groups(p).flatMap(g=>['GRUP '+g.nomor,g.swimming||'Program pada foto tersimpan di aplikasi.']),'EVALUASI',p.evaluasi||'Belum diisi'].flatMap(t=>t.split('\n').map(text=>new Paragraph({text})))]}]});
   res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document').attachment('BRTM-program-'+p.tanggal+'.docx').send(await Packer.toBuffer(doc));
  }));
  app.get('/api/prestasi/program/:id/photo',permitted,wrap(async(req,res)=>{
-  const p=await record(null,'program',req.params.id);if(!p.fotoProgram)throw fail(404,'Foto belum tersedia');res.type(p.fotoProgram.mime).send(Buffer.from(p.fotoProgram.base64,'base64'));
+  const p=await record(null,'program',req.params.id),photo=G.groups(p).find(g=>g.foto)?.foto;if(!photo)throw fail(404,'Foto belum tersedia');res.type(photo.mime).send(Buffer.from(photo.base64,'base64'));
+ }));
+ app.get('/api/prestasi/program/:id/photo/:grup',permitted,wrap(async(req,res)=>{
+  if(!/^[1-4]$/.test(req.params.grup))throw fail(400,'Nomor grup tidak valid');
+  const p=await record(null,'program',req.params.id),photo=G.groups(p).find(g=>g.nomor===Number(req.params.grup))?.foto;
+  if(!photo)throw fail(404,'Foto grup belum tersedia');res.type(photo.mime).send(Buffer.from(photo.base64,'base64'));
  }));
  let ocrBusy=false;
  app.post('/api/prestasi/ocr',permitted,wrap(async(req,res)=>{

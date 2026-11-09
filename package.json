@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node preview-server.cjs",
-    "test": "node integration.test.js && node pwa.test.js && node swim.test.js && node forms.test.js && node owner-swim.test.js && node prestasi.test.js && node launch.test.js"
+    "test": "node integration.test.js && node pwa.test.js && node swim.test.js && node forms.test.js && node owner-swim.test.js && node prestasi.test.js && node launch.test.js && node program.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

@@ -33,16 +33,34 @@ $('timeForm').onsubmit=async e=>{e.preventDefault();const b=$('saveTimes');b.dis
  await request('/api/prestasi/times',{method:'POST',body:JSON.stringify({entries,batchId:timeBatch})});timeDialog.close();notice('Hasil tes tersimpan. Laporan orang tua ikut diperbarui.');await load();
  }catch(err){$('timeError').textContent=err.message;}finally{b.disabled=false;}};
 const oldOpenForm=openForm;
+let programOcrBusy=0;
 openForm=function(kind,row){oldOpenForm(kind,row);if(kind!=='program'||!canWrite(kind))return;
- const v=row||{};
- $('formFields').insertAdjacentHTML('beforeend',field('grup','Kelas / grup latihan','text',v.grup||'Prestasi',{full:true,max:150})+field('dryland','Dryland • latihan darat','textarea',v.dryland,{required:false,full:true,max:10000})+field('swimming','Swimming • latihan renang','textarea',v.swimming,{required:false,full:true,max:10000})+field('evaluasi','Evaluasi program','textarea',v.evaluasi,{required:false,full:true,max:10000})+'<div class="field full"><label for="programPhoto">Foto program (opsional, maksimal 5 MB)</label><input id="programPhoto" type="file" accept="image/jpeg,image/png,image/webp"><label for="ocrTarget">Masukkan hasil baca ke</label><select id="ocrTarget"><option value="swimming">Swimming</option><option value="dryland">Dryland</option></select><button type="button" id="readProgramPhoto" class="secondary">Baca foto menjadi teks</button><p id="ocrStatus" role="status">Periksa hasil baca sebelum menyimpan, terutama tulisan tangan, jarak dan interval.</p></div>');
- $('f_detail').required=$('f_jenis').value==='Event';$('f_detail').closest('.field').querySelector('label').textContent='Informasi tambahan / detail event';
+ const v=row||{},groups=v.grupProgram||[{nomor:1,swimming:v.swimming||'',adaFoto:!!v.fotoProgram}];
+ $('formFields').insertAdjacentHTML('beforeend',field('dryland','Dryland • latihan darat (ketik langsung)','textarea',v.dryland,{required:false,full:true,max:10000})+'<div class="field full"><h3>Swimming • program per grup</h3><p>Unggah foto whiteboard pada grup yang sesuai. Tersedia empat grup, satu foto per grup (maksimal 5 MB per foto). Isi grup yang digunakan saja.</p></div>'+[1,2,3,4].map(n=>{
+  const g=groups.find(g=>g.nomor===n)||{};
+  return `<section class="field full program-group-editor"><h3>Grup ${n}</h3>${field('swimming_'+n,'Swimming Grup '+n,'textarea',g.swimming,{required:false,max:10000})}<label for="programPhoto_${n}">Foto program Grup ${n}</label><input id="programPhoto_${n}" type="file" accept="image/jpeg,image/png,image/webp">${g.adaFoto?`<a href="/api/prestasi/program/${v.id}/photo/${n}" target="_blank" rel="noopener">Lihat foto tersimpan</a>${check('removePhoto_'+n,'Hapus foto Grup '+n,false)}`:''}<button type="button" class="secondary" id="readProgramPhoto_${n}">Baca foto ke Swimming Grup ${n}</button><p id="ocrStatus_${n}" role="status">Hasil baca foto hanya masuk ke Swimming grup ini. Periksa kembali tulisan, jarak dan interval.</p></section>`;
+ }).join('')+field('evaluasi','Evaluasi program','textarea',v.evaluasi,{required:false,full:true,max:10000}));
+ $('f_detail').required=$('f_jenis').value==='Event';
  $('f_jenis').onchange=()=>$('f_detail').required=$('f_jenis').value==='Event';
- $('readProgramPhoto').onclick=readProgramPhoto;
+ for(const n of [1,2,3,4])$('readProgramPhoto_'+n).onclick=()=>readProgramPhoto(n);
+ const label=$('programDate');
+ if(row)label.textContent=displayDate(v.tanggal)+' · tanggal pencatatan asli';
+ else request('/api/config').then(c=>{if(label.isConnected)label.textContent=displayDate(c.today)+' · dari server, ditetapkan saat disimpan';}).catch(()=>{if(label.isConnected)label.textContent='Tanggal ditetapkan server saat tersambung dan disimpan.';});
 };
 async function photoValue(file){if(!file?.size)return null;if(file.size>5*1024*1024)throw Error('Foto maksimal 5 MB');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('Foto gagal dibaca'));r.readAsDataURL(file);});return {mime:file.type,base64:data.split(',')[1]};}
-async function readProgramPhoto(){const b=$('readProgramPhoto');b.disabled=true;try{
- const foto=await photoValue($('programPhoto').files[0]);if(!foto)throw Error('Pilih foto program dahulu');$('ocrStatus').textContent='Sedang membaca foto…';
+async function programPayload(){
+ if(programOcrBusy)throw Error('Tunggu pembacaan foto selesai sebelum menyimpan.');
+ const grupProgram=[];
+ for(const n of [1,2,3,4]){
+  const foto=await photoValue($('programPhoto_'+n).files[0]),hapusFoto=!!$('f_removePhoto_'+n)?.checked;
+  if(foto&&hapusFoto)throw Error('Batalkan pilihan hapus foto Grup '+n+' sebelum mengganti foto.');
+  grupProgram.push({nomor:n,swimming:$('f_swimming_'+n).value,...(foto?{foto}:{}),hapusFoto});
+ }
+ return {grupProgram};
+}
+async function readProgramPhoto(n){const b=$('readProgramPhoto_'+n),status=$('ocrStatus_'+n),target=$('f_swimming_'+n);b.disabled=true;programOcrBusy++;try{
+ const foto=await photoValue($('programPhoto_'+n).files[0]);if(!foto)throw Error('Pilih foto program Grup '+n+' dahulu');status.textContent='Sedang membaca foto…';
  const result=await request('/api/prestasi/ocr',{method:'POST',body:JSON.stringify({foto})});
- const target=$('f_'+$('ocrTarget').value);target.value=[target.value,result.text.trim()].filter(Boolean).join('\n');$('ocrStatus').textContent=result.text.trim()?'Hasil baca dimasukkan. Periksa dan perbaiki teks sebelum menyimpan.':'Tulisan belum terbaca. Gunakan foto yang lebih terang atau ketik program.';
- }catch(e){$('ocrStatus').textContent=e.message;}finally{b.disabled=false;}}
+ if(!target.isConnected||!$('editor').open)return;
+ target.value=[target.value,result.text.trim()].filter(Boolean).join('\n');status.textContent=result.text.trim()?'Hasil baca dimasukkan ke Swimming Grup '+n+'. Periksa dan perbaiki sebelum menyimpan.':'Tulisan belum terbaca. Gunakan foto yang lebih terang atau ketik program.';
+ }catch(e){if(status.isConnected)status.textContent=e.message;}finally{b.disabled=false;programOcrBusy--;}}
