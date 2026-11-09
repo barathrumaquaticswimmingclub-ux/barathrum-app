@@ -43,6 +43,7 @@ async function initDb(pool) {
   await require('./swim').initDb(pool);
   await require('./operations').initDb(pool);
   await N.initDb(pool);
+  await require('./community').initDb(pool);
   await require('./tester-reset').initDb(pool);
 }
 function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID } = {}) {
@@ -111,7 +112,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
-    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); await N.afterSave(db,kind,out,previous); return out;
+    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return out;
   }
   function setCookie(res, token, maxAge = 7 * 86400) { res.setHeader('Set-Cookie', `brtm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`); }
   app.get('/health', wrap(async (req, res) => { await pool.query('SELECT 1'); res.json({ status: 'ok', database: 'ok', version: APP_VERSION }); }));
@@ -161,6 +162,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
+  require('./community').mount(app,{pool,wrap,owner,transaction,rows,audit,limit});
   require('./tester-reset').mount(app,{pool,wrap,owner,transaction,audit});
   app.get('/api/akun', owner, wrap(async (req, res) => { const r = await pool.query('SELECT * FROM brtm_users ORDER BY id'); res.json(r.rows.map(publicUser)); }));
   app.put('/api/akun/:id', owner, wrap(async (req, res) => {
@@ -213,8 +215,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === B.today().slice(0, 7) && p.jenisKelas === 'Prestasi Class');
       const op = isPrestasi ? { statusPaket: 'Bulanan', sisaPertemuan: null, berlakuSampai: B.monthEnd(B.today()) } : { statusPaket: latest ? latest.statusMasaBerlaku : 'Belum ada paket', sisaPertemuan: latest?.sisaPertemuan ?? null, berlakuSampai: latest?.berlakuSampai || '' };
       const finance = { statusSPP: isPrestasi ? paidMonth ? 'Lunas' : 'Belum Lunas' : related.some(p=>p.status==='Belum Lunas') ? 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? B.monthEnd(B.today()) : latest?.berlakuSampai || '', paketId: active?.id || '' };
-      if (req.user.role === 'owner') return { ...a, kelompok: B.canonical(a.kelompok), ...op, ...finance, foto:'/api/atlet/'+a.id+'/foto' };
-      return { id: a.id, nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op, foto:'/api/atlet/'+a.id+'/foto' };
+      if (req.user.role === 'owner') return { ...a, memberId:require('./community').memberId(a.id), kelompok: B.canonical(a.kelompok), ...op, ...finance, foto:'/api/atlet/'+a.id+'/foto' };
+      return { id: a.id, memberId:require('./community').memberId(a.id), nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op, foto:'/api/atlet/'+a.id+'/foto' };
     });
   }
   app.get('/api/atlet/:id/foto', wrap(async(req,res)=>{
@@ -227,7 +229,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views']){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications']){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
@@ -375,6 +377,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true);
       if (kind === 'atlet') {
+        if((await c.query('SELECT id FROM brtm_feedback WHERE athlete_id=$1 LIMIT 1',[old.id])).rows.length)throw fail(400,'Atlet memiliki riwayat masukan. Ubah status menjadi Nonaktif.');
         const linked = (await c.query(`SELECT data FROM data_klub WHERE jenis <> 'atlet'`)).rows.some(r => String(r.data.atletId) === old.id || r.data.atletIds?.map(String).includes(old.id) || r.data.namaAtlet?.trim().toLowerCase() === old.nama?.trim().toLowerCase());
         if (linked) throw fail(400, 'Atlet memiliki riwayat. Ubah status menjadi Nonaktif.');
       }

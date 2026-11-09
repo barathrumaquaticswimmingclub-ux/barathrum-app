@@ -21,3 +21,6 @@ self.addEventListener('fetch', event => {
     event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
   }
 });
+
+self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{};}catch{}event.waitUntil(self.registration.showNotification('BRTM',{body:data.body||'Ada masukan baru dari orang tua.',tag:data.tag||'brtm-feedback',data:{url:'/club/'},icon:'/icons/brtm-brand-192.png'}));});
+self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil((async()=>{const list=await self.clients.matchAll({type:'window',includeUncontrolled:true});const page=list.find(c=>new URL(c.url).pathname.startsWith('/club/'));if(page){await page.focus();await page.navigate('/club/');}else await self.clients.openWindow('/club/');})());});
