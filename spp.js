@@ -20,7 +20,7 @@ async function persist(db,user,next,old){
  const payload={...comparable,diperbaruiPada:new Date().toISOString(),diperbaruiOleh:user?.username||'sistem-spp'};
  if(!old)Object.assign(payload,{dibuatPada:payload.diperbaruiPada,dibuatOleh:payload.diperbaruiOleh,dibuatOlehId:user?.id?String(user.id):null});
  const r=old?await db.query("UPDATE data_klub SET data=$1 WHERE id=$2 AND jenis='pembayaran' RETURNING id,data",[JSON.stringify(payload),old.id]):await db.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1) RETURNING id,data",[JSON.stringify(payload)]);
- const out={...r.rows[0].data,id:String(r.rows[0].id)};await audit(db,user,old?'hitung-ulang-spp':'buat-tagihan-spp',out.id,old,out);await N.afterSave(db,'pembayaran',out,old);return out;
+ const out={...r.rows[0].data,id:String(r.rows[0].id)};await audit(db,user,old?'hitung-ulang-spp':'buat-tagihan-spp',out.id,old,out);if(out.status==='Lunas'&&old?.status!=='Lunas'&&out.sppMetode==='Kredit')await N.enqueue(db,out.atletId,'kredit-spp:'+out.id+':'+out.diperbaruiPada,'SPP dilunasi dengan kredit','SPP Prestasi bulan '+out.periode+' dilunasi menggunakan saldo kredit Rp250.000. Tidak ada penerimaan uang baru.');return out;
 }
 async function monthlyAttendance(db,aid,athlete){
  const attendance=(await db.query(`SELECT a.data,s.data AS schedule FROM data_klub a LEFT JOIN data_klub s ON s.id::text=a.data->>'jadwalId' AND s.jenis='jadwal' WHERE a.jenis='absensi' AND a.data->>'atletId'=$1 AND a.data->>'status'='Hadir'`,[String(aid)])).rows;
