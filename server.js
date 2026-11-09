@@ -6,6 +6,7 @@ const path = require('path');
 const { promisify } = require('util');
 const B = require('./business');
 const N = require('./notifications');
+const SPP = require('./spp');
 const scrypt = promisify(crypto.scrypt);
 const KINDS = ['atlet', 'pelatih', 'jadwal', 'absensi', 'pembayaran', 'perkembangan', 'catatanwaktu', 'program'];
 const APP_VERSION = '2.0.0';
@@ -43,6 +44,7 @@ async function initDb(pool) {
   await require('./swim').initDb(pool);
   await require('./operations').initDb(pool);
   await N.initDb(pool);
+  await SPP.initDb(pool);
   await require('./community').initDb(pool);
   await require('./tester-reset').initDb(pool);
 }
@@ -113,7 +115,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
-    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return out;
+    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); await SPP.afterSave(db,user,kind,out,previous); if(kind!=='pembayaran'||B.canonical(out.jenisKelas)!=='Prestasi Class')await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return kind==='pembayaran'&&B.canonical(out.jenisKelas)==='Prestasi Class'?record(db,kind,out.id):out;
   }
   function setCookie(res, token, maxAge = 7 * 86400) { res.setHeader('Set-Cookie', `brtm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`); }
   app.get('/health', wrap(async (req, res) => { await pool.query('SELECT 1'); res.json({ status: 'ok', database: 'ok', version: APP_VERSION }); }));
@@ -163,6 +165,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
+  SPP.mount(app,{pool,wrap,owner,transaction});
   require('./community').mount(app,{pool,wrap,owner,transaction,rows,audit,limit});
   require('./tester-reset').mount(app,{pool,wrap,owner,transaction,audit});
   app.get('/api/akun', owner, wrap(async (req, res) => { const r = await pool.query('SELECT * FROM brtm_users ORDER BY id'); res.json(r.rows.map(publicUser)); }));
@@ -208,15 +211,17 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }
   async function athleteList(req) {
-    const allowed = await accessible(req); const list = (await rows(pool, 'atlet')).filter(a => !allowed || allowed.has(a.id)); const packs = await payments();
+    const allowed = await accessible(req); const list = (await rows(pool, 'atlet')).filter(a => !allowed || allowed.has(a.id)); const packs = await payments();const attendance=await rows(pool,'absensi'),schedules=await rows(pool,'jadwal'),sppStates=await SPP.summaries(pool);
     return list.map(a => {
       const related = packs.filter(p => athleteLink(p, a)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
       const active = related.find(p => p.statusMasaBerlaku === 'Aktif'); const latest = active || related[0];
       const isPrestasi = B.canonical(a.kelompok) === 'Prestasi Class';
-      const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === B.today().slice(0, 7) && p.jenisKelas === 'Prestasi Class');
+      const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === B.today().slice(0, 7) && p.jenisKelas === 'Prestasi Class'&&!p.sppTidakDitagih);
       const op = isPrestasi ? { statusPaket: 'Bulanan', sisaPertemuan: null, berlakuSampai: B.monthEnd(B.today()) } : { statusPaket: latest ? latest.statusMasaBerlaku : 'Belum ada paket', sisaPertemuan: latest?.sisaPertemuan ?? null, berlakuSampai: latest?.berlakuSampai || '' };
-      const finance = { statusSPP: isPrestasi ? paidMonth ? 'Lunas' : 'Belum Lunas' : related.some(p=>p.status==='Belum Lunas') ? 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? B.monthEnd(B.today()) : latest?.berlakuSampai || '', paketId: active?.id || '' };
-      if (req.user.role === 'owner') return { ...a, memberId:require('./community').memberId(a.id), kelompok: B.canonical(a.kelompok), ...op, ...finance, foto:'/api/atlet/'+a.id+'/foto' };
+      const presentMonth=attendance.some(r=>r.atletId===a.id&&r.status==='Hadir'&&r.tanggal?.startsWith(B.today().slice(0,7))&&B.canonical(r.jenisKelas||schedules.find(s=>s.id===r.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
+      const overdue=related.some(p=>p.status==='Belum Lunas'&&p.totalTagihan>0);
+      const finance = { statusSPP: isPrestasi ? sppStates[a.id]?.sppMenungguOwner?'Menunggu Persetujuan Owner':overdue?'Belum Lunas':paidMonth?'Lunas':presentMonth?'Belum Lunas':'Tidak Ada SPP Bulan Ini' : related.some(p=>p.status==='Belum Lunas') ? 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? overdue?related.filter(p=>p.status==='Belum Lunas'&&p.totalTagihan>0).map(p=>p.jatuhTempo||p.tanggal).sort()[0]:presentMonth?B.monthEnd(B.today()):'' : latest?.berlakuSampai || '', paketId: active?.id || '' };
+      if (req.user.role === 'owner') return { ...a, memberId:require('./community').memberId(a.id), kelompok: B.canonical(a.kelompok), ...op, ...finance, ...(sppStates[a.id]||{saldoKredit:0,sppMenungguOwner:false}), foto:'/api/atlet/'+a.id+'/foto' };
       return { id: a.id, memberId:require('./community').memberId(a.id), nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op, foto:'/api/atlet/'+a.id+'/foto' };
     });
   }
@@ -230,7 +235,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications']){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending']){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
@@ -283,6 +288,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.jenisKelas = B.canonical(input.jenisKelas); if (!Object.hasOwn(B.CLASSES, out.jenisKelas)) throw fail(400, 'Pilih kelas sesi');
       if (!Array.isArray(input.atletIds) || !input.atletIds.length || input.atletIds.length > 200) throw fail(400, 'Pilih minimal satu atlet untuk sesi');
       out.atletIds = [...new Set(input.atletIds.map(id))];
+      if(out.jenisKelas==='Private Class'&&out.atletIds.length!==1)throw fail(400,'Private Class hanya boleh 1 anak untuk 1 pelatih. Pilih kelas yang sesuai untuk beberapa anak.');
       for (const aid of out.atletIds) { const a = await record(db, 'atlet', aid); if (a.status === 'Nonaktif' || B.canonical(a.kelompok) !== out.jenisKelas) throw fail(400, 'Atlet sesi harus aktif dan sesuai jenis kelas'); }
       out.catatan = text(input.catatan, 'Catatan', false, 2000);
       const moving = old && (old.tanggal !== out.tanggal || old.mulai !== out.mulai || old.selesai !== out.selesai || old.coachId !== out.coachId || old.jenisKelas !== out.jenisKelas || JSON.stringify(old.atletIds) !== JSON.stringify(out.atletIds));
@@ -307,8 +313,12 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     }
     if (kind === 'pembayaran') {
       const athlete = await record(db, 'atlet', id(input.atletId || old?.atletId)); out.atletId = athlete.id; out.namaAtlet = athlete.nama;
+      if(input.paymentRequestId!==undefined&&!/^[-\w]{10,80}$/.test(input.paymentRequestId))throw fail(400,'Kode pembayaran tidak valid');
+      delete out.sppPaymentRequestId;if(input.paymentRequestId)out.sppPaymentRequestId=input.paymentRequestId;
       try { Object.assign(out, B.price(input, athlete)); } catch (e) { throw fail(400, e.message); }
       if (out.jenisKelas !== B.canonical(athlete.kelompok)) throw fail(400, 'Kelas pembayaran harus sama dengan kelas atlet');
+      if(old?.sppDikelola&&(String(old.atletId)!==out.atletId||old.periode!==out.periode))throw fail(400,'Atlet dan bulan SPP otomatis tidak dapat diganti.');
+      if(old?.sppDikelola&&old.status==='Lunas'&&out.status==='Belum Lunas'&&old.penerimaanTunai>0&&(input.catatan===old.catatan||!input.catatan||input.catatan.trim().length<8))throw fail(400,'Tuliskan alasan baru untuk koreksi pembayaran minimal 8 karakter.');
       const packs = await payments(db), previous = old && packs.find(p => p.id === old.id);
       if (previous?.terpakai > 0 && (out.atletId !== old.atletId || out.jenisKelas !== B.canonical(old.jenisKelas) || out.tanggal !== old.tanggal || (out.status !== old.status && out.status !== 'Lunas'))) throw fail(400, 'Identitas, tanggal, kelas, dan status paket yang telah dipakai tidak boleh diganti');
       if(previous && out.totalPertemuan!==null && out.totalPertemuan<previous.terpakai)throw fail(400,'Kuota tidak boleh lebih kecil dari pertemuan terpakai');
@@ -341,6 +351,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (schedule.tanggal !== out.tanggal) throw fail(400, 'Tanggal harus sesuai jadwal sesi');
       if (!isOwner && String(schedule.coachId) !== String(user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
       if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
+      out.jenisKelas=B.canonical(schedule.jenisKelas);
       out.coachId = String(user.id); out.pelatih = user.nama; out.catatan = text(input.catatan, 'Catatan', false, 2000);
       if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000); return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
@@ -383,8 +394,9 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
         if (linked) throw fail(400, 'Atlet memiliki riwayat. Ubah status menjadi Nonaktif.');
       }
       if (kind === 'jadwal' && (await rows(c, 'absensi')).some(a => a.jadwalId === old.id)) throw fail(400, 'Jadwal dengan absensi tidak boleh dihapus');
+      if(kind==='pembayaran'&&old.sppDikelola)throw fail(400,'SPP otomatis mengikuti absensi. Koreksi absensi atau pembayaran, jangan menghapus riwayat SPP.');
       if (kind === 'pembayaran' && (await payments(c)).find(p => p.id === old.id)?.terpakai > 0) throw fail(400, 'Paket yang telah dipakai tidak boleh dihapus');
-      await c.query('DELETE FROM data_klub WHERE jenis=$1 AND id=$2', [kind, old.id]); await audit(c, req.user, 'hapus', kind, old.id, old, null);
+      await c.query('DELETE FROM data_klub WHERE jenis=$1 AND id=$2', [kind, old.id]); await audit(c, req.user, 'hapus', kind, old.id, old, null);if(kind==='absensi')await SPP.reconcile(c,old.atletId,req.user);
     }); res.json({ pesan: 'Data dihapus dan dicatat dalam riwayat' });
   }));
   app.use('/api', (req,res) => res.status(404).json({ pesan: 'Endpoint tidak ditemukan' }));
@@ -397,7 +409,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
 }
 if (require.main === module) {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false, max: 10 });
-  initDb(pool).then(() => {
+  initDb(pool).then(()=>SPP.migrate(pool)).then(() => {
     const app = createApp({ pool });
     const stopNotifications=N.startWorker(pool,async()=>{
       const list=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran'")).rows;

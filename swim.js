@@ -5,6 +5,7 @@ const path = require('path');
 const B = require('./business');
 const P = require('./profile');
 const N = require('./notifications');
+const SPP = require('./spp');
 const {parentEvaluation}=require('./evaluation');
 const digest = x => crypto.createHash('sha256').update(x).digest('hex');
 const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -78,7 +79,9 @@ function mount(app, h) {
     const allAthletes = await rows(pool, 'atlet');
     const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
     const packs = (await payments()).filter(p => p.atletId ? String(p.atletId) === a.id : uniqueName && norm(p.namaAtlet) === norm(a.nama)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
-    const paid = packs.filter(p => p.status === 'Lunas').sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
+    const settled=packs.filter(p=>p.status==='Lunas'&&!p.sppTidakDitagih);
+    const sppState=(await SPP.summaries(pool))[a.id]||{saldoKredit:0,sppMenungguOwner:false};
+    const paid = packs.filter(p => B.cashReceived(p)>0).sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
     const pack = packs.find(p => p.statusMasaBerlaku === 'Aktif') || packs[0];
     const attendance = (await rows(pool, 'absensi')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const present = attendance.filter(x => x.status === 'Hadir');
@@ -86,14 +89,15 @@ function mount(app, h) {
     const allSchedules=await rows(pool,'jadwal');
     const schedules = allSchedules.filter(x => x.atletIds?.map(String).includes(a.id) && x.tanggal >= today).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
-    const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? B.monthEnd(today) : pack?.berlakuSampai || null;
+    const hasMonthlyAttendance=present.some(x=>x.tanggal?.startsWith(month)&&B.canonical(x.jenisKelas||allSchedules.find(s=>s.id===x.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
+    const nextPayment = unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : prestasi ? hasMonthlyAttendance?B.monthEnd(today):null : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
     res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, memberId:require('./community').memberId(a.id), ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
-      pembayaran: { terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: unpaid.length ? 'Belum Lunas' : prestasi ? paid.some(p => p.periode === month) ? 'Lunas bulan ini' : present.some(x => x.tanggal?.startsWith(month)) ? 'Perlu konfirmasi admin' : 'Belum ada kehadiran bulan ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
+      pembayaran: { ...sppState,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':unpaid.length ? 'Belum Lunas' : prestasi ? settled.some(p => p.periode === month) ? 'Lunas bulan ini' : hasMonthlyAttendance ? 'Belum Lunas' : 'Tidak Ada SPP Bulan Ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
       jadwal: schedules.map(x => ({ tanggal: x.tanggal, mulai: x.mulai, selesai: x.selesai, lokasi: x.lokasi, pelatih: x.pelatih, statusSesi:x.statusSesi||'Terjadwal', alasanLibur:x.alasanLibur||'' })),
-      tagihan: packs.map(r=>({id:r.id,jenisKelas:r.jenisKelas,status:r.status,totalTagihan:r.totalTagihan,tanggal:r.tanggal,berlakuSampai:r.berlakuSampai,sisaPertemuan:r.sisaPertemuan})),
+      tagihan: packs.map(r=>({id:r.id,jenisKelas:r.jenisKelas,status:r.status,totalTagihan:r.totalTagihan,tanggal:r.tanggal,berlakuSampai:r.berlakuSampai,sisaPertemuan:r.sisaPertemuan,sppMetode:r.sppMetode,sppTidakDitagih:r.sppTidakDitagih,penerimaanTunai:B.cashReceived(r)})),
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
       evaluasi: evaluations.map(x => parentEvaluation(x,a,allSchedules.find(s=>s.id===x.jadwalId))) });
   }
