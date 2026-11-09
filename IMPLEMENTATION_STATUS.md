@@ -1,3 +1,13 @@
+# Prestasi program update — 9 November 2026 (WIB)
+
+Deployed implementation commit 3b911b764dc83db31a3ed7dda9096313539f7fd1. User requested a simpler Juara Program/Event form: no title entry, automatic online date, 2–4 board photos organized per group, and typed Dryland without photo detection.
+
+Implemented: up to four optional groups (1–4), one photo and independent Swimming text/OCR target per group, 5 MB per photo; server-assigned WIB creation date, original date retained on edits; automatic internal display title; global typed Dryland and evaluation. Event detail stays required. Existing single-photo programs remain readable/editable, with preserved originals when a group photo is not replaced. Explicit per-group removal does not affect other photos. Private photo routes and metadata-only list responses prevent downloading all full-size originals in program lists. Word export includes group Swimming text.
+
+Validation: full npm test suite passed, including new program.test.js for four photos, server-date spoof rejection, photo preservation/removal, legacy migration, private routes and Word. Live Owner UI (shared with Juara) verified: no title/date picker, four group slots, text-only Dryland, online server date. Empty-submit returned the expected validation message without saving. Actual Juara role and file persistence were covered in isolated API tests; live OCR handwriting/file-upload tests were not repeated. No production programs, athletes, attendance or payments were created/altered during UI checks.
+
+---
+
 # Live release — 9 November 2026 (WIB)
 
 User explicitly approved deployment and tester archiving. PR #1 was merged as ca922bf1d5feadf7922db99c6f1ed8212902e3f2 and the live Railway app serves the new SWIM notification code and rules version BRTM-2026-11-09.
