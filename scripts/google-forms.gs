@@ -30,9 +30,10 @@ function siapkanBRTM() {
       const keys=['nama','namaPanggilan','tanggalLahir','jk','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan','foto'];if(kind==='nonprestasi')keys.push('kelompok');
       keys.forEach(function(k,index){
         let item=find(QUESTIONS[k])||(ALIASES[k]&&find(ALIASES[k]));
+        const isNew=!item;
         if(!item){item=k==='jk'?form.addMultipleChoiceItem():k==='kelompok'?form.addListItem():['alamat','tujuan','riwayatRenang'].indexOf(k)>=0?form.addParagraphTextItem():form.addTextItem();}
         if(String(item.getType())!=='FILE_UPLOAD'){
-          item=k==='jk'?item.asMultipleChoiceItem():k==='kelompok'?item.asListItem():['alamat','tujuan','riwayatRenang'].indexOf(k)>=0?item.asParagraphTextItem():item.asTextItem();
+          if(!isNew)item=k==='jk'?item.asMultipleChoiceItem():k==='kelompok'?item.asListItem():['alamat','tujuan','riwayatRenang'].indexOf(k)>=0?item.asParagraphTextItem():item.asTextItem();
           item.setTitle(QUESTIONS[k]).setRequired(true);
           if(k==='jk')item.setChoiceValues(['Laki-laki','Perempuan']);
           if(k==='kelompok')item.setChoiceValues(['Private Class','Semi Private Class','Group Class','Private Couple Class','Hydro Terapi Class','Regular Class (1x Seminggu)','Regular Class (2x Seminggu)']);

@@ -1,3 +1,20 @@
+# Live release — 9 November 2026 (WIB)
+
+User explicitly approved deployment and tester archiving. PR #1 was merged as ca922bf1d5feadf7922db99c6f1ed8212902e3f2 and the live Railway app serves the new SWIM notification code and rules version BRTM-2026-11-09.
+
+Production Owner > Reports archived all 3 disposable tester athletes and linked histories using the reversible archive. Verified afterward: 0 total/active athletes, 0 sessions, 0 attendance, Rp0 payment receipts. Staff accounts, coaching directory, programs and form integration settings are retained. Do not reset again after real registrations arrive.
+
+Live UI verified custom package quota/price controls. Parent rules page shows the requested change-of-rules clause. All prior suites and launch checks passed. No real-device push delivery test has been completed; each parent must opt in on their own device.
+
+Google account sign-in succeeded through secure entry. The same Apps Script project now contains the new photo sender, DD-MM-YYYY mapping, strict new-payload version, and normalized consent mapping, preserving existing form IDs, keys and retry triggers. perbaruiFormBRTM completed successfully on both forms, adding/requiring nickname and Prestasi swimming history, marking biodata required, updating date format, rules link and description. Existing responses were preserved. Both forms already have required real image FILE_UPLOAD questions Foto anak (bebas).
+
+Remaining blocker: diagnostic cekAksesFotoBRTM requested Google Drive read authorization. The OAuth popup displays Google belum memverifikasi aplikasi ini and names the club account as developer. No new Drive permission has been granted by the assistant. Stop before granting/bypassing this warning; user must review/approve the Google authorization. Actual Form-photo delivery is not yet verified and must not be called ready until authorization and a real upload check succeed. Answers remain in Google Forms for the retry trigger. No new test athlete was added during live verification.
+
+Installer follow-up: fixed new typed FormApp items being incorrectly cast via asTextItem/asParagraphTextItem. forms.test.js now models typed handles without generic cast methods; targeted Forms simulation passes.
+
+---
+Historical preparation notes follow:
+
 # Prepared update — 9 November 2026: parent operations
 
 Implemented in a review branch; NOT deployed. Direct main push was blocked by automatic approval review. Request approval before merging/deploying. No production tester reset executed.
