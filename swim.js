@@ -78,7 +78,7 @@ function mount(app, h) {
     const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
     const packs = (await payments()).filter(p => p.atletId ? String(p.atletId) === a.id : uniqueName && norm(p.namaAtlet) === norm(a.nama)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const paid = packs.filter(p => p.status === 'Lunas').sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
-    const pack = packs.find(p => p.status === 'Lunas' && p.statusMasaBerlaku === 'Aktif') || packs[0];
+    const pack = packs.find(p => p.statusMasaBerlaku === 'Aktif') || packs[0];
     const attendance = (await rows(pool, 'absensi')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const present = attendance.filter(x => x.status === 'Hadir');
     const evaluations = (await rows(pool, 'perkembangan')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));

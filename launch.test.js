@@ -36,9 +36,16 @@ async function main(){
  await call(parent,'post','/swim/api/push/subscribe',{subscription:{endpoint:'https://127.0.0.1/push',keys:{auth:'a'.repeat(22),p256dh:'a'.repeat(87)}}},400);
  await call(parent,'post','/swim/api/push/subscribe',{subscription:{endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{auth:'a'.repeat(22),p256dh:'a'.repeat(87)}}});
  await N.enqueue(pool,a.id,'mock-push','Test','Data privat anak');let sent=0;await N.deliver(pool,async(s,payload)=>{sent++;assert(!payload.includes('Data privat anak'));});await N.deliver(pool,async()=>{sent++;});assert.equal(sent,1);
+ const regular=await create('atlet',{nama:'Reguler Tester',kelompok:'Regular Class (2x Seminggu)',status:'Aktif'});
+ const unpaid=await create('pembayaran',{atletId:regular.id,jenisKelas:regular.kelompok,tanggal:today,status:'Belum Lunas'});
+ const regSession=await create('jadwal',{nama:'Reguler sore',tanggal:today,mulai:'16:00',selesai:'17:00',coachId:'2',jenisKelas:regular.kelompok,atletIds:[regular.id],lokasi:'Kolam'});
+ await create('absensi',{atletId:regular.id,jadwalId:regSession.id,tanggal:today,status:'Hadir'});
+ assert.equal((await call(owner,'get','/api/pembayaran')).find(p=>p.id===unpaid.id).sisaPertemuan,7);
+ await call(owner,'put','/api/pembayaran/'+unpaid.id,{...unpaid,status:'Belum Lunas'});
+ assert.equal((await call(owner,'get','/api/atlet')).find(a=>a.id===regular.id).statusSPP,'Belum Lunas');
  const before=await call(owner,'get','/api/tester/preview');await call(coach,'post','/api/tester/reset',{},403);await call(owner,'post','/api/tester/reset',{fingerprint:'stale',confirmation:'ARSIPKAN SEMUA DATA TESTER'},409);
  const reset=await call(owner,'post','/api/tester/reset',{fingerprint:before.fingerprint,confirmation:'ARSIPKAN SEMUA DATA TESTER'});assert.equal((await call(owner,'get','/api/atlet')).length,0);await call(parent,'get','/swim/api/dashboard',undefined,401);
- await call(owner,'post','/api/tester/restore/'+reset.archiveId,{});assert.equal((await call(owner,'get','/api/atlet')).length,2);
+ await call(owner,'post','/api/tester/restore/'+reset.archiveId,{});assert.equal((await call(owner,'get','/api/atlet')).length,3);
  await db.close();console.log('PASS launch checks: custom package, parent wording, deduplicated notifications, push delivery, holiday extension, Juara restrictions, reversible reset.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});
