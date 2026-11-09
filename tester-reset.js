@@ -18,6 +18,7 @@ function mount(app,h){
   const result=await transaction(async c=>{
    await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
    if((await c.query('SELECT id FROM brtm_feedback LIMIT 1')).rows.length)throw Object.assign(Error('Arsip tester tidak dapat dijalankan setelah masukan orang tua tercatat. Riwayat masukan harus dipertahankan.'),{status:409});
+   if((await c.query('SELECT id FROM brtm_spp_receipts LIMIT 1')).rows.length||(await c.query("SELECT id FROM brtm_spp_pending WHERE status='Pending' LIMIT 1")).rows.length)throw Object.assign(Error('Arsip tester tidak dapat dijalankan setelah penerimaan atau koreksi SPP tercatat. Riwayat keuangan harus dipertahankan.'),{status:409});
    const snap=await snapshot(c);
    if(req.body.fingerprint!==fingerprint(snap))throw Object.assign(Error('Data berubah. Periksa daftar tester kembali.'),{status:409});
    if(req.body.confirmation!=='ARSIPKAN SEMUA DATA TESTER')throw Object.assign(Error('Konfirmasi arsip tester tidak valid'),{status:400});

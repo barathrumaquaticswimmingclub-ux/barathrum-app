@@ -22,7 +22,7 @@ async function main(){
  assert.equal((await send(coach,'post','/api/prestasi/attendance',input)).status,403);
  assert.equal((await team.get('/api/owner/activity/perkembangan')).status,403);
  await send(owner,'post','/api/orangtua/siapkan');assert.equal((await send(parent,'post','/swim/api/login',{username:'Satu',password:'brtm'})).status,200);
- const dashboard=(await parent.get('/swim/api/dashboard')).body;assert.equal(dashboard.evaluasi.length,1);assert(dashboard.viewRefs.length===2);
+ const dashboard=(await parent.get('/swim/api/dashboard')).body;assert.equal(dashboard.evaluasi.length,1);assert.equal(dashboard.viewRefs.length,3);assert.equal(dashboard.tagihan[0].totalTagihan,250000);
  assert((await owner.get('/api/owner/activity/perkembangan')).body[0].parentOpenedAt===null);
  r=await send(parent,'post','/swim/api/viewed',{entries:dashboard.viewRefs});assert.equal(r.status,200,JSON.stringify(r.body));
  assert((await owner.get('/api/owner/activity/perkembangan')).body[0].parentOpenedAt);

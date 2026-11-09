@@ -83,7 +83,7 @@ async function main() {
   const prestasi=(await expect(write(owner,'post','/api/atlet',{...athleteInput,nama:'TEST Prestasi',kelompok:'Prestasi Class'}),201)).data;
   await expect(write(owner,'post','/api/pembayaran',{...payInput,atletId:prestasi.id,jenisKelas:'Prestasi Class'}),400);
   const prestasiPay=(await expect(write(owner,'post','/api/pembayaran',{...payInput,atletId:prestasi.id,jenisKelas:'Prestasi Class',status:'Belum Lunas',anggotaBaru:false,diskonSekolah:false}),201)).data;
-  assert.equal(prestasiPay.jatuhTempo,B.monthEnd(B.today()));assert.equal(prestasiPay.totalTagihan,250000);
+  assert.equal(prestasiPay.jatuhTempo,B.monthEnd(B.today()));assert.equal(prestasiPay.totalTagihan,0);assert.equal(prestasiPay.status,'Tidak Ditagih');
   await expect(write(owner,'post','/api/catatanwaktu',{atletId:prestasi.id,tanggal:B.today(),gaya:'Bebas',jarak:50,kolam:25,detik:32.7}),201);
   await expect(write(coach,'post','/api/catatanwaktu',{atletId:prestasi.id,tanggal:B.today(),gaya:'Bebas',jarak:50,kolam:25,detik:32.7}),403);
   const expired=(await expect(write(owner,'post','/api/atlet',{...athleteInput,nama:'TEST kedaluwarsa',kelompok:'Private Class'}),201)).data;

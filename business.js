@@ -73,4 +73,5 @@ function packageView(item, attendanceCount = 0) {
   const statusMasaBerlaku = !end ? 'Perlu diperiksa' : end < today() ? 'Kedaluwarsa' : item.tanggal > today() ? 'Belum mulai' : sisa === 0 ? 'Habis' : 'Aktif';
   return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
-module.exports = { CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView };
+function cashReceived(p,month=''){if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
+module.exports = { cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView };
