@@ -370,7 +370,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       return require('./program').prepare(input,old);
     } throw fail(404, 'Bagian tidak ditemukan');
   }
-  require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments});
+  require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,validate,audit,passwordHash,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {

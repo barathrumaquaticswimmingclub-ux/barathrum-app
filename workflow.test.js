@@ -19,6 +19,11 @@ async function main(){
  schedules=(await call(owner,'get','/api/jadwal')).body;const session=schedules.find(s=>s.tanggal===B.today()&&s.coachId==='3');assert(session.atletIds.includes(b.id));
  const attendance=(await call(owner,'post','/api/absensi',{atletId:b.id,jadwalId:session.id,tanggal:B.today(),status:'Hadir',catatan:''},201)).body.data;assert.equal(attendance.pelatih,'Coach Ilyas');assert.equal(attendance.coachId,'3');assert(attendance.dibuatPada);
  const note=(await call(owner,'post','/api/perkembangan',{atletId:b.id,jadwalId:session.id,tanggal:B.today(),catatan:'kepala kurang tunduk'},201)).body.data;
+ // Attendance and noted must either both save or both roll back.
+ await call(owner,'post','/api/session-entry',{id:attendance.id,jadwalId:session.id,atletId:b.id,tanggal:B.today(),status:'Izin',noted:'x'.repeat(2001)},400);
+ assert.equal((await call(owner,'get','/api/absensi')).body.find(r=>r.id===attendance.id).status,'Hadir');
+ assert.equal((await call(owner,'get','/api/perkembangan')).body.find(r=>r.id===note.id).catatan,'kepala kurang tunduk');
+ await call(owner,'post','/api/session-entry',{id:attendance.id,jadwalId:session.id,atletId:b.id,tanggal:B.today(),status:'Hadir',noted:'kepala kurang tunduk'});
  await call(owner,'post','/api/orangtua/siapkan');await call(parent,'post','/swim/api/login',{username:b.nama,password:'brtm'});await call(otherParent,'post','/swim/api/login',{username:a.nama,password:'brtm'});
  assert.match((await call(parent,'get','/swim/api/dashboard')).body.evaluasi[0].catatan,/memperbaiki posisi kepala/);
  await call(otherParent,'get','/swim/api/documents/invoice/'+payment.id,undefined,404);

@@ -47,6 +47,15 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
 }
 function mount(app,h){const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
  const tx=fn=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');return fn(c);});
+ app.post('/api/session-entry',wrap(async(req,res)=>{
+  const result=await tx(async c=>{
+   const b=req.body,old=b.id?await record(c,'absensi',b.id,true):null;
+   const data=await h.validate(req,c,'absensi',b,old),saved=await save(c,req.user,'absensi',data,old);
+   const note=(await rows(c,'perkembangan')).find(n=>n.jadwalId===saved.jadwalId&&n.atletId===saved.atletId);
+   if(String(b.noted||'').trim()||note){const input={jadwalId:saved.jadwalId,atletId:saved.atletId,tanggal:saved.tanggal,catatan:b.noted||'',teknik:note?.teknik||'',fisik:note?.fisik||'',attitude:note?.attitude||''};await save(c,req.user,'perkembangan',await h.validate(req,c,'perkembangan',input,note),note);}
+   return saved;
+  });res.json({data:result});
+ }));
  app.get('/api/owner/workspace',owner,wrap(async(req,res)=>{res.json({slots:(await pool.query('SELECT * FROM brtm_weekly_slots ORDER BY place,coach_id,weekday,start_time')).rows,staff:(await pool.query('SELECT id,nama,username,role,active,profile FROM brtm_users ORDER BY id')).rows.map(u=>({...u,profile:{...u.profile,photo:!!u.profile.photo}}))});}));
  app.post('/api/owner/schedule/coach',owner,wrap(async(req,res)=>{
   const coachId=String(req.body.coachId),place=req.body.place;if(!places.slice(0,2).includes(place))throw fail(400,'Pilih tempat latihan');
