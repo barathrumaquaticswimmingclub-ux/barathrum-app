@@ -66,6 +66,7 @@ function mount(app, h) {
     const token = crypto.randomBytes(32).toString('hex');
     await pool.query('DELETE FROM brtm_parent_sessions WHERE expires_at<NOW()');
     await pool.query('INSERT INTO brtm_parent_sessions VALUES ($1,$2,$3)', [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
+    await pool.query("INSERT INTO brtm_audit(username,action,jenis,record_id,login_context) VALUES($1,'masuk-orangtua','orangtua',$2,$3)",[u.username,String(u.athlete_id),JSON.stringify(require('./workflow').loginContext(req))]);
     cookie(res, token); res.json({ ok: true });
   }));
   app.post('/swim/api/logout', wrap(async (req, res) => {
@@ -157,7 +158,7 @@ function mount(app, h) {
   }));
   app.get('/swim/api/notifications',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
-    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id])).rows);
+    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,n.event_key,n.read_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id])).rows);
   }));
   app.get('/swim/api/push/key',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
@@ -174,6 +175,15 @@ function mount(app, h) {
   }));
   app.post('/swim/api/push/unsubscribe',parentAuth,wrap(async(req,res)=>{
     if(req.parent)await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1 AND parent_id=$2',[req.body.endpoint,req.parent.id]);res.json({ok:true});
+  }));
+  app.post('/swim/api/notifications/:id/read',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');await pool.query('UPDATE brtm_notifications SET read_at=NOW() WHERE id=$1 AND athlete_id=$2',[req.params.id,req.parent.athlete_id]);res.json({ok:true});}));
+  app.get('/swim/api/documents/:kind/:id',parentAuth,wrap(async(req,res)=>{
+    const kind=req.params.kind;let p;
+    if(kind==='notice'){const n=(await pool.query('SELECT * FROM brtm_billing_notices WHERE id=$1',[req.params.id])).rows[0];if(n)p=n.data;}
+    else if(['invoice','receipt'].includes(kind))p=await record(pool,'pembayaran',req.params.id);
+    if(!p||!req.swimOwner&&String(p.atletId)!==String(req.parent.athlete_id))throw fail(404,'Dokumen tidak tersedia');
+    if(kind==='receipt'&&B.cashReceived(p)<=0)throw fail(400,'Belum ada penerimaan pembayaran');
+    require('./reports').bill(res,p,kind==='receipt'?'receipt':'invoice',(kind==='notice'?'N':'')+req.params.id);
   }));
   app.use('/swim/api', (req, res) => res.status(404).json({ pesan: 'Bagian tidak ditemukan' }));
   app.get(/^\/swim$/, (req, res) => res.redirect('/swim/'));

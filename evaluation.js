@@ -13,6 +13,8 @@ function parentEvaluation(item, athlete, schedule) {
     capek: 'terlihat lelah selama mengikuti latihan.',
     menangis: 'sempat menangis saat mengikuti latihan.',
     'kurang fokus': 'masih perlu meningkatkan fokus saat mengikuti latihan.',
+    'kepala kurang tunduk': 'masih perlu memperbaiki posisi kepala agar lebih menunduk saat berenang.',
+    'susah fokus': 'masih perlu meningkatkan fokus saat mengikuti latihan.',
     'belum berani': 'masih memerlukan waktu untuk membangun keberanian saat latihan.'
   };
   const out = { tanggal:item.tanggal, pelatih:item.pelatih };

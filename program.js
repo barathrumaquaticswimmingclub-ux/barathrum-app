@@ -15,10 +15,10 @@ function prepare(input,old){
  if(!['Pagi','Sore'].includes(out.sesi))throw fail('Pilih sesi Pagi atau Sore');
  out.lokasi=out.jenis==='Program'?(out.sesi==='Pagi'?'Kolam Kalitaman':'Kolam Renang Pondok Selfie'):words(input.lokasi,'Lokasi',300);
  if(Object.hasOwn(input,'grupProgram')){
-  if(!Array.isArray(input.grupProgram)||input.grupProgram.length>4)throw fail('Maksimal empat grup program');
+  if(!Array.isArray(input.grupProgram)||input.grupProgram.length>20)throw fail('Maksimal 20 grup program');
   const previous=groups(old||{}),seen=new Set();
   out.grupProgram=input.grupProgram.map(g=>{
-   if(!g||!Number.isInteger(g.nomor)||g.nomor<1||g.nomor>4||seen.has(g.nomor))throw fail('Nomor grup harus unik, antara 1 dan 4');seen.add(g.nomor);
+   if(!g||!Number.isInteger(g.nomor)||g.nomor<1||g.nomor>20||seen.has(g.nomor))throw fail('Nomor grup harus unik, antara 1 dan 20');seen.add(g.nomor);
    const foto=g.hapusFoto===true?null:g.foto?P.photo(g.foto):previous.find(p=>p.nomor===g.nomor)?.foto||null;
    return {nomor:g.nomor,swimming:words(g.swimming,'Swimming Grup '+g.nomor),...(foto?{foto}:{})};
   }).filter(g=>g.swimming||g.foto).sort((a,b)=>a.nomor-b.nomor);

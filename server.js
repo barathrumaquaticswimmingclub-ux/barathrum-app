@@ -9,7 +9,7 @@ const N = require('./notifications');
 const SPP = require('./spp');
 const scrypt = promisify(crypto.scrypt);
 const KINDS = ['atlet', 'pelatih', 'jadwal', 'absensi', 'pembayaran', 'perkembangan', 'catatanwaktu', 'program'];
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 function text(value, label, required = true, max = 500) {
@@ -47,6 +47,7 @@ async function initDb(pool) {
   await SPP.initDb(pool);
   await require('./community').initDb(pool);
   await require('./tester-reset').initDb(pool);
+  await require('./workflow').initDb(pool);
 }
 function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID } = {}) {
   const app = express();
@@ -57,11 +58,13 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
+  app.use('/api/prestasi/time-table',express.json({limit:'1mb'}));
   app.use('/api/prestasi/times',express.json({limit:'1mb'}));
   app.use('/api/prestasi/attendance',express.json({limit:'1mb'}));
   app.use('/api/community/announcements',express.json({limit:'8mb'}));
   app.use('/api/program',express.json({limit:'30mb'}));
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
+  app.use('/api/owner/staff',express.json({limit:'8mb'}));
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
@@ -143,7 +146,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     attempts.delete(key); const token = crypto.randomBytes(32).toString('hex');
     await pool.query('DELETE FROM brtm_sessions WHERE expires_at<NOW()');
     await pool.query(`INSERT INTO brtm_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)`, [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
-    await audit(pool, u, 'masuk'); setCookie(res, token); res.json({ user: publicUser(u) });
+    await pool.query("INSERT INTO brtm_audit(user_id,username,action,login_context) VALUES($1,$2,'masuk',$3)",[u.id,u.username,JSON.stringify(require('./workflow').loginContext(req))]); setCookie(res, token); res.json({ user: publicUser(u) });
   }));
   app.get('/auth/me', auth, (req, res) => res.json({ user: publicUser(req.user) }));
   app.post('/auth/logout', wrap(async (req, res) => { const token = cookieToken(req); if (token) await pool.query('DELETE FROM brtm_sessions WHERE token_hash=$1', [digest(token)]); setCookie(res, '', 0); res.json({ ok: true }); }));
@@ -235,16 +238,17 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending']){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices']){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
       tables.brtm_users=(await c.query('SELECT id,username,nama,role,active FROM brtm_users')).rows;
+      tables.brtm_staff_profiles=(await c.query('SELECT id,nama,username,role,active,profile FROM brtm_users ORDER BY id')).rows;
       return tables;
     });
     res.attachment(`BRTM-cadangan-${B.today()}.json`).json({version:APP_VERSION,dieksporPada:new Date().toISOString(),data:snapshot.data_klub,audit:snapshot.brtm_audit,tables:snapshot,catatan:'Cadangan data operasional dan foto; kredensial dan sesi tidak disertakan.'});
   }));
-  app.get('/api/audit', owner, wrap(async (req, res) => { res.json((await pool.query('SELECT id,username,action,jenis,record_id,created_at FROM brtm_audit ORDER BY id DESC LIMIT 200')).rows); }));
+  app.get('/api/audit', owner, wrap(async (req, res) => { res.json((await pool.query('SELECT id,username,action,jenis,record_id,created_at,login_context FROM brtm_audit ORDER BY id DESC LIMIT 2000')).rows); }));
   app.get('/api/:jenis', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
     if (req.user.role !== 'owner' && ['pembayaran','pelatih'].includes(kind)) throw fail(403, 'Hanya Owner yang dapat melihat bagian ini');
@@ -352,7 +356,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (!isOwner && String(schedule.coachId) !== String(user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
       if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
       out.jenisKelas=B.canonical(schedule.jenisKelas);
-      out.coachId = String(user.id); out.pelatih = user.nama; out.catatan = text(input.catatan, 'Catatan', false, 2000);
+      out.coachId = String(schedule.coachId); out.pelatih = B.canonical(schedule.jenisKelas)==='Prestasi Class'?'Coach Adhi':schedule.pelatih; out.catatan = text(input.catatan, 'Catatan', false, 2000);
       if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000); return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
       if (out.status === 'Hadir' && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
@@ -365,6 +369,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       return require('./program').prepare(input,old);
     } throw fail(404, 'Bagian tidak ditemukan');
   }
+  require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
@@ -405,13 +410,16 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (res.headersSent) return next(error); const status = error.status || (error.code === '23505' ? 409 : 500);
     if (status >= 500) console.error('BRTM request failed:', error.code || error.name);
     res.status(status).json({ pesan: error.code === '23505' ? 'Data sudah tercatat. Muat ulang daftar sebelum menyimpan lagi.' : status >= 500 ? 'Server belum dapat memproses data. Coba lagi.' : error.message });
-  }); return app;
+  });
+  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));});
+  return app;
 }
 if (require.main === module) {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false, max: 10 });
   initDb(pool).then(()=>SPP.migrate(pool)).then(() => {
     const app = createApp({ pool });
     const stopNotifications=N.startWorker(pool,async()=>{
+      await app.locals.maintain();
       const list=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran'")).rows;
       const counts=(await pool.query("SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' GROUP BY data->>'paketId'")).rows;
       return list.map(p=>B.packageView({...p.data,id:String(p.id)},Number(counts.find(c=>c.paket===String(p.id))?.jumlah||0)));

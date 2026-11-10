@@ -43,12 +43,16 @@ function price(input, athlete) {
   if (!['Lunas', 'Belum Lunas'].includes(input.status)) throw new Error('Pembayaran hanya Lunas atau Belum Lunas');
   const wantsDiscount = input.diskonSekolah === true || input.diskonSekolah === 'true';
   if (wantsDiscount && (jenisKelas === 'Prestasi Class' || !discountSchool(athlete.sekolah))) throw new Error('Diskon Rp25.000 hanya untuk DBS, ABA 5, Ebenhaezer, dan TEC pada kelas nonprestasi');
-  const biayaPendaftaran = input.anggotaBaru === true || input.anggotaBaru === 'true' ? 50000 : 0;
-  const potonganDiskon = wantsDiscount ? 25000 : 0;
+  let biayaPendaftaran = input.anggotaBaru === true || input.anggotaBaru === 'true' ? 50000 : 0;
+  let potonganDiskon = wantsDiscount ? 25000 : 0;
   const custom = input.paketKhusus === true || input.paketKhusus === 'true';
   const kuota = custom ? Number(input.kuotaKhusus) : kelas.sesi;
   const tarif = custom ? Number(input.biayaKhusus) : kelas.tarif;
   if (custom && (jenisKelas === 'Prestasi Class' || !Number.isInteger(kuota) || kuota < 1 || kuota > 100 || !Number.isSafeInteger(tarif) || tarif < 1 || tarif > 100000000)) throw new Error('Paket khusus nonprestasi: kuota 1–100 dan biaya rupiah bulat harus valid');
+  if(input.rincianOwner===true){
+    biayaPendaftaran=Number(input.biayaPendaftaran??0);potonganDiskon=Number(input.potonganDiskon??0);
+    if(!Number.isSafeInteger(biayaPendaftaran)||biayaPendaftaran<0||biayaPendaftaran>100000000||!Number.isSafeInteger(potonganDiskon)||potonganDiskon<0||potonganDiskon>tarif)throw new Error('Biaya pendaftaran dan diskon harus berupa rupiah bulat yang valid');
+  }
   if(tarif < potonganDiskon)throw new Error('Diskon tidak boleh melebihi biaya paket');
   const alasanKhusus = custom ? String(input.alasanKhusus || '').trim() : '';
   if (custom && (alasanKhusus.length < 5 || alasanKhusus.length > 500)) throw new Error('Isi keterangan paket khusus (5–500 karakter)');
@@ -71,7 +75,7 @@ function packageView(item, attendanceCount = 0) {
   const end = item.pengecualian?.berlakuSampai > item.tanggalBerakhir ? item.pengecualian.berlakuSampai : item.tanggalBerakhir;
   const sisa = total === null ? null : Math.max(0, total - used);
   const statusMasaBerlaku = !end ? 'Perlu diperiksa' : end < today() ? 'Kedaluwarsa' : item.tanggal > today() ? 'Belum mulai' : sisa === 0 ? 'Habis' : 'Aktif';
-  return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
+  return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku: jenisKelas!=='Prestasi Class'&&item.statusManual&&['Aktif','Kedaluwarsa'].includes(item.statusManual)?item.statusManual:statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
 function cashReceived(p,month=''){if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
 module.exports = { cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView };

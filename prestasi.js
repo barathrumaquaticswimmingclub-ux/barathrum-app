@@ -19,6 +19,16 @@ function mount(app,{wrap,transaction,validate,save,record,rows,limit}){
    return {count:clean.length};
   });res.json({pesan:'Hasil tes tersimpan',...result});
  }));
+ app.post('/api/prestasi/time-table',permitted,wrap(async(req,res)=>{
+  const entries=req.body.entries;
+  if(!Array.isArray(entries)||!entries.length||entries.length>2000)throw fail(400,'Isi minimal satu hasil tes');
+  const result=await transaction(async c=>{
+   await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+   const all=await rows(c,'catatanwaktu'),clean=[],seen=new Set();
+   for(const input of entries){const key=[input.atletId,input.tanggal,input.gaya,Number(input.jarak),25].join('|');if(seen.has(key))throw fail(400,'Nomor tes ganda');seen.add(key);const old=all.find(r=>String(r.atletId)===String(input.atletId)&&r.tanggal===input.tanggal&&r.gaya===input.gaya&&Number(r.jarak)===Number(input.jarak)&&Number(r.kolam)===25);clean.push({old,data:await validate(req,c,'catatanwaktu',input,old)});}
+   for(const item of clean)await save(c,req.user,'catatanwaktu',item.data,item.old);return {count:clean.length};
+  });res.json(result);
+ }));
  app.get('/api/prestasi/program/:id/word',permitted,wrap(async(req,res)=>{
   const p=await record(null,'program',req.params.id);
   const doc=new Document({sections:[{children:[new Paragraph({text:'BARATHRUM • PROGRAM LATIHAN',heading:HeadingLevel.TITLE}),...['Tanggal: '+p.tanggal,'Kelas / grup: '+(p.grup||'Prestasi'),p.judul,'DRYLAND (LATIHAN DARAT)',p.dryland||'Belum diisi','SWIMMING (LATIHAN RENANG)',G.groups(p).length?'':p.swimming||p.detail||'',...G.groups(p).flatMap(g=>['GRUP '+g.nomor,g.swimming||'Program pada foto tersimpan di aplikasi.']),'EVALUASI',p.evaluasi||'Belum diisi'].flatMap(t=>t.split('\n').map(text=>new Paragraph({text})))]}]});
@@ -28,7 +38,7 @@ function mount(app,{wrap,transaction,validate,save,record,rows,limit}){
   const p=await record(null,'program',req.params.id),photo=G.groups(p).find(g=>g.foto)?.foto;if(!photo)throw fail(404,'Foto belum tersedia');res.type(photo.mime).send(Buffer.from(photo.base64,'base64'));
  }));
  app.get('/api/prestasi/program/:id/photo/:grup',permitted,wrap(async(req,res)=>{
-  if(!/^[1-4]$/.test(req.params.grup))throw fail(400,'Nomor grup tidak valid');
+  if(!/^(?:[1-9]|1[0-9]|20)$/.test(req.params.grup))throw fail(400,'Nomor grup tidak valid');
   const p=await record(null,'program',req.params.id),photo=G.groups(p).find(g=>g.nomor===Number(req.params.grup))?.foto;
   if(!photo)throw fail(404,'Foto grup belum tersedia');res.type(photo.mime).send(Buffer.from(photo.base64,'base64'));
  }));

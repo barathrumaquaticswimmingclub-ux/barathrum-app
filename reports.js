@@ -1,0 +1,42 @@
+'use strict';
+const PDFDocument=require('pdfkit'),path=require('path'),B=require('./business');
+const money=n=>'Rp'+Number(n||0).toLocaleString('id-ID');
+const blue='#063568',silver='#e7edf4';
+function doc(res,name,landscape=false){const d=new PDFDocument({size:'A4',layout:landscape?'landscape':'portrait',margin:38,bufferPages:true});res.type('application/pdf').attachment(name+'.pdf');d.pipe(res);header(d);return d;}
+function header(d){const w=d.page.width;d.rect(0,0,w,116).fill(blue);d.image(path.join(__dirname,'public/brand/barathrum-logo.png'),35,12,{fit:[95,92]});d.fillColor('white').font('Helvetica-Bold').fontSize(w>600?25:21).text('BARATHRUM',145,30);d.fontSize(11).text('AQUATIC SWIMMING CLUB',145,60).font('Helvetica').fontSize(10).text('Salatiga, Jawa Tengah  |  WhatsApp 0811-210-260',145,82);d.rect(0,116,w,6).fill('#b9c5d1');d.fillColor(blue);d.y=145;}
+function footer(d){const pages=d.bufferedPageRange();for(let i=0;i<pages.count;i++){d.switchToPage(i);d.fillColor('#63748a').font('Helvetica').fontSize(8).text('BRTM • '+B.today()+' • '+(i+1)+' / '+pages.count,38,d.page.height-48,{lineBreak:false});}d.end();}
+function heading(d,t){d.font('Helvetica-Bold').fillColor(blue).fontSize(20).text(t,38,d.y);d.moveDown(.6);}
+function rows(d,heads,items,widths){let y=d.y;const x=38;const line=(cells,isHead=false)=>{const size=isHead?9:9;d.font(isHead?'Helvetica-Bold':'Helvetica').fontSize(size);let cx=x;const h=Math.max(26,...cells.map((s,i)=>d.heightOfString(String(s??'—'),{width:widths[i]-12})+14));if(y+h>d.page.height-55){d.addPage();header(d);y=d.y;if(!isHead)line(heads,true);}cx=x;cells.forEach((s,i)=>{d.rect(cx,y,widths[i],h).fillAndStroke(isHead?blue:'#f7f9fc','#cfdae5');d.fillColor(isHead?'white':'#182b43').text(String(s??'—'),cx+6,y+7,{width:widths[i]-12});cx+=widths[i];});y+=h;};line(heads,true);for(const r of items)line(r);d.x=38;d.y=y+16;}
+function club(res,athletes,packs,month){if(month&&!/^\d{4}-\d{2}$/.test(month))month='';const d=doc(res,'BRTM-Laporan-Klub-'+(month||B.today()),true);heading(d,'LAPORAN KLUB');const active=athletes.filter(a=>a.status==='Aktif').length,income=packs.reduce((n,p)=>n+B.cashReceived(p,month),0),due=packs.filter(p=>p.status==='Belum Lunas'&&(!month||p.periode===month)).reduce((n,p)=>n+p.totalTagihan,0);d.fontSize(11).text(`Periode keuangan: ${month||'Seluruh periode'}  |  Seluruh atlet: ${athletes.length}  |  Aktif: ${active}`);d.text(`Uang masuk: ${money(income)}  |  Belum diterima: ${money(due)}`);d.moveDown();rows(d,['No.','Nama atlet','Kelas','Status klub','Uang diterima','Belum diterima'],athletes.map((a,i)=>{const ps=packs.filter(p=>String(p.atletId)===a.id);return [i+1,a.nama,a.kelompok,a.status,money(ps.reduce((n,p)=>n+B.cashReceived(p,month),0)),money(ps.filter(p=>p.status==='Belum Lunas'&&(!month||p.periode===month)).reduce((n,p)=>n+p.totalTagihan,0))];}),[32,170,175,90,150,148]);heading(d,'RINCIAN PEMBAYARAN');rows(d,['No.','Atlet / kelas','Periode / mulai','Dibayar','Status','Total tagihan','Uang masuk'],packs.filter(p=>!month||p.periode===month||B.cashReceived(p,month)>0).map((p,i)=>[i+1,p.namaAtlet+'\n'+p.jenisKelas,p.tanggal,p.dibayarPada||'—',p.status,money(p.totalTagihan),money(B.cashReceived(p,month))]),[32,200,100,90,105,115,123]);footer(d);}
+function program(res,programs,month){const d=doc(res,'BRTM-Program-'+month);heading(d,'PROGRAM LATIHAN PRESTASI');d.fontSize(11).text('Bulan '+month);d.moveDown();const list=programs.filter(p=>p.tanggal?.startsWith(month)).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));rows(d,['No.','Tanggal / sesi','Tempat','Dry line'],list.map((p,i)=>[i+1,p.tanggal+'\n'+p.sesi,p.lokasi,p.dryland||'—']),[30,100,170,219]);for(const p of list){d.addPage();header(d);heading(d,p.tanggal+' • '+p.sesi);d.fontSize(11).text(p.lokasi).text('Dry line: '+(p.dryland||'—'));for(const g of require('./program').groups(p)){if(d.y>550){d.addPage();header(d);}d.moveDown();d.font('Helvetica-Bold').text('Grup '+g.nomor);if(g.foto){const y=d.y;d.image(Buffer.from(g.foto.base64,'base64'),38,y,{fit:[515,330]});d.y=y+340;}if(g.swimming)d.font('Helvetica').text(g.swimming);}}footer(d);}
+function terbilang(n){n=Math.floor(n);const a=['','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh','sebelas'];if(n<12)return a[n];if(n<20)return terbilang(n-10)+' belas';if(n<100)return terbilang(Math.floor(n/10))+' puluh '+terbilang(n%10);if(n<200)return 'seratus '+terbilang(n-100);if(n<1000)return terbilang(Math.floor(n/100))+' ratus '+terbilang(n%100);if(n<2000)return 'seribu '+terbilang(n-1000);if(n<1e6)return terbilang(Math.floor(n/1000))+' ribu '+terbilang(n%1000);if(n<1e9)return terbilang(Math.floor(n/1e6))+' juta '+terbilang(n%1e6);return String(n);}
+// The user supplied these two blank document templates. Keep their artwork intact;
+// place selectable, current payment data over the blank form fields.
+function bill(res,p,kind,id){
+ const receipt=kind==='receipt',scale=.5,size=receipt?[768,512]:[702,768];
+ const d=new PDFDocument({size,margin:0});res.type('application/pdf').attachment('BRTM-'+(receipt?'Kuitansi':'Invoice')+'-'+id+'.pdf');d.pipe(res);
+ d.image(path.join(__dirname,'assets/billing',receipt?'receipt.png':'invoice.png'),0,0,{width:size[0],height:size[1]});
+ const put=(value,x,y,w,font=23,align='left')=>d.font('Helvetica-Bold').fillColor('#082f5b').fontSize(font*scale).text(String(value),x*scale,y*scale,{width:w*scale,align,lineBreak:false});
+ const clear=(x,y,w,h)=>d.rect(x*scale,y*scale,w*scale,h*scale).fill('#f7fbff');
+ if(receipt){
+  clear(1298,259,200,31);put('KWT-'+id,1300,263,200,20);clear(1298,303,200,31);put(p.dibayarPada||p.tanggal,1300,307,200,20);
+  put(p.namaAtlet,396,351,1080,25);put(p.jenisKelas+(p.periode?' • '+p.periode:''),396,420,1080,24);
+  put(Number(B.cashReceived(p)).toLocaleString('id-ID'),490,495,400,30);put(terbilang(B.cashReceived(p)).replace(/\s+/g,' ').trim()+' rupiah',397,556,1050,23);
+  const tick=(x,y)=>d.strokeColor('#003f88').lineWidth(2).moveTo((x-9)*scale,y*scale).lineTo((x-2)*scale,(y+8)*scale).lineTo((x+13)*scale,(y-11)*scale).stroke();
+  if(p.biayaPendaftaran)tick(108,712);
+  if(p.jenisKelas.startsWith('Regular'))tick(108,753);
+  if(p.jenisKelas==='Prestasi Class')tick(108,796);
+  const boxes={'Private Class':711,'Semi Private Class':753,'Private Couple Class':795,'Group Class':833,'Hydro Terapi Class':866};if(boxes[p.jenisKelas])tick(472,boxes[p.jenisKelas]);
+  // The template's extra line carries the exact arithmetic without covering the signature.
+  const detail='Paket '+money(p.jumlah)+' + daftar '+money(p.biayaPendaftaran)+' - diskon '+money(p.potonganDiskon);put(detail,256,889,550,15);
+ }else{
+  clear(298,527,342,40);put('INV-BRTM-'+id,303,534,330,24);clear(298,577,342,40);put(p.tanggal,303,584,330,24);
+  put('Nama atlet: '+p.namaAtlet,60,670,1260,23);
+  const items=[[p.jenisKelas,p.jumlah],[p.biayaPendaftaran?'Pendaftaran anggota baru':'',p.biayaPendaftaran],[p.potonganDiskon?'Potongan / diskon':'',-p.potonganDiskon]];
+  items.forEach(([label,amount],i)=>{if(!label)return;const y=779+i*55;put(i+1,70,y,65,22,'center');put(label,165,y,450,21);put('1',645,y,185,22,'center');put(money(amount),850,y,230,22,'right');put(money(amount),1105,y,235,22,'right');});
+  put(money(p.totalTagihan),1104,946,235,25,'right');
+  if(p.provisional)put('Pemberitahuan awal; SPP final mengikuti kehadiran. Bulan tanpa hadir tidak ditagih.',60,1013,1280,18);
+ }
+ d.end();
+}
+module.exports={club,program,bill,terbilang};

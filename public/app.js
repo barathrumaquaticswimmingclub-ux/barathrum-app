@@ -35,7 +35,7 @@ function renderNav() {
 async function load() {
   const uid = S.user?.id; if (!uid) return;
   $('loading').classList.remove('hidden');
-  const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua','pendaftaran','formulir'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
+  const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
   try {
     const results = await Promise.all(kinds.map(async kind => [kind, await request(isOwner()&&['perkembangan','absensi','pembayaran'].includes(kind)?'/api/owner/activity/'+kind:'/api/'+kind)]));
     if (S.user?.id !== uid) return;
@@ -93,7 +93,8 @@ function filteredRows() {
   const k=S.section,q=$('search').value.toLowerCase(),f=$('filter').value,m=$('monthFilter').value;
   return (S.records[k]||[]).filter(x=>{
     const names=k==='jadwal'?(x.atletIds||[]).map(id=>(S.records.atlet||[]).find(a=>a.id===String(id))?.nama||'').join(' '):'';
-    if(q&&!(Object.values(x).filter(v=>typeof v!=='object').join(' ')+' '+names).toLowerCase().includes(q))return false;
+    const child=(S.records.atlet||[]).find(a=>a.id===String(x.atletId));
+    if(q&&!(Object.values(x).filter(v=>typeof v!=='object').join(' ')+' '+names+' '+(child?.namaPanggilan||'')).toLowerCase().includes(q))return false;
     if(m&&['absensi','pembayaran','program'].includes(k)&&x.tanggal?.slice(0,7)!==m)return false;
     if(!f)return true;
     if(k==='jadwal')return f==='Hari ini'?x.tanggal===S.config.today:f==='Mendatang'?x.tanggal>=S.config.today:x.tanggal<S.config.today;
@@ -142,7 +143,7 @@ function card(row) {
 function formatTime(v) {const n=Number(v);return n>=60?Math.floor(n/60)+':'+(n%60).toFixed(2).padStart(5,'0'):n.toFixed(2)+' detik';}
 function renderList() {
   const k=S.section;
-  if(['orangtua','pendaftaran','formulir'].includes(k)){renderIntake();return;}
+  if(['orangtua'].includes(k)){renderIntake();return;}
   if(k==='laporan'){renderReports();return;}
   const list=filteredRows();
   const banners={jadwal:'Jadwal dibuat per tanggal. Coach pengganti ditentukan Owner melalui Edit. Memindah jadwal tidak menambah kuota paket.',absensi:'Hanya Hadir yang mengurangi kuota. Paket nonprestasi harus tercatat, belum habis, dan berlaku pada tanggal sesi. Tagihan Belum Lunas tetap dapat digunakan; status pembayaran tidak berubah. Prestasi menggunakan SPP bulanan.',pembayaran:'Tarif dan diskon dihitung server. Tidak ada DP/cicilan. Status Belum Lunas berarti tagihan belum dibayar. Masa paket satu bulan; sisa hangus setelah berakhir.',akun:'Coach 1–7 dapat bergantian mengajar atlet yang sama sesuai penugasan jadwal. Ubah nama akun lalu buat kata sandi awal untuk diberikan kepada pelatih.',pelatih:'Data kontak dari aplikasi lama. Penugasan jadwal memakai akun individual pada menu Akun tim.',catatanwaktu:'Personal best dibandingkan untuk atlet, gaya, jarak, dan panjang kolam yang sama.',audit:'Menampilkan 200 aktivitas terbaru. Riwayat lengkap ikut dalam unduhan cadangan.'};

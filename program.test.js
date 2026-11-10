@@ -19,7 +19,7 @@ async function main(){
  edit.grupProgram[1].hapusFoto=true;const removed=(await call(juara,'put','/api/program/'+p.id,edit)).body.data;assert.equal(removed.grupProgram[1].adaFoto,false);assert(removed.grupProgram[0].adaFoto);await call(juara,'get','/api/prestasi/program/'+p.id+'/photo/2',undefined,404);
  await call(juara,'post','/api/program',{...input,grupProgram:[...input.grupProgram,{nomor:1,foto}]},400);
  await call(juara,'post','/api/program',{...input,grupProgram:[{nomor:1,foto},{nomor:1,foto}]},400);
- await call(juara,'post','/api/program',{...input,grupProgram:[{nomor:5,foto}]},400);
+ await call(juara,'post','/api/program',{...input,grupProgram:[{nomor:21,foto}]},400);
  await call(juara,'post','/api/program',{jenis:'Program',grupProgram:[]},400);
  await call(juara,'post','/api/program',{jenis:'Program',grupProgram:[{nomor:2,foto}]},201);
  await call(juara,'post','/api/program',{jenis:'Program',dryland:'Lari ringan saja',grupProgram:[]},201);
