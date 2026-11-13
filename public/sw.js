@@ -1,7 +1,7 @@
 'use strict';
 // Only public offline-page assets are cached. Club data and credentials always use the network.
-const CACHE = 'brtm-offline-v3';
-const OFFLINE_ASSETS = ['/offline.html', '/offline.css', '/icons/brtm-brand-192.png', '/icons/brtm-brand-512.png'];
+const CACHE = 'brtm-offline-v4';
+const OFFLINE_ASSETS = ['/offline.html', '/offline.css', '/icons/brtm-staff-20261114-192.png', '/icons/brtm-staff-20261114-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(OFFLINE_ASSETS)).then(() => self.skipWaiting()));
 });
@@ -22,5 +22,5 @@ self.addEventListener('fetch', event => {
   }
 });
 
-self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{};}catch{}event.waitUntil(self.registration.showNotification('BRTM',{body:data.body||'Ada masukan baru dari orang tua.',tag:data.tag||'brtm-feedback',data:{url:'/club/'},icon:'/icons/brtm-brand-192.png'}));});
+self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{};}catch{}event.waitUntil(self.registration.showNotification('BRTM',{body:data.body||'Ada masukan baru dari orang tua.',tag:data.tag||'brtm-feedback',data:{url:'/club/'},icon:'/icons/brtm-staff-20261114-192.png'}));});
 self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil((async()=>{const list=await self.clients.matchAll({type:'window',includeUncontrolled:true});const page=list.find(c=>new URL(c.url).pathname.startsWith('/club/'));if(page){await page.focus();await page.navigate('/club/');}else await self.clients.openWindow('/club/');})());});

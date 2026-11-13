@@ -39,7 +39,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('/swim/sw.js',{
 // Live data while open; no personal data is written to browser storage or offline cache.
 setInterval(()=>{if(!document.hidden&&!$('dashboard').hidden)refresh().catch(()=>{});},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('dashboard').hidden)refresh().catch(()=>{});});
-refresh().catch(e=>{if(e.status!==401)$('loginMessage').textContent='Belum terhubung. Periksa koneksi internet.';});
+refresh().catch(e=>{if(e.status!==401)$('loginMessage').textContent='Belum terhubung. Periksa koneksi internet.';}).finally(()=>window.brtmSplash?.finish());
 
 $('content').addEventListener('error',e=>{if(e.target.matches('.child-photo'))e.target.replaceWith(document.createTextNode(e.target.dataset.initial||'•'));},true);
 function renderOwner(d){

@@ -233,6 +233,6 @@ $('addButton').onclick=()=>openForm(S.section);$('editForm').onsubmit=submitForm
 $('refreshButton').onclick=async()=>{const b=$('refreshButton');b.disabled=true;try{await load();notice('Data klub sudah diperbarui.');}catch(e){notice(e.message,true);}finally{b.disabled=false;}};
 $('editor').addEventListener('cancel',e=>{e.preventDefault();closeEditor();});$('secretDialog').addEventListener('close',()=>{$('secretValue').value='';});$('closeSecret').onclick=()=>$('secretDialog').close();$('copySecret').onclick=async()=>{try{await navigator.clipboard.writeText($('secretValue').value);$('copySecret').textContent='Tersalin';setTimeout(()=>$('copySecret').textContent='Salin kata sandi',2000);}catch{$('secretValue').select();}};
 document.querySelector('.brand').onclick=e=>{e.preventDefault();navigate('dashboard');};
-(async()=>{try{const d=await request('/auth/me');await start(d.user);}catch(e){if(S.user)notice(e.message,true);else showLogin();}})();
+(async()=>{try{const d=await request('/auth/me');await start(d.user);}catch(e){if(S.user)notice(e.message,true);else showLogin();}finally{window.brtmSplash?.finish();}})();
 
 $('records').addEventListener('error',e=>{if(e.target.matches('.athlete-photo'))e.target.closest('a').hidden=true;},true);

@@ -10,7 +10,7 @@ async function showBrtmPush(d){
  if(typeof d.image==='string'&&/^\/swim\/api\/announcements\/[1-9]\d*\/photo$/.test(d.image)){
   try{const r=await fetch(d.image,{credentials:'include',cache:'no-store',signal:AbortSignal.timeout(4000)});if(r.ok&&r.headers.get('content-type')?.startsWith('image/')){const bytes=new Uint8Array(await r.arrayBuffer());if(bytes.length<=2*1024*1024){let raw='';for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));image='data:'+r.headers.get('content-type')+';base64,'+btoa(raw);}}}catch{}
  }
- const options={body:d.body||'Ada kabar terbaru dari BRTM.',icon:'/swim/icons/swim-192.png',badge:'/swim/icons/swim-192.png',tag:d.tag||'brtm',data:{url:'/swim/'}};
+ const options={body:d.body||'Ada kabar terbaru dari BRTM.',icon:'/swim/icons/brtm-swim-20261114-192.png',badge:'/swim/icons/brtm-swim-20261114-192.png',tag:d.tag||'brtm',data:{url:'/swim/'}};
  if(image)options.image=image;
  try{await self.registration.showNotification('BRTM SWIM',options);}catch{delete options.image;await self.registration.showNotification('BRTM SWIM',options);}
 }
