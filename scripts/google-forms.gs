@@ -83,6 +83,7 @@ function kirimSatuBRTM(kind,response){
       }else if(String(item.getResponse()||'').trim())data[key]=String(item.getResponse()||'');
     });
   });
+  data.jadwalPilihan=ringkasJadwalBRTM(response);
   if(data.persetujuan)data.versiKetentuan=RULES.version;
   postBRTM(kind,{responseId:response.getId(),data:data});
 }
@@ -111,4 +112,9 @@ function ulangKirimBRTM() {
       }
     });
   } finally { lock.releaseLock(); }
+}
+
+// Only answered schedule questions are included; skipped branches remain absent.
+function ringkasJadwalBRTM(response){
+  return response.getItemResponses().filter(function(r){return /^(Hari|Jam) yang dipilih — /.test(r.getItem().getTitle())&&String(r.getResponse()||'').trim();}).map(function(r){return r.getItem().getTitle()+': '+String(r.getResponse()).trim();}).join('; ');
 }
