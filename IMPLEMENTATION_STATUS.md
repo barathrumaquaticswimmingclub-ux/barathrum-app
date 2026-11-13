@@ -1,3 +1,11 @@
+# Owner member-number correction — 14 November 2026 (WIB)
+
+Added Owner-only correction of public membership sequence numbers. The Data atlet page opens a table of current member IDs and number inputs. Multiple changes submit together with a required reason and expected existing ID. Swaps are atomic, duplicate numbers and collisions with other registered/archived members are rejected, stale edits require reloading, and an audit entry records each changed member. Original registration dates, legacy IDs, internal athlete IDs, profiles, account access and financial/training records are preserved. The sequence remains above the highest assigned number; routine profile edits and restarts keep the corrected IDs.
+
+Validation covers Owner/staff/parent boundaries, two-member swap, duplicate and invalid numbers, collisions and stale requests, parent dashboard projection, registration/record preservation, next registration after a high-number correction, rollback on audit failure and the Owner form's two-change payload. Sample data only. Release and the requested live correction are confirmed separately after deployment and readback.
+
+---
+
 # Registration day/time branches — 14 November 2026 (WIB)
 
 Updated the existing non-Prestasi Google Form through its existing Apps Script project. Class selection routes to required day/time sections. Regular 1x offers Monday–Saturday afternoons (15–16, 16–17), plus Saturday mornings (08–09, 09–10). Regular 2x requires two day/time pairs using the same limits. Other non-Prestasi classes offer Monday–Saturday at 07–08, 08–09, 09–10, 14–15, 15–16, 16–17. Photo and final consent follow the selected branch. Existing questions, responses, form IDs and integration keys are preserved. The second-day instruction asks for a different day; Google Forms does not enforce cross-question day inequality.
