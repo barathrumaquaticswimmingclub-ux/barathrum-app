@@ -51,9 +51,10 @@ async function main() {
   assert.equal((await request(app).get('/swim/install/install.css')).status,200);assert.equal((await request(app).get('/swim/install-support.js')).status,200);
   const parentHtml=await request(app).get('/swim/');assert.match(parentHtml.text,/apple-mobile-web-app-capable/);assert.match(parentHtml.text,/install-support.js/);
   const swimManifest=JSON.parse(fs.readFileSync('public/swim/manifest.webmanifest','utf8'));assert.equal(swimManifest.id,'/swim/');assert.equal(swimManifest.start_url,'/swim/');
+  const staffInstallPage=await request(app).get('/club/install/');assert.equal(staffInstallPage.status,200);assert.match(staffInstallPage.text,/Owner, Coach, atau Prestasi/);assert.match(staffInstallPage.text,/href="\/manifest.webmanifest"/);assert.match(staffInstallPage.text,/brtm-staff-20261114-192.png/);assert(!staffInstallPage.text.includes('loginForm'));assert(!staffInstallPage.text.includes('BRTM SWIM'));assert.match(html.text,/apple-touch-icon/);assert.match(html.text,/iPhone · Safari/);
   const {JSDOM}=require('jsdom');
-  function phoneHarness({ios=false,ipad=false,standalone=false,main=false}={}){
-    const html=main?parentHtml.text:installPage.text,dom=new JSDOM(html,{runScripts:'outside-only',url:'https://brtm.test/swim/install/'}),w=dom.window;
+  function phoneHarness({ios=false,ipad=false,standalone=false,main=false,staff=false}={}){
+    const html=staff?staffInstallPage.text:main?parentHtml.text:installPage.text,dom=new JSDOM(html,{runScripts:'outside-only',url:'https://brtm.test/swim/install/'}),w=dom.window;
     Object.defineProperty(w.navigator,'userAgent',{value:ios?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'});
     if(ipad){Object.defineProperty(w.navigator,'platform',{value:'MacIntel'});Object.defineProperty(w.navigator,'maxTouchPoints',{value:5});}
     w.matchMedia=()=>({matches:standalone});Object.defineProperty(w,'isSecureContext',{value:true});let registration;
@@ -74,7 +75,13 @@ async function main() {
   const mainPhone=phoneHarness({ios:true,main:true});mainPhone.button.click();assert(mainPhone.w.document.getElementById('installHelp').open);mainPhone.w.document.getElementById('closeInstallHelp').click();assert(!mainPhone.w.document.getElementById('installHelp').open);
   mainPhone.w.document.querySelector('[data-install-platform="android"]').click();assert(!mainPhone.w.document.getElementById('androidHelp').hidden);
   const failed=new mainPhone.w.Event('beforeinstallprompt',{cancelable:true});failed.prompt=async()=>{throw Error('not supported');};mainPhone.w.dispatchEvent(failed);mainPhone.button.click();await new Promise(r=>setImmediate(r));assert(mainPhone.w.document.getElementById('installHelp').open);assert(!mainPhone.button.disabled);
+  const staffAndroid=phoneHarness({staff:true});assert.equal(staffAndroid.button.textContent,'Pasang BRTM');assert.equal(staffAndroid.registration().url,'/club/sw.js');assert.equal(staffAndroid.registration().options.scope,'/club/');
+  let staffPrompts=0;const staffEvent=new staffAndroid.w.Event('beforeinstallprompt',{cancelable:true});staffEvent.prompt=async()=>staffPrompts++;staffEvent.userChoice=Promise.resolve({outcome:'accepted'});staffAndroid.w.dispatchEvent(staffEvent);assert.equal(staffPrompts,0);staffAndroid.button.click();await new Promise(r=>setImmediate(r));assert.equal(staffPrompts,1);assert.match(staffAndroid.status.textContent,/ikon BRTM setelah/);assert(!staffAndroid.status.textContent.includes('SWIM'));
+  const staffIphone=phoneHarness({staff:true,ios:true});staffIphone.button.click();assert.match(staffIphone.status.textContent,/Safari.*Bagikan/);assert(!staffIphone.w.document.getElementById('iosHelp').hidden);assert.equal(staffIphone.registration().options.scope,'/club/');
+  staffAndroid.w.dispatchEvent(new staffAndroid.w.Event('appinstalled'));assert(staffAndroid.button.hidden);assert.equal(staffAndroid.status.textContent,'BRTM siap dibuka dari ikon aplikasi Anda.');
+  assert.equal(android.registration().options.scope,'/swim/');
+  staffAndroid.dom.window.close();staffIphone.dom.window.close();
   for(const h of [android,iphone,ipad,opened,mainPhone])h.dom.window.close();
-  console.log('PASS: public SWIM install link, Android prompts/cancellation/errors, iPhone/iPad guides and shared app identity; install manifest and PNG sizes; public asset delivery/CSP; offline fallback; API, auth, POST and cross-origin requests never intercepted; cache isolation; install prompt and fallback guide; installed-mode button hidden.');
+  console.log('PASS: separate BRTM and SWIM install links/icons/scopes, staff Android/iPhone flows, public SWIM install link, Android prompts/cancellation/errors, iPhone/iPad guides and shared app identity; install manifest and PNG sizes; public asset delivery/CSP; offline fallback; API, auth, POST and cross-origin requests never intercepted; cache isolation; install prompt and fallback guide; installed-mode button hidden.');
 }
 main().catch(error=>{console.error(error);process.exit(1)});

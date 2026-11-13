@@ -4,6 +4,7 @@
   if(!button)return;
   const dialog=document.getElementById('installHelp'),guide=document.getElementById('installGuide');
   const status=document.getElementById('installStatus');
+  const staff=document.body.dataset.installApp==='staff',appName=staff?'BRTM':'BRTM SWIM';
   const apple=/iPhone|iPad|iPod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   let promptEvent=null,platform=apple?'ios':'android',installComplete=false;
   const standalone=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -17,8 +18,8 @@
   function sync(){
     const installed=standalone()||installComplete;
     button.hidden=installed;if(guide)guide.hidden=installed;
-    if(installed)say('BRTM SWIM siap dibuka dari ikon aplikasi Anda.');
-    else button.textContent=platform==='ios'?'Lihat cara pasang di iPhone':'Pasang BRTM SWIM';
+    if(installed)say(appName+' siap dibuka dari ikon aplikasi Anda.');
+    else button.textContent=platform==='ios'?'Lihat cara pasang di iPhone':'Pasang '+appName;
   }
   function help(){
     if(dialog&&!dialog.open)dialog.showModal();
@@ -34,12 +35,12 @@
     const event=promptEvent;promptEvent=null;button.disabled=true;
     try{
       await event.prompt();const choice=await event.userChoice;
-      if(choice?.outcome==='accepted')say('Pemasangan disetujui. Buka ikon BRTM SWIM setelah pemasangan selesai.');
-      else say('Pemasangan dibatalkan. Anda tetap bisa membuka BRTM SWIM melalui browser.');
+      if(choice?.outcome==='accepted')say('Pemasangan disetujui. Buka ikon '+appName+' setelah pemasangan selesai.');
+      else say('Pemasangan dibatalkan. Anda tetap bisa membuka '+appName+' melalui browser.');
     }catch{help();}
     finally{button.disabled=false;sync();}
   });
   document.getElementById('closeInstallHelp')?.addEventListener('click',()=>dialog.close());
   choose(platform);sync();
-  if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('/swim/sw.js',{scope:'/swim/',updateViaCache:'none'}).catch(()=>{});
+  if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register(staff?'/club/sw.js':'/swim/sw.js',{scope:staff?'/club/':'/swim/',updateViaCache:'none'}).catch(()=>{});
 })();

@@ -1,3 +1,11 @@
+# Public BRTM staff installation link — 14 November 2026 (WIB)
+
+Added /club/install/ for Owner, Coach and Prestasi users, matching the SWIM installation-page design while retaining the supplied staff icon and existing staff manifest ID /, /club/ scope and /club/?source=installed launch URL. The shared guide/prompt helper selects staff labels and service-worker scope only for the explicit staff page; SWIM retains its existing identity, labels and /swim/ scope. The public installer does not load authentication or private club data. Installation does not grant access to the club without login.
+
+Both Android/Chrome installation and iPhone/iPad Safari home-screen instructions are available. Existing staff app fallback help now includes iPhone steps and Apple home-screen metadata. PWA tests cover separate manifests/icons/scopes, staff prompt after a tap, staff iPhone help, installed-state labels and unchanged SWIM behavior. Actual installation on physical phones remains untested. Deployment/readback confirmation follows release.
+
+---
+
 # Public BRTM SWIM installation link — 14 November 2026 (WIB)
 
 Added /swim/install/ as a public branded installation landing page for parents, without loading authentication or child data. It uses the existing /swim/ manifest identity, start URL and icons. Android can invoke the browser's deferred installation prompt after an explicit tap, with Chrome menu fallback, cancellation/error recovery and installed-state handling. iPhone/iPad users receive Safari Share → Add to Home Screen instructions; both guides remain manually selectable. WhatsApp/browser handoff guidance is included. No automatic/silent installation or App Store availability is claimed.
