@@ -105,16 +105,17 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   async function rows(db, kind, lock = false) {
     const r = await db.query(`SELECT id,data FROM data_klub WHERE jenis=$1 ORDER BY id DESC${lock ? ' FOR UPDATE' : ''}`, [kind]);
-    return r.rows.map(x => ({ ...x.data, id: String(x.id) }));
+    const members=kind==='atlet'?Object.fromEntries((await db.query('SELECT athlete_id,member_id FROM brtm_members')).rows.map(m=>[String(m.athlete_id),m.member_id])):{};
+    return r.rows.map(x => ({ ...x.data, id: String(x.id), ...(kind==='atlet'?{memberId:members[x.id]||''}:{}) }));
   }
   async function record(db, kind, recordId, lock = false) {
     const r = await db.query(`SELECT id,data FROM data_klub WHERE jenis=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`, [kind, id(recordId)]);
     if (!r.rowCount) throw fail(404, 'Data tidak ditemukan');
-    return { ...r.rows[0].data, id: String(r.rows[0].id) };
+    return { ...r.rows[0].data, id: String(r.rows[0].id), ...(kind==='atlet'?{memberId:(await db.query('SELECT member_id FROM brtm_members WHERE athlete_id=$1',[recordId])).rows[0]?.member_id||''}:{}) };
   }
   async function save(db, user, kind, data, previous) {
     if(kind==='program')data=await require('./images').program({...data,grupProgram:data.grupProgram?.map(g=>({...g}))},previous);
-    const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id;
+    const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id; delete payload.memberId;
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
@@ -224,8 +225,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const presentMonth=attendance.some(r=>r.atletId===a.id&&r.status==='Hadir'&&r.tanggal?.startsWith(B.today().slice(0,7))&&B.canonical(r.jenisKelas||schedules.find(s=>s.id===r.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
       const overdue=related.some(p=>p.status==='Belum Lunas'&&p.totalTagihan>0);
       const finance = { statusSPP: isPrestasi ? sppStates[a.id]?.sppMenungguOwner?'Menunggu Persetujuan Owner':overdue?'Belum Lunas':paidMonth?'Lunas':presentMonth?'Belum Lunas':'Tidak Ada SPP Bulan Ini' : related.some(p=>p.status==='Belum Lunas') ? 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? B.prestasiNextDue(related,related.find(p=>p.tanggalPembayaranPertama)?.tanggalPembayaranPertama,B.today())||'' : latest?.berlakuSampai || '', paketId: active?.id || '' };
-      if (req.user.role === 'owner') return { ...a, memberId:require('./community').memberId(a.id), kelompok: B.canonical(a.kelompok), ...op, ...finance, ...(sppStates[a.id]||{saldoKredit:0,sppMenungguOwner:false}), foto:'/api/atlet/'+a.id+'/foto' };
-      return { id: a.id, memberId:require('./community').memberId(a.id), nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op, foto:'/api/atlet/'+a.id+'/foto' };
+      if (req.user.role === 'owner') return { ...a, memberId:a.memberId, kelompok: B.canonical(a.kelompok), ...op, ...finance, ...(sppStates[a.id]||{saldoKredit:0,sppMenungguOwner:false}), foto:'/api/atlet/'+a.id+'/foto' };
+      return { id: a.id, memberId:a.memberId, nama: a.nama, kelompok: B.canonical(a.kelompok), status: a.status, sekolah: a.sekolah || '', kelasSekolah: a.kelasSekolah || '', ...op, foto:'/api/atlet/'+a.id+'/foto' };
     });
   }
   app.get('/api/atlet/:id/foto', wrap(async(req,res)=>{

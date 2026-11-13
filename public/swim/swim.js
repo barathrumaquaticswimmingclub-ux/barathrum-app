@@ -10,7 +10,11 @@ async function request(url, body, method) {
   const d = await r.json(); if(!r.ok){const e=Error(d.pesan||'Data belum bisa dimuat.');e.status=r.status;throw e;} return d;
 }
 function showLogin(){swimViewVersion++; ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
-const metric = (label,value,detail) => `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
+const portalIcon = key => {
+ const paths={home:'M3 11 12 3l9 8M5 10v11h5v-6h4v6h5V10',card:'M3 8h18M3 12h18M6 17h5M5 5h14a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2',calendar:'M5 5h14a2 2 0 0 1 2 2v14H3V7a2 2 0 0 1 2-2M7 3v5M17 3v5M3 11h18M7 15h2M13 15h2M7 18h2',chart:'M5 20V13h3v7M11 20V8h3v12M17 20V3h3v17',bell:'M5 17h14l-2-4V9a5 5 0 0 0-10 0v4l-2 4M10 21h4',clock:'M12 8v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',swim:'M3 17c3-3 5 3 9 0s6 3 9 0M3 21c3-3 5 3 9 0s6 3 9 0M4 12l5-4 5 4 4-1M14 5a2 2 0 1 0 4 0 2 2 0 0 0-4 0',layers:'m12 3 10 5-10 5L2 8l10-5M2 13l10 5 10-5M2 18l10 5 10-5',check:'m7 12 3 3 7-7M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'};
+ return '<svg class="portal-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="'+(paths[key]||paths.calendar)+'"/></svg>';
+};
+const metric = (label,value,detail) => `<div class="metric">${portalIcon(({"Sesi latihan":"swim","Latihan bulan ini":"calendar","Sisa latihan":"layers","Terakhir bayar":"card","Bayar berikutnya":"calendar","Status pembayaran":"check"})[label])}<span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
 function render(d){
   ownerMode=d.role==='owner';
   if(ownerMode && d.atlet) {ownerData=d;renderOwner(d);return;}
