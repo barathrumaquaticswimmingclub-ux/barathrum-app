@@ -1,3 +1,13 @@
+# Public BRTM SWIM installation link — 14 November 2026 (WIB)
+
+Added /swim/install/ as a public branded installation landing page for parents, without loading authentication or child data. It uses the existing /swim/ manifest identity, start URL and icons. Android can invoke the browser's deferred installation prompt after an explicit tap, with Chrome menu fallback, cancellation/error recovery and installed-state handling. iPhone/iPad users receive Safari Share → Add to Home Screen instructions; both guides remain manually selectable. WhatsApp/browser handoff guidance is included. No automatic/silent installation or App Store availability is claimed.
+
+The existing SWIM install button now shares the same device-aware help and prompt handler. Added Apple home-screen metadata and the supplied SWIM icon to both pages. Existing login, data and notification flows remain unchanged.
+
+Validation: PWA tests cover public delivery/CSP, shared manifest identity, no auth form on installer, Android prompt only after a tap, one-use prompts, cancellation/acceptance/error states, appinstalled/standalone state, iPhone and desktop-mode iPad detection, platform switching and existing-app help. Real Android/iPhone device installation has not been performed. Release confirmation follows Railway SUCCESS and live page verification.
+
+---
+
 # Owner member-number correction — 14 November 2026 (WIB)
 
 Added Owner-only correction of public membership sequence numbers. The Data atlet page opens a table of current member IDs and number inputs. Multiple changes submit together with a required reason and expected existing ID. Swaps are atomic, duplicate numbers and collisions with other registered/archived members are rejected, stale edits require reloading, and an audit entry records each changed member. Original registration dates, legacy IDs, internal athlete IDs, profiles, account access and financial/training records are preserved. The sequence remains above the highest assigned number; routine profile edits and restarts keep the corrected IDs.
