@@ -10,7 +10,7 @@ async function main(){
  const create=async(n,k='Prestasi Class',status='Aktif')=>(await send(owner,'post','/api/atlet',{nama:n,kelompok:k,status},201)).data;
  const a=await create('Atlet Satu'),b=await create('Atlet Dua'),c=await create('Pemula','Private Class');await create('Cuti','Prestasi Class','Nonaktif');
  await send(owner,'post','/api/orangtua/siapkan',{});await send(parent,'post','/swim/api/login',{username:'Atlet Satu',password:'brtm'});await send(parent2,'post','/swim/api/login',{username:'Atlet Dua',password:'brtm'});
- let dash=await send(parent,'get','/swim/api/dashboard');const mid=dash.profil.memberId;assert.equal(mid,C.memberId(a.id));assert.match(mid,/^BRTM-\d{6}$/);
+ let dash=await send(parent,'get','/swim/api/dashboard');const mid=dash.profil.memberId;assert.equal(mid,C.memberId(1,B.today()+'T12:00:00+07:00'));assert.match(mid,/^BRTM\d{13}$/);
  await send(owner,'put','/api/atlet/'+a.id,{...a,memberId:'FAKE',nama:'Atlet Satu Baru'});assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,mid);
  await send(owner,'put','/api/atlet/'+a.id,{...a,status:'Nonaktif'});await send(owner,'put','/api/atlet/'+a.id,{...a,status:'Aktif'});assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,mid);
  let report=await send(owner,'get','/api/community/members');assert.equal(report.total,4);assert.equal(report.active,3);assert.equal(report.newInYear,4);assert.equal(report.trainedInYear,0);
@@ -50,7 +50,7 @@ async function main(){
  await send(owner,'delete','/api/atlet/'+a.id,{},400);
  await send(owner,'post','/api/tester/reset',{},409);
  const legacy=(await pool.query("INSERT INTO data_klub(jenis,data,dibuat_pada) VALUES('atlet',$1,'2025-06-01') RETURNING id",[JSON.stringify({nama:'Atlet Lama',status:'Nonaktif',kelompok:'Private Class'})])).rows[0];
- await C.initDb(pool);const history=await send(owner,'get','/api/community/members?year=2025');assert.equal(history.throughYear,1);assert.equal(history.newInYear,1);assert.equal(history.members.find(m=>m.athlete_id===legacy.id).member_id,C.memberId(legacy.id));
+ await C.initDb(pool);const history=await send(owner,'get','/api/community/members?year=2025');assert.equal(history.throughYear,1);assert.equal(history.newInYear,1);assert.equal(history.members.find(m=>m.athlete_id===legacy.id).member_id,C.memberId(history.members.find(m=>m.athlete_id===legacy.id).member_number,'2025-06-01T00:00:00Z'));
  await pool.query("INSERT INTO data_klub(jenis,data) VALUES('absensi',$1),('absensi',$1)",[JSON.stringify({atletId:a.id,status:'Hadir',tanggal:'2025-05-01'})]);assert.equal((await send(owner,'get','/api/community/members?year=2025')).trainedInYear,1);
  // Multiple speed-test dates are sorted/deduplicated, with weekdays derived from the dates.
  const speed={requestId:'speed-test-multiple-001',kind:'speed-test',className:'Prestasi Class',dates:[B.addDays(B.today(),4),B.today(),B.addDays(B.today(),2),B.today()],title:'Jadwal speed test',body:'Mohon mempersiapkan atlet untuk tes.'};

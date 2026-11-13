@@ -4,13 +4,34 @@ const N=require('./notifications');
 const webpush=require('web-push');
 const crypto=require('crypto');
 const fail=(status,message)=>Object.assign(Error(message),{status});
-const memberId=id=>'BRTM-'+String(id).padStart(6,'0');
+// Public membership numbers are independent of internal record IDs.
+const memberId=(number,registeredAt)=>{
+ const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jakarta',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(registeredAt)).replaceAll('/','');
+ return 'BRTM'+String(number).padStart(5,'0')+stamp;
+};
+async function migrateMembers(db){
+ const c=await db.connect();
+ try{await c.query('BEGIN');
+  await c.query('LOCK TABLE brtm_members IN EXCLUSIVE MODE');
+  await c.query('CREATE SEQUENCE IF NOT EXISTS brtm_member_number_seq');
+  await c.query('ALTER TABLE brtm_members ADD COLUMN IF NOT EXISTS member_number BIGINT');
+  await c.query('ALTER TABLE brtm_members ADD COLUMN IF NOT EXISTS legacy_member_id TEXT');
+  await c.query(`WITH numbered AS (SELECT athlete_id,ROW_NUMBER() OVER(ORDER BY registered_at,athlete_id)+(SELECT COALESCE(MAX(member_number),0) FROM brtm_members) AS n FROM brtm_members WHERE member_number IS NULL) UPDATE brtm_members m SET member_number=n.n FROM numbered n WHERE m.athlete_id=n.athlete_id`);
+  await c.query(`SELECT setval('brtm_member_number_seq',GREATEST((SELECT last_value+CASE WHEN is_called THEN 1 ELSE 0 END FROM brtm_member_number_seq),(SELECT COALESCE(MAX(member_number),0)+1 FROM brtm_members)),FALSE)`);
+  await c.query(`ALTER TABLE brtm_members ALTER COLUMN member_number SET DEFAULT nextval('brtm_member_number_seq')`);
+  await c.query('CREATE UNIQUE INDEX IF NOT EXISTS brtm_members_number_unique ON brtm_members(member_number)');
+  const old=(await c.query(`SELECT * FROM brtm_members WHERE member_id LIKE 'BRTM-%'`)).rows;
+  for(const m of old)await c.query('UPDATE brtm_members SET legacy_member_id=COALESCE(legacy_member_id,member_id),member_id=$1 WHERE athlete_id=$2',[memberId(m.member_number,m.registered_at),m.athlete_id]);
+  await c.query('COMMIT');
+ }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+}
 const clean=(v,label,max=2000)=>{if(typeof v!=='string'||!v.trim()||v.trim().length>max)throw fail(400,label+' wajib diisi dengan benar');return v.trim();};
 const token=v=>{if(typeof v!=='string'||!/^[-\w]{10,80}$/.test(v))throw fail(400,'Kode pengiriman tidak valid');return v;};
 async function initDb(db){
  // Registry deliberately survives athlete deletion: a number is never reused.
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_members (athlete_id INTEGER PRIMARY KEY, member_id TEXT UNIQUE NOT NULL, registered_at TIMESTAMPTZ NOT NULL, nama TEXT NOT NULL, status TEXT NOT NULL)`);
- await db.query(`INSERT INTO brtm_members SELECT id,'BRTM-'||CASE WHEN LENGTH(id::text)<6 THEN LPAD(id::text,6,'0') ELSE id::text END,COALESCE(dibuat_pada,NOW()),COALESCE(data->>'nama',''),COALESCE(data->>'status','Aktif') FROM data_klub WHERE jenis='atlet' ON CONFLICT DO NOTHING`);
+ await db.query(`INSERT INTO brtm_members SELECT id,'BRTM-'||CASE WHEN LENGTH(id::text)<6 THEN LPAD(id::text,6,'0') ELSE id::text END,COALESCE(dibuat_pada,NOW()),COALESCE(data->>'nama',''),COALESCE(data->>'status','Aktif') FROM data_klub WHERE jenis='atlet' AND NOT EXISTS (SELECT 1 FROM brtm_members m WHERE m.athlete_id=data_klub.id) ON CONFLICT DO NOTHING`);
+ await migrateMembers(db);
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_announcements (id SERIAL PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, class_name TEXT NOT NULL, training_date TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, recipient_count INTEGER NOT NULL, created_by INTEGER NOT NULL REFERENCES brtm_users(id), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
  await db.query(`ALTER TABLE brtm_announcements ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'umum'`);
  await db.query(`ALTER TABLE brtm_announcements ADD COLUMN IF NOT EXISTS dates JSONB NOT NULL DEFAULT '[]'::jsonb`);
@@ -24,7 +45,12 @@ async function initDb(db){
 }
 async function afterSave(db,kind,a){
  if(kind!=='atlet')return;
- await db.query(`INSERT INTO brtm_members(athlete_id,member_id,registered_at,nama,status) VALUES($1,$2,NOW(),$3,$4) ON CONFLICT(athlete_id) DO UPDATE SET nama=EXCLUDED.nama,status=EXCLUDED.status`,[a.id,memberId(a.id),a.nama,a.status||'Aktif']);
+ const existing=(await db.query('UPDATE brtm_members SET nama=$1,status=$2 WHERE athlete_id=$3 RETURNING member_id',[a.nama,a.status||'Aktif',a.id])).rows[0];
+ if(existing){a.memberId=existing.member_id;return;}
+ const number=(await db.query("SELECT nextval('brtm_member_number_seq') AS n")).rows[0].n;
+ const registeredAt=(await db.query('SELECT dibuat_pada FROM data_klub WHERE id=$1',[a.id])).rows[0].dibuat_pada;
+ a.memberId=memberId(number,registeredAt);
+ await db.query(`INSERT INTO brtm_members(athlete_id,member_id,member_number,registered_at,nama,status) VALUES($1,$2,$3,$4,$5,$6)`,[a.id,a.memberId,number,registeredAt,a.nama,a.status||'Aktif']);
 }
 function subscription(s){
  let url;try{url=new URL(s?.endpoint);}catch{throw fail(400,'Alamat notifikasi tidak valid');}

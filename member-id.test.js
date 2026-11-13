@@ -1,0 +1,21 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite');
+const {initDb}=require('./server'),C=require('./community');
+(async()=>{
+ const db=new PGlite();const pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
+ assert.equal(C.memberId(1,'2026-12-20T00:00:00Z'),'BRTM0000120122026');
+ assert.equal(C.memberId(23,'2024-02-28T18:00:00Z'),'BRTM0002329022024');
+ await initDb(pool);
+ const add=async(nama,stamp)=>{const r=(await pool.query("INSERT INTO data_klub(jenis,data,dibuat_pada) VALUES('atlet',$1,$2) RETURNING id",[JSON.stringify({nama,status:'Aktif'}),stamp])).rows[0];const a={...r,nama,status:'Aktif'};await C.afterSave(pool,'atlet',a);return a;};
+ const a=await add('Satu','2026-12-20T01:00:00Z');assert.equal(a.memberId,'BRTM0000120122026');
+ await C.afterSave(pool,'atlet',{...a,nama:'Nama baru',memberId:'FAKE'});
+ await pool.query("INSERT INTO data_klub(jenis,data) VALUES('jadwal','{}')");
+ const b=await add('Dua','2026-12-21T01:00:00Z');assert.equal(b.memberId,'BRTM0000221122026');assert.notEqual(b.id,2);
+ await pool.query('DELETE FROM data_klub WHERE id=$1',[b.id]);await initDb(pool);
+ const c=await add('Tiga','2026-12-22T01:00:00Z');assert.equal(c.memberId,'BRTM0000322122026');
+ await pool.query("UPDATE brtm_members SET member_id='BRTM-000001',member_number=NULL WHERE athlete_id=$1",[a.id]);
+ await initDb(pool);let m=(await pool.query('SELECT * FROM brtm_members WHERE athlete_id=$1',[a.id])).rows[0];
+ assert.equal(m.legacy_member_id,'BRTM-000001');assert.equal(m.member_id,C.memberId(m.member_number,'2026-12-20T01:00:00Z'));const migrated=m.member_id;
+ await initDb(pool);m=(await pool.query('SELECT * FROM brtm_members WHERE athlete_id=$1',[a.id])).rows[0];assert.equal(m.member_id,migrated);
+ await db.close();console.log('PASS member IDs: requested example, Jakarta leap date, independent sequence, edits, deleted-number retention, restart, legacy alias and idempotent migration.');
+})().catch(e=>{console.error(e);process.exitCode=1;});
