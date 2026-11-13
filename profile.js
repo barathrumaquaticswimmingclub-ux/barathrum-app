@@ -1,6 +1,6 @@
 'use strict';
 const B = require('./business');
-const FIELDS = ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat','tujuan','riwayatRenang'];
+const FIELDS = ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat','tujuan','riwayatRenang','jadwalPilihan'];
 function cleanProfile(input, previous = {}) {
   const out = { ...previous };
   for (const k of FIELDS) if (Object.hasOwn(input,k)) {

@@ -234,7 +234,7 @@ function mount(app, h) {
   function cleanPayload(input, kind) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Data formulir tidak valid');
     const out = {};
-    for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok']) {
+    for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) {
       if (input[k] != null && typeof input[k] !== 'string') throw fail(400, 'Isian tidak valid');
       out[k] = String(input[k] || '').trim(); if (out[k].length > (k === 'nama' ? 150 : 500)) throw fail(400, 'Isian terlalu panjang');
     }
@@ -263,7 +263,7 @@ function mount(app, h) {
       const old = await record(db, 'atlet', target, true);
       // Keep existing class, name, status and training/financial history. Fill missing profile fields only.
       const data = { ...old };
-      for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan']) if (!data[k] && p[k]) data[k] = p[k];
+      for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','jadwalPilihan']) if (!data[k] && p[k]) data[k] = p[k];
       a = await save(db, system, 'atlet', data, old);
     }
     if(p.foto) await putPhoto(db,a.id,p.foto);
@@ -288,7 +288,7 @@ function mount(app, h) {
     catch (e) {
       if (e.status !== 400 || !req.body.data || typeof req.body.data !== 'object' || Array.isArray(req.body.data)) throw e;
       validationError = e.message; data = {};
-      for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
+      for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
     }
     const result = await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');

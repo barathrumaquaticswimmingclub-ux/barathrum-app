@@ -1,3 +1,13 @@
+# Registration day/time branches — 14 November 2026 (WIB)
+
+Updated the existing non-Prestasi Google Form through its existing Apps Script project. Class selection routes to required day/time sections. Regular 1x offers Monday–Saturday afternoons (15–16, 16–17), plus Saturday mornings (08–09, 09–10). Regular 2x requires two day/time pairs using the same limits. Other non-Prestasi classes offer Monday–Saturday at 07–08, 08–09, 09–10, 14–15, 15–16, 16–17. Photo and final consent follow the selected branch. Existing questions, responses, form IDs and integration keys are preserved. The second-day instruction asks for a different day; Google Forms does not enforce cross-question day inequality.
+
+Added answered-only schedule summary to the sender and profile/intake whitelist, retaining it in new athlete biodata and filling it only when absent on an existing matched athlete. This is the parent's registration preference, not an automatically assigned dated training session or coach. Legacy payloads without a preference remain accepted. The shared SWIM biodata field exposes it to Owner and the child's parent. No genuine registration/payment/attendance was created or removed during verification.
+
+Validation: prior full npm suite passed with intake persistence check; expanded Forms simulation passes 72 branch paths, required questions, weekday/Saturday choices, idempotent migration and retained questions. Live Apps Script migration completed successfully; Form editor shows all 12 sections and expected navigation. Automatic approval review rejected a direct main push because this specific deployment needs explicit authorization. Application changes remain prepared in a review branch; the live photo sender is unchanged and schedule choices are currently retained in Google Forms only. After authorization, deploy the application, add the tested ringkasJadwalBRTM summary to the existing live kirimFotoBRTM sender without rotating keys, and verify Railway SUCCESS plus live assets. Genuine new parent/photo submission was not performed.
+
+---
+
 # Prestasi first-payment deadline and month-end invoice — 14 November 2026 (WIB)
 
 At Owner request, Prestasi deadlines now use the day of the first valid recorded cash payment, independently of the invoice notification date. Example validated: first payment 10 August -> invoice notification 31 August -> next deadline 10 September. Later early/late payments do not shift the anchor. Days 29–31 clamp to the last valid day in short months, and return to the original day afterward.

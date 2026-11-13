@@ -71,10 +71,10 @@ async function main(){
   assert.equal((await body(owner.get('/api/formulir'))).find(x=>x.kind==='prestasi').form_url,'https://docs.google.com/forms/d/e/test_form_id_123/viewform');checks++;
   await body(send('prestasi',{action:'register',formId:'test_form_id_123',formUrl:'https://evil.test/viewform'}),400);
   const photo={mime:'image/png',base64:require('fs').readFileSync('public/icons/brtm-brand-512.png').toString('base64')};
-  const revised={...payload,nama:'Form Profil Lengkap',namaPanggilan:'Profil',namaOrtu:'Wali Profil',tanggalLahir:'21-05-2018',sekolah:'SD Contoh',kelasSekolah:'2',tujuan:'Belajar renang',foto:photo,persetujuan:'Saya telah membaca dan menyetujui ketentuan BRTM.',versiKetentuan:'BRTM-2026-11-08'};
+  const revised={...payload,nama:'Form Profil Lengkap',namaPanggilan:'Profil',namaOrtu:'Wali Profil',tanggalLahir:'21-05-2018',sekolah:'SD Contoh',kelasSekolah:'2',tujuan:'Belajar renang',foto:photo,persetujuan:'Saya telah membaca dan menyetujui ketentuan BRTM.',versiKetentuan:'BRTM-2026-11-08',jadwalPilihan:'Hari yang dipilih — selain Regular: Senin; Jam yang dipilih — selain Regular: 07.00–08.00'};
   assert.equal((await body(send('nonprestasi',{responseId:'revised-no-consent',data:{...revised,persetujuan:''}}))).status,'Perlu diperiksa');
   assert.equal((await body(send('nonprestasi',{responseId:'revised-valid',data:revised}))).status,'Tersambung');
-  const full=(await body(owner.get('/api/atlet'))).find(x=>x.nama===revised.nama);assert.equal(full.tanggalLahir,'2018-05-21');assert.equal(full.namaPanggilan,'Profil');assert.equal(full.foto,'/api/atlet/'+full.id+'/foto');
+  const full=(await body(owner.get('/api/atlet'))).find(x=>x.nama===revised.nama);assert.equal(full.jadwalPilihan,revised.jadwalPilihan);assert.equal(full.tanggalLahir,'2018-05-21');assert.equal(full.namaPanggilan,'Profil');assert.equal(full.foto,'/api/atlet/'+full.id+'/foto');
   const fullPhoto=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[full.id])).rows[0];assert.equal(fullPhoto.mime,'image/webp');
   await body(write(owner,'post','/api/formulir/siapkan'));await body(send('prestasi',{responseId:'stale',data:payload}),401);
   const nonactive=(await body(owner.get('/api/atlet'))).find(x=>x.id===a.id);await body(write(owner,'put','/api/atlet/'+a.id,{...nonactive,status:'Nonaktif'}));
