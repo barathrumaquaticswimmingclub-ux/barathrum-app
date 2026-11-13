@@ -363,7 +363,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
       out.jenisKelas=B.canonical(schedule.jenisKelas);
       out.coachId = String(schedule.coachId); out.pelatih = B.canonical(schedule.jenisKelas)==='Prestasi Class'?'Coach Adhi':schedule.pelatih; out.catatan = text(input.catatan, 'Catatan', false, 2000);
-      if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000); return out; }
+      if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000);if(user.role==='coach'&&!require('./coach').content(out))throw fail(400,'Noted untuk orang tua tidak boleh kosong');return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
       if (out.status === 'Hadir' && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
         const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && ['Lunas','Belum Lunas'].includes(p.status) && (p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id) && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (old?.status === 'Hadir' && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
@@ -389,11 +389,11 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }));
   app.post('/api/:jenis', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
-    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const data = await validate(req, c, kind, req.body, null); return save(c, req.user, kind, data, null); }); res.status(201).json({ pesan: 'Data berhasil disimpan', data: kind==='program'?require('./program').project(result):result });
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const data = await validate(req, c, kind, req.body, null); const saved=await save(c, req.user, kind, data, null);if(kind==='absensi')await require('./coach').enforce(c,{rows,record,payments},req,saved);return saved; }); res.status(201).json({ pesan: 'Data berhasil disimpan', data: kind==='program'?require('./program').project(result):result });
   }));
   app.put('/api/:jenis/:id', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
-    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true); const data = await validate(req, c, kind, req.body, old); return save(c, req.user, kind, data, old); }); res.json({ pesan: 'Perubahan tersimpan', data: kind==='program'?require('./program').project(result):result });
+    const result = await transaction(async c => { await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true); const data = await validate(req, c, kind, req.body, old);const saved=await save(c, req.user, kind, data, old);if(kind==='absensi')await require('./coach').enforce(c,{rows,record,payments},req,saved);return saved; }); res.json({ pesan: 'Perubahan tersimpan', data: kind==='program'?require('./program').project(result):result });
   }));
   app.delete('/api/:jenis/:id', owner, wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');

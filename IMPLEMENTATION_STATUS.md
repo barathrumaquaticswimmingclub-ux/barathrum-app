@@ -1,3 +1,15 @@
+# Coach profile, schedules and mandatory noted — 13 November 2026 (WIB)
+
+Added Coach Profile immediately after Dashboard, showing the existing Owner-managed staff photo, name, title and WhatsApp through self-only authenticated endpoints. Coach schedules now offer All, Today, This Week (Monday–Sunday), This Month, and Completed. Completion requires recorded attendance for every rostered athlete; a past date alone and holidays do not mean completed.
+
+Coach noted obligations are calculated per athlete across rotating coaches. Non-Prestasi periods follow registration anniversaries (with existing creation, earliest package/attendance history as fallback); the final meeting of a package also triggers the requirement (including standard 4/8 meetings and custom quotas). Prestasi uses calendar months and the final scheduled training in the last seven days before month end. Unfulfilled previous attended periods are flagged and require a note on the next attended session. Empty content does not satisfy the obligation. Both direct Coach attendance writes and the combined attendance/noted transaction enforce the rule; a missing required note rolls back attendance and quota changes. Owner correction authority remains available.
+
+Coach development lists show their own reports with edit/delete on every row, retain author/assignment checks, audit deletions and recalculate requirements after deletion. Notes by other coaches still satisfy the athlete's monthly obligation and remain available to parents and Owner. A Coach dashboard panel shows pending noted and deadlines; the attendance editor previews the deadline and required field.
+
+Validation: full npm suite passed, with the integration quota test now supplying its required monthly note; targeted Coach suite passed 36 API checks plus DOM and policy cases for registration dates, month-end clamping, 4/8 sessions, Prestasi month end, rollback, profile, schedule choices/completion, shared notes, ownership and deletion. All tests use isolated sample data. Release confirmation is reported after Railway SUCCESS and live asset/health checks.
+
+---
+
 # Owner controls and receipt reports — 13 November 2026 (WIB)
 
 Implemented at the Owner's request: unrestricted staff image picker, 20 MB upload ceiling, content-based decoding (including HEIC conversion and BMP decoding) and metadata-free 1000 px WebP storage; explicit colored time-status buttons with selectable status; Owner time comparison showing all-history fastest and latest by event/pool; athlete deactivation from package status; separate payment-status editor; editable package start/date, tariff and discount; automatic membership fee defaults (old 0/new 50000); zero-valued fields accepted by the browser. Used-package date changes must still cover existing attended sessions; attendance-based SPP keeps its existing billing month.

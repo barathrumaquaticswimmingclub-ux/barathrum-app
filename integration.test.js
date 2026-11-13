@@ -69,6 +69,7 @@ async function main() {
   await expect(write(coach,'post','/api/pembayaran/'+payment.id+'/pengecualian',{berlakuSampai:exceptionDate,alasan:'Perpanjangan uji'}),403);
   await expect(write(owner,'post','/api/pembayaran/'+payment.id+'/pengecualian',{berlakuSampai:exceptionDate,alasan:'Perpanjangan uji'}),200);
   packs=await expect(owner.get('/api/pembayaran'),200);assert.equal(packs[0].sisaPertemuan,7);assert.equal(packs[0].berlakuSampai,exceptionDate);
+  await expect(write(coach,'post','/api/perkembangan',{...input,catatan:'Evaluasi bulanan sebelum paket selesai'}),201);
   for (let hour=9;hour<16;hour++) {
     const slot=(await expect(write(owner,'post','/api/jadwal',{...scheduleInput,nama:'TEST kuota '+hour,mulai:String(hour).padStart(2,'0')+':00',selesai:String(hour+1).padStart(2,'0')+':00'}),201)).data;
     await expect(write(coach,'post','/api/absensi',{...input,jadwalId:slot.id}),201);
