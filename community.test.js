@@ -79,6 +79,52 @@ async function main(){
  let pending;listener({data:{json:()=>({body:'Selamat juara',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.match(notice.image,/^data:image\/webp;base64,/);
  worker.fetch=async()=>{throw Error('offline');};listener({data:{json:()=>({body:'Pesan tetap tampil',image:'/swim/api/announcements/1/photo'})},waitUntil:p=>pending=p});await pending;assert.equal(notice.body,'Pesan tetap tampil');assert(!notice.image);
  const backup=await send(owner,'get','/api/backup');for(const t of ['brtm_members','brtm_feedback','brtm_feedback_replies','brtm_announcements','brtm_announcement_photos'])assert(backup.tables[t].length);
- await db.close();console.log('PASS community: permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching and backups.');
+
+ // Owner-authorized public number swaps preserve internal records and registration dates.
+ const beforeRecords=await pool.query('SELECT * FROM data_klub ORDER BY id');
+ const beforeMembers=(await send(owner,'get','/api/community/members')).members;
+ const ma=beforeMembers.find(m=>Number(m.athlete_id)===Number(a.id)),mb=beforeMembers.find(m=>Number(m.athlete_id)===Number(b.id));
+ const correction={reason:'Permintaan Owner: tukar nomor anggota',changes:[{athleteId:a.id,memberNumber:Number(mb.member_number),expectedMemberId:ma.member_id},{athleteId:b.id,memberNumber:Number(ma.member_number),expectedMemberId:mb.member_id}]};
+ await send(coach,'post','/api/community/members/renumber',correction,403);
+ await send(parent,'post','/api/community/members/renumber',correction,401);
+ await send(owner,'post','/api/community/members/renumber',{...correction,reason:''},400);
+ await send(owner,'post','/api/community/members/renumber',{...correction,changes:[correction.changes[0],correction.changes[0]]},400);
+ await send(owner,'post','/api/community/members/renumber',{...correction,changes:[{...correction.changes[0],memberNumber:1.5}]},400);
+ await send(owner,'post','/api/community/members/renumber',{...correction,changes:[{...correction.changes[0],athleteId:'9999999999'}]},400);
+ await send(owner,'post','/api/community/members/renumber',{...correction,changes:[correction.changes[0]]},409);
+ await send(owner,'post','/api/community/members/renumber',{...correction,changes:[{...correction.changes[0],expectedMemberId:'stale'},correction.changes[1]]},409);
+ const correctionResult=await send(owner,'post','/api/community/members/renumber',correction);
+ const newA=correctionResult.members.find(m=>Number(m.athlete_id)===Number(a.id)),newB=correctionResult.members.find(m=>Number(m.athlete_id)===Number(b.id));
+ assert.equal(newA.member_id,C.memberId(mb.member_number,ma.registered_at));assert.equal(newB.member_id,C.memberId(ma.member_number,mb.registered_at));
+ assert.deepEqual((await pool.query('SELECT * FROM data_klub ORDER BY id')).rows,beforeRecords.rows);
+ const afterMembers=(await send(owner,'get','/api/community/members')).members;
+ for(const m of beforeMembers){const after=afterMembers.find(x=>x.athlete_id===m.athlete_id);assert.equal(after.registered_at,m.registered_at);assert.equal(after.legacy_member_id,m.legacy_member_id);if(![Number(a.id),Number(b.id)].includes(Number(m.athlete_id)))assert.deepEqual(after,m);}
+ assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,newA.member_id);
+ assert.equal((await send(parent2,'get','/swim/api/dashboard')).profil.memberId,newB.member_id);
+ const audits=(await pool.query("SELECT * FROM brtm_audit WHERE action='koreksi-nomor-anggota'")).rows;assert.equal(audits.length,2);assert(audits.every(x=>x.after_data.alasan===correction.reason));
+ await send(owner,'post','/api/community/members/renumber',correction,409);
+ await C.initDb(pool);assert.equal((await send(parent,'get','/swim/api/dashboard')).profil.memberId,newA.member_id);
+ const raise={reason:'Uji urutan pendaftaran setelah koreksi',changes:[{athleteId:a.id,memberNumber:50,expectedMemberId:newA.member_id}]};
+ await send(owner,'post','/api/community/members/renumber',raise);const following=await create('Nomor setelah koreksi');assert.equal(following.memberId,C.memberId(51,B.today()+'T12:00:00+07:00'));
+ // A failing audit must roll back both members, including temporary assignments.
+ const failureSnapshot=(await pool.query('SELECT * FROM brtm_members ORDER BY athlete_id')).rows;
+ const originalQuery=pool.query;let auditFailed=false;pool.query=async(q,p)=>{if(!auditFailed&&q.startsWith('INSERT INTO brtm_audit')){auditFailed=true;throw Error('simulated audit failure');}return originalQuery(q,p);};
+ await send(owner,'post','/api/community/members/renumber',{reason:'Uji pembatalan koreksi atomik',changes:[{athleteId:a.id,memberNumber:52,expectedMemberId:C.memberId(50,ma.registered_at)}]},500);pool.query=originalQuery;
+ assert.deepEqual((await pool.query('SELECT * FROM brtm_members ORDER BY athlete_id')).rows,failureSnapshot);
+
+ // The Owner form submits both changed IDs with their observed versions.
+ const {JSDOM}=require('jsdom');const dom=new JSDOM('<div id="communityBody"></div><p id="communityError"></p>',{runScripts:'outside-only'}),w=dom.window;
+ const uiMembers=[{athlete_id:10,nama:'Atlet Alfa',member_number:2,member_id:'BRTM0000201012025',status:'Aktif'},{athlete_id:20,nama:'Atlet Beta',member_number:1,member_id:'BRTM0000101012025',status:'Aktif'},{athlete_id:30,nama:'Arsip',member_number:3,member_id:'BRTM0000301012025',status:'Diarsipkan'}];let posted=null,closed=false,reloaded=false;
+ w.$=id=>w.document.getElementById(id);w.esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));w.stat=()=>'';w.openCommunity=(_title,html)=>w.$('communityBody').innerHTML=html;
+ w.communityDialog={close(){closed=true;}};w.load=async()=>{reloaded=true;};w.notice=()=>{};
+ w.request=async(url,options)=>{if(options){posted=JSON.parse(options.body);return {members:[]};}return {year:2026,members:uiMembers};};
+ const uiSource=fs.readFileSync('public/community-ui.js','utf8');w.eval(uiSource.slice(uiSource.indexOf('async function openMembers(year)'),uiSource.indexOf('async function openFeedback()')));
+ await w.openMembers();assert(w.document.querySelector('[data-member-athlete="30"]').disabled);
+ assert.equal(w.document.querySelector('[data-member-athlete="10"]').getAttribute('aria-label'),'Nomor anggota Atlet Alfa');
+ await w.$('memberNumberForm').onsubmit({preventDefault(){}});assert.match(w.$('communityError').textContent,/Belum ada perubahan/);assert.equal(posted,null);
+ w.document.querySelector('[data-member-athlete="10"]').value='1';w.document.querySelector('[data-member-athlete="20"]').value='2';w.$('memberNumberReason').value='Permintaan Owner untuk nomor awal';
+ await w.$('memberNumberForm').onsubmit({preventDefault(){}});
+ assert.deepEqual(posted.changes,[{athleteId:'20',memberNumber:2,expectedMemberId:'BRTM0000101012025'},{athleteId:'10',memberNumber:1,expectedMemberId:'BRTM0000201012025'}]);assert(closed&&reloaded);dom.window.close();
+ await db.close();console.log('PASS community: audited atomic Owner number swaps, conflicts/stale reads, audit rollback, next sequence, parent projections and UI, permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching and backups.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});

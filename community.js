@@ -140,6 +140,33 @@ function mount(app,{pool,wrap,owner,transaction,rows,audit,limit}){
   const present=new Set((await rows(pool,'absensi')).filter(r=>r.status==='Hadir'&&r.tanggal?.startsWith(year+'-')).map(r=>String(r.atletId)));
   res.json({year,total:members.length,active:records.filter(a=>a.status==='Aktif').length,newInYear:members.filter(m=>Number(yearOf(m.registered_at))===year).length,throughYear:members.filter(m=>Number(yearOf(m.registered_at))<=year).length,trainedInYear:present.size,members:members.map(m=>({...m,status:current.has(String(m.athlete_id))?current.get(String(m.athlete_id)).status:'Diarsipkan'}))});
  }));
+ app.post('/api/community/members/renumber',owner,wrap(async(req,res)=>{
+  const reason=clean(req.body?.reason,'Alasan koreksi',500),changes=req.body?.changes;
+  if(reason.length<8||!Array.isArray(changes)||!changes.length||changes.length>100)throw fail(400,'Isi alasan koreksi dan 1–100 perubahan nomor');
+  if(changes.some(x=>!x||!/^\d{1,10}$/.test(String(x.athleteId))||Number(x.athleteId)<1||Number(x.athleteId)>2147483647||!Number.isSafeInteger(x.memberNumber)||x.memberNumber<1||x.memberNumber>99999||typeof x.expectedMemberId!=='string'||x.expectedMemberId.length>80))throw fail(400,'Nomor anggota harus bilangan bulat 1–99999');
+  const ids=changes.map(x=>Number(x.athleteId)),numbers=changes.map(x=>x.memberNumber);
+  if(new Set(ids).size!==ids.length||new Set(numbers).size!==numbers.length)throw fail(400,'Atlet atau nomor anggota tidak boleh ganda');
+  const result=await transaction(async c=>{
+   // Serialize assignments and inserts; public numbers can be swapped atomically.
+   await c.query('LOCK TABLE brtm_members IN EXCLUSIVE MODE');
+   const before=(await c.query("SELECT m.* FROM brtm_members m JOIN data_klub d ON d.id=m.athlete_id AND d.jenis='atlet' WHERE m.athlete_id=ANY($1::int[]) ORDER BY m.athlete_id",[ids])).rows;
+   if(before.length!==ids.length)throw fail(404,'Atlet tidak ditemukan atau sudah diarsipkan');
+   for(const x of changes)if(before.find(m=>Number(m.athlete_id)===Number(x.athleteId)).member_id!==x.expectedMemberId)throw fail(409,'Nomor anggota sudah berubah. Muat ulang sebelum mengoreksi.');
+   const conflict=(await c.query('SELECT athlete_id FROM brtm_members WHERE member_number=ANY($1::bigint[]) AND NOT (athlete_id=ANY($2::int[]))',[numbers,ids])).rows;
+   if(conflict.length)throw fail(409,'Nomor tersebut masih dimiliki anggota lain. Sertakan kedua anggota jika menukar nomor.');
+   const changed=changes.filter(x=>Number(before.find(m=>Number(m.athlete_id)===Number(x.athleteId)).member_number)!==x.memberNumber);
+   const nonce=crypto.randomUUID();
+   for(const x of changed)await c.query('UPDATE brtm_members SET member_number=$1,member_id=$2 WHERE athlete_id=$3',[-Number(x.athleteId),'BRTMTEMP'+nonce+x.athleteId,x.athleteId]);
+   for(const x of changed){
+    const old=before.find(m=>Number(m.athlete_id)===Number(x.athleteId));
+    const after=(await c.query('UPDATE brtm_members SET member_number=$1,member_id=$2 WHERE athlete_id=$3 RETURNING *',[x.memberNumber,memberId(x.memberNumber,old.registered_at),x.athleteId])).rows[0];
+    await audit(c,req.user,'koreksi-nomor-anggota','atlet',String(x.athleteId),old,{...after,alasan:reason});
+   }
+   if(changed.length)await c.query("SELECT setval('brtm_member_number_seq',GREATEST((SELECT last_value+CASE WHEN is_called THEN 1 ELSE 0 END FROM brtm_member_number_seq),(SELECT MAX(member_number)+1 FROM brtm_members)),FALSE)");
+   return (await c.query('SELECT athlete_id,nama,member_number,member_id FROM brtm_members WHERE athlete_id=ANY($1::int[]) ORDER BY member_number',[ids])).rows;
+  });
+  res.json({pesan:'Nomor anggota diperbarui',members:result});
+ }));
  app.get('/api/community/feedback',wrap(async(req,res)=>res.json(await listFeedback(pool,req.user.role==='owner'?'TRUE':'f.coach_id=$1',req.user.role==='owner'?[]:[req.user.id]))));
  app.post('/api/community/feedback/:id/reply',wrap(async(req,res)=>{
   limit(req,'feedback-reply:'+req.user.id,40);
