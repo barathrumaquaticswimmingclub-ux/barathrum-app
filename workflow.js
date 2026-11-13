@@ -12,15 +12,15 @@ async function initDb(db){
 }
 function loginContext(req){return {ip:req.ip,device:String(req.get('user-agent')||'Tidak tersedia').slice(0,500),place:req.get('x-vercel-ip-city')||req.get('cf-ipcity')||'Lokasi tidak tersedia (IP tercatat)'};}
 async function noticeBill(db,a,key,p){
- const data={...p,atletId:a.id,namaAtlet:a.nama,jenisKelas:a.kelompok,tanggal:B.today(),jatuhTempo:a.kelompok==='Prestasi Class'?B.monthEnd(B.today()):B.today(),provisional:true};
+ const data={...p,atletId:a.id,namaAtlet:a.nama,jenisKelas:a.kelompok,tanggal:B.today(),jatuhTempo:Object.hasOwn(p,'jatuhTempo')?p.jatuhTempo:B.today(),provisional:true};
  const r=(await db.query('INSERT INTO brtm_billing_notices(athlete_id,event_key,data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[a.id,key,JSON.stringify(data)])).rows[0];
- if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. Batas pembayaran ${data.jatuhTempo}. Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' SPP final mengikuti kehadiran; bulan tanpa kehadiran tidak ditagih.':''}`);
+ if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. ${data.jatuhTempo?'Batas pembayaran '+data.jatuhTempo+'.':'Tanggal batas bayar mengikuti tanggal pembayaran pertama.'} Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' SPP final mengikuti kehadiran; bulan tanpa kehadiran tidak ditagih.':''}`);
 }
 async function billing(db,packs){
- const athletes=(await db.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND data->>'status'='Aktif'")).rows.map(r=>({...r.data,id:String(r.id)}));
+ const athletes=(await db.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND data->>'status'='Aktif'")).rows.map(r=>({...r.data,id:String(r.id)})),first=await require('./spp').firstPayments(db);
  for(const a of athletes){const related=packs.filter(p=>String(p.atletId)===a.id).sort((x,y)=>String(y.tanggal).localeCompare(String(x.tanggal))||Number(y.id)-Number(x.id));
   if(a.kelompok==='Prestasi Class'){
-   if(!related.some(p=>p.periode===B.today().slice(0,7)&&p.status==='Lunas'))await noticeBill(db,a,'prestasi:'+a.id+':'+B.today().slice(0,7),{jumlah:250000,biayaPendaftaran:0,potonganDiskon:0,totalTagihan:250000,periode:B.today().slice(0,7)});
+   if(B.today()===B.monthEnd(B.today())){const month=B.addMonth(B.today().slice(0,7)+'-01').slice(0,7),existing=related.find(p=>p.periode===month);if(!existing||existing.status!=='Lunas')await noticeBill(db,a,'prestasi-akhir-bulan:'+a.id+':'+month,{jumlah:existing?.jumlah??250000,biayaPendaftaran:0,potonganDiskon:existing?.potonganDiskon||0,totalTagihan:(existing?.jumlah??250000)-(existing?.potonganDiskon||0),periode:month,jatuhTempo:first[a.id]?B.prestasiDue(month,first[a.id]):null});}
   }else if(related[0]?.sisaPertemuan===0){const p=related[0];await noticeBill(db,a,'paket-habis:'+p.id,{jumlah:p.jumlah,biayaPendaftaran:0,potonganDiskon:p.potonganDiskon,totalTagihan:p.jumlah-p.potonganDiskon,totalPertemuan:p.totalPertemuan});}
  }
 }

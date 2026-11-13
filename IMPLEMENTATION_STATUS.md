@@ -1,3 +1,15 @@
+# Prestasi first-payment deadline and month-end invoice — 14 November 2026 (WIB)
+
+At Owner request, Prestasi deadlines now use the day of the first valid recorded cash payment, independently of the invoice notification date. Example validated: first payment 10 August -> invoice notification 31 August -> next deadline 10 September. Later early/late payments do not shift the anchor. Days 29–31 clamp to the last valid day in short months, and return to the original day afterward.
+
+Stored/returned SPP bill deadlines, the Owner athlete projection, the parent next-payment display and the invoice PDF use the same rule. Active receipt history supplies the first valid payment date; invoice periods and attendance-based SPP amounts remain calendar-month based. Until a first payment exists, no invented anchor is stored. Parent-facing scheduled dates do not by themselves create a financial charge.
+
+Prestasi invoice notices are created only on the last calendar day of each month (WIB), for the coming month, with a stable month key to prevent duplicates. Earlier automatic registration/day-to-day invoice notices and generic near-due/overdue Prestasi reminder notifications are disabled; payment confirmations remain. Non-Prestasi package notices are retained. Existing notification history is preserved. A month-end invoice is provisional: final SPP still follows actual attendance.
+
+Validation: full npm test suite passed, including 22 new payday API checks plus date helpers, the exact August/September example, no August 30 invoice, month-end retry dedup, September arrears, September 12 late payment retaining October 10 deadline, Owner/parent consistency and February/leap-year cases. The updated invoice PDF was rendered and inspected after moving the due-date label clear of the table border. Isolated sample data only. Deployment confirmation follows Railway SUCCESS and live health/source checks.
+
+---
+
 # Parent portal navigation and notification update — 13 November 2026 (WIB)
 
 Parent-only Dashboard now contains profile/biodata, allocated sessions, current-month attendance, remaining quota, last/next payment, feedback and payment documents. Added separate SPP & Payments, Schedule, Notifications and (Prestasi only) personal-times tabs. Owner SWIM preview continues through its existing rendering path. Owner package quotas, discounts and custom terms remain authoritative; Prestasi is a flexible monthly plan.

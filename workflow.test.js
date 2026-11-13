@@ -11,7 +11,7 @@ async function main(){
  const a=await create('Naila Uji','Prestasi Class'),b=await create('Rian Uji','Private Class');
  await app.locals.maintain();let workspace=(await call(owner,'get','/api/owner/workspace')).body;assert.equal(workspace.slots.filter(s=>s.place==='Prestasi').length,8);
  let schedules=(await call(owner,'get','/api/jadwal')).body;assert(schedules.some(s=>s.mulai==='05:00'&&s.selesai==='06:30'));assert(schedules.every(s=>s.atletIds.includes(a.id)));const before=schedules.length;await app.locals.maintain();assert.equal((await call(owner,'get','/api/jadwal')).body.length,before);
- assert.equal((await pool.query('SELECT * FROM brtm_billing_notices')).rows.length,1);await app.locals.maintain();assert.equal((await pool.query('SELECT * FROM brtm_billing_notices')).rows.length,1);
+ assert.equal((await pool.query('SELECT * FROM brtm_billing_notices')).rows.length,0);await app.locals.maintain();assert.equal((await pool.query('SELECT * FROM brtm_billing_notices')).rows.length,0);
  await call(coach,'get','/api/owner/workspace',undefined,403);await call(coach,'post','/api/owner/schedule/coach',{coachId:'3',place:'Hotel Grand Wahid'},403);
  await call(owner,'post','/api/owner/schedule/coach',{coachId:'3',place:'Hotel Grand Wahid'});workspace=(await call(owner,'get','/api/owner/workspace')).body;assert.equal(workspace.slots.filter(s=>s.place==='Hotel Grand Wahid').length,36);
  const slot=workspace.slots.find(s=>s.place==='Hotel Grand Wahid'&&s.weekday===2&&s.start_time==='14:00');await call(owner,'put','/api/owner/schedule/'+slot.id,{className:b.kelompok,athleteIds:[b.id],start:'14:00',end:'15:00'});

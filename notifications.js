@@ -27,17 +27,14 @@ async function reminders(pool, packs) {
   const athletes=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND COALESCE(data->>'status','Aktif')<>'Nonaktif'")).rows;
   for(const a of athletes) {
     const related=packs.filter(p=>String(p.atletId)===String(a.id));
-    for(const p of related.filter(p=>p.status==='Belum Lunas' && (p.jatuhTempo||p.tanggal)<=soon)) {
+    for(const p of related.filter(p=>p.jenisKelas!=='Prestasi Class'&&p.status==='Belum Lunas' && (p.jatuhTempo||p.tanggal)<=soon)) {
       const overdue=(p.jatuhTempo||p.tanggal)<today;
       await enqueue(pool,a.id,`tagihan:${p.id}:${overdue?'lewat':'dekat'}`,'Pengingat pembayaran',`Halo, Bapak/Ibu orang tua ${a.data.nama}. SPP/paket ${p.jenisKelas} Rp${p.totalTagihan.toLocaleString('id-ID')} belum lunas. Jatuh tempo ${p.jatuhTempo||p.tanggal}. Mohon menghubungi admin BRTM untuk konfirmasi pembayaran. Terima kasih.`);
     }
     const paid=related.filter(p=>p.status==='Lunas' && p.jenisKelas!=='Prestasi Class').sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||Number(b.id)-Number(a.id));
     const last=paid[0];
     if(last && last.tanggal<=today && (last.sisaPertemuan<=1 || last.berlakuSampai<=soon)) await enqueue(pool,a.id,`perpanjang:${last.id}`,'Pengingat perpanjangan paket',`Paket Adik ${a.data.nama} memiliki sisa ${last.sisaPertemuan} pertemuan dan berlaku sampai ${last.berlakuSampai}. Silakan menghubungi admin untuk paket berikutnya.`);
-    if(a.data.kelompok==='Prestasi Class' && !related.some(p=>p.periode===today.slice(0,7))) {
-      const attended=(await pool.query("SELECT id FROM data_klub WHERE jenis='absensi' AND data->>'atletId'=$1 AND data->>'status'='Hadir' AND data->>'tanggal' LIKE $2 LIMIT 1",[String(a.id),today.slice(0,7)+'%'])).rows.length;
-      if(attended && B.monthEnd(today)<=soon) await enqueue(pool,a.id,`spp:${today.slice(0,7)}`,'Pengingat SPP Prestasi',`SPP Prestasi Adik ${a.data.nama} bulan ${today.slice(0,7)} Rp250.000 jatuh tempo ${B.monthEnd(today)}. Mohon konfirmasi pembayaran kepada admin BRTM.`);
-    }
+
   }
 }
 async function deliver(pool, sender = webpush.sendNotification) {

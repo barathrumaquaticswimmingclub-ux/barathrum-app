@@ -79,4 +79,11 @@ function packageView(item, attendanceCount = 0) {
   return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku: jenisKelas!=='Prestasi Class'&&item.statusManual&&['Aktif','Kedaluwarsa'].includes(item.statusManual)?item.statusManual:statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
 function cashReceived(p,month=''){if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
-module.exports = { cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView };
+// Billing day stays anchored to the first valid cash payment; short months clamp locally.
+function prestasiDue(month,first){const base=month+'-01';if(!validDate(base))return null;const end=monthEnd(base);if(!validDate(first))return end;return month+'-'+String(Math.min(Number(first.slice(8,10)),Number(end.slice(8,10)))).padStart(2,'0');}
+function prestasiNextDue(packs,first,now=today()){
+ const unpaid=packs.filter(p=>p.jenisKelas==='Prestasi Class'&&p.status==='Belum Lunas'&&p.totalTagihan>0).map(p=>prestasiDue(p.periode||p.tanggal.slice(0,7),first)).filter(Boolean).sort();if(unpaid.length)return unpaid[0];if(!validDate(first))return null;
+ const month=now.slice(0,7),paid=packs.some(p=>p.periode===month&&(p.status==='Lunas'&&!p.sppTidakDitagih||cashReceived(p)>0));let next=prestasiDue(month,first);
+ if(paid||next<=first||next<now)next=prestasiDue(addMonth(month+'-01').slice(0,7),first);return next;
+}
+module.exports = { cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue };

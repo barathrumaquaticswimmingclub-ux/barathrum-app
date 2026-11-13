@@ -60,7 +60,7 @@ async function reconcile(db,aid,user={username:'sistem-spp'},force=false){
   const allocation=allocations.find(a=>a.targetId===p.id),due=(counts[month]?charge(p):0)+Number(p.biayaPendaftaran||0),registrationPaid=registrationCash>=Number(p.biayaPendaftaran||0);
   const allocated=allocations.filter(a=>a.targetId===p.id).reduce((n,a)=>n+a.amount,0);
   const status=due===0?'Tidak Ditagih':(!(counts[month]>0)||allocated>=charge(p))&&registrationPaid?'Lunas':'Belum Lunas';
-  await persist(db,user,{...p,periode:month,sppDikelola:true,sppHadir:counts[month]||0,sppTidakDitagih:!(counts[month]>0),sppPaidFrom:allocation?.sourceId||null,sppMetode:allocation?allocation.sourceId===p.id?'Tunai / transfer':'Kredit':'',jumlah:Number(p.sppHargaOwner??fee),potonganDiskon:Number(p.sppPotonganOwner??0),totalTagihan:due,status,penerimaanTunai:cash,penerimaanPerBulan:cashMonths,dibayarPada:receipt?.paid_on||null,pemakaianAwal:0,totalPertemuan:null},p);
+  await persist(db,user,{...p,periode:month,jatuhTempo:B.prestasiDue(month,receipts[0]?.paid_on),sppDikelola:true,sppHadir:counts[month]||0,sppTidakDitagih:!(counts[month]>0),sppPaidFrom:allocation?.sourceId||null,sppMetode:allocation?allocation.sourceId===p.id?'Tunai / transfer':'Kredit':'',jumlah:Number(p.sppHargaOwner??fee),potonganDiskon:Number(p.sppPotonganOwner??0),totalTagihan:due,status,penerimaanTunai:cash,penerimaanPerBulan:cashMonths,dibayarPada:receipt?.paid_on||null,pemakaianAwal:0,totalPertemuan:null},p);
  }
  const state={available:sources.reduce((n,r)=>n+r.remaining,0),allocations,attendance:counts};
  if(JSON.stringify(oldState)!==JSON.stringify(state)){await db.query('INSERT INTO brtm_spp_accounts(athlete_id,state) VALUES($1,$2) ON CONFLICT(athlete_id) DO UPDATE SET state=EXCLUDED.state',[aid,JSON.stringify(state)]);await audit(db,user,'alokasi-kredit-spp-fifo',aid,oldState,state);}
@@ -89,6 +89,7 @@ async function afterSave(db,user,kind,value,old){
  await reconcile(db,value.atletId,user);
  if(cashAdded)await N.enqueue(db,value.atletId,'penerimaan-spp:'+value.id+':'+value.diperbaruiPada,'Pembayaran SPP diterima','Pembayaran SPP Prestasi Rp'+charge(value).toLocaleString('id-ID')+' diterima dan dialokasikan ke tagihan tertua atau saldo kredit.');
 }
+async function firstPayments(db){return Object.fromEntries((await db.query('SELECT athlete_id,MIN(paid_on) AS first_payment FROM brtm_spp_receipts WHERE active=TRUE GROUP BY athlete_id')).rows.map(r=>[String(r.athlete_id),r.first_payment]));}
 async function summaries(db){const states=(await db.query('SELECT athlete_id,state FROM brtm_spp_accounts')).rows,pending=(await db.query("SELECT athlete_id FROM brtm_spp_pending WHERE status='Pending'")).rows;return Object.fromEntries(states.map(r=>[String(r.athlete_id),{saldoKredit:r.state.available||0,sppMenungguOwner:pending.some(p=>p.athlete_id===r.athlete_id)}]));}
 async function migrate(pool){const c=await pool.connect();try{await c.query('BEGIN');await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const ids=(await c.query("SELECT DISTINCT a.id FROM data_klub a LEFT JOIN data_klub p ON p.jenis='pembayaran' AND p.data->>'atletId'=a.id::text AND p.data->>'jenisKelas'='Prestasi Class' WHERE a.jenis='atlet' AND (a.data->>'kelompok'='Prestasi Class' OR p.id IS NOT NULL)")).rows;for(const a of ids)await reconcile(c,String(a.id));await c.query('COMMIT');}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
 async function review(db,aid){
@@ -104,4 +105,4 @@ function mount(app,{pool,wrap,owner,transaction}){
   await transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const p=(await c.query("SELECT * FROM brtm_spp_pending WHERE id=$1 AND status='Pending' FOR UPDATE",[req.params.id])).rows[0];if(!p)throw fail(404,'Koreksi tidak tersedia');const preview=await review(c,p.athlete_id);if(req.body.revision!==preview.revision)throw fail(409,'Data absensi atau tagihan berubah. Muat ulang tinjauan sebelum menyetujui.');await reconcile(c,String(p.athlete_id),req.user,true);});res.json({pesan:'Perhitungan SPP dan kredit disetujui Owner.'});
  }));
 }
-module.exports={initDb,afterSave,reconcile,summaries,migrate,mount};
+module.exports={initDb,afterSave,reconcile,summaries,migrate,mount,firstPayments};
