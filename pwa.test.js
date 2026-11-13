@@ -46,6 +46,35 @@ async function main() {
   const ui=installHarness();await ui.clicks.click();assert.equal(ui.dialog.open,true);ui.clicks.close();assert.equal(ui.dialog.open,false);
   let prompted=false,prevented=false;ui.events.beforeinstallprompt({preventDefault(){prevented=true},prompt:async()=>{prompted=true},userChoice:Promise.resolve({outcome:'accepted'})});await ui.clicks.click();assert(prompted&&prevented);assert(ui.classes.has('hidden'));
   await new Promise(r=>setImmediate(r));assert.equal(ui.registration.url,'/club/sw.js');assert.equal(ui.registration.options.updateViaCache,'none');assert(installHarness(true).classes.has('hidden'));
-  console.log('PASS: install manifest and PNG sizes; public asset delivery/CSP; offline fallback; API, auth, POST and cross-origin requests never intercepted; cache isolation; install prompt and fallback guide; installed-mode button hidden.');
+  // A public installation URL uses the same app identity and supports both phone guides.
+  const installPage=await request(app).get('/swim/install/');assert.equal(installPage.status,200);assert.match(installPage.text,/Android & iPhone/);assert.match(installPage.text,/apple-touch-icon/);assert.match(installPage.text,/href="\/swim\/manifest.webmanifest"/);assert(!installPage.text.includes('loginForm'));
+  assert.equal((await request(app).get('/swim/install/install.css')).status,200);assert.equal((await request(app).get('/swim/install-support.js')).status,200);
+  const parentHtml=await request(app).get('/swim/');assert.match(parentHtml.text,/apple-mobile-web-app-capable/);assert.match(parentHtml.text,/install-support.js/);
+  const swimManifest=JSON.parse(fs.readFileSync('public/swim/manifest.webmanifest','utf8'));assert.equal(swimManifest.id,'/swim/');assert.equal(swimManifest.start_url,'/swim/');
+  const {JSDOM}=require('jsdom');
+  function phoneHarness({ios=false,ipad=false,standalone=false,main=false}={}){
+    const html=main?parentHtml.text:installPage.text,dom=new JSDOM(html,{runScripts:'outside-only',url:'https://brtm.test/swim/install/'}),w=dom.window;
+    Object.defineProperty(w.navigator,'userAgent',{value:ios?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)':'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'});
+    if(ipad){Object.defineProperty(w.navigator,'platform',{value:'MacIntel'});Object.defineProperty(w.navigator,'maxTouchPoints',{value:5});}
+    w.matchMedia=()=>({matches:standalone});Object.defineProperty(w,'isSecureContext',{value:true});let registration;
+    Object.defineProperty(w.navigator,'serviceWorker',{value:{register:async(url,options)=>{registration={url,options};}}});
+    const dialog=w.document.getElementById('installHelp');if(dialog){dialog.showModal=()=>dialog.open=true;dialog.close=()=>dialog.open=false;}
+    w.eval(fs.readFileSync('public/swim/install-support.js','utf8'));
+    return {w,dom,button:w.document.getElementById('install'),status:w.document.getElementById('installStatus'),registration:()=>registration};
+  }
+  const android=phoneHarness();assert(!android.w.document.getElementById('androidHelp').hidden);assert(android.w.document.getElementById('iosHelp').hidden);assert.equal(android.registration().url,'/swim/sw.js');assert.equal(android.registration().options.scope,'/swim/');
+  let prompts=0;const event=new android.w.Event('beforeinstallprompt',{cancelable:true});event.prompt=async()=>prompts++;event.userChoice=Promise.resolve({outcome:'dismissed'});android.w.dispatchEvent(event);assert.equal(prompts,0);assert(event.defaultPrevented);
+  android.button.click();await new Promise(r=>setImmediate(r));assert.equal(prompts,1);assert.match(android.status.textContent,/dibatalkan/);assert(!android.button.disabled);
+  android.button.click();assert.equal(prompts,1);assert.match(android.status.textContent,/Chrome/);
+  const accepted=new android.w.Event('beforeinstallprompt',{cancelable:true});accepted.prompt=async()=>prompts++;accepted.userChoice=Promise.resolve({outcome:'accepted'});android.w.dispatchEvent(accepted);android.button.click();await new Promise(r=>setImmediate(r));assert.match(android.status.textContent,/disetujui/);
+  android.w.dispatchEvent(new android.w.Event('appinstalled'));assert(android.button.hidden);assert(android.w.document.getElementById('installGuide').hidden);
+  const iphone=phoneHarness({ios:true});assert(iphone.w.document.getElementById('androidHelp').hidden);assert(!iphone.w.document.getElementById('iosHelp').hidden);iphone.button.click();assert.match(iphone.status.textContent,/Safari.*Bagikan/);
+  const ipad=phoneHarness({ipad:true});assert(!ipad.w.document.getElementById('iosHelp').hidden);
+  const opened=phoneHarness({standalone:true});assert(opened.button.hidden);assert(opened.w.document.getElementById('installGuide').hidden);
+  const mainPhone=phoneHarness({ios:true,main:true});mainPhone.button.click();assert(mainPhone.w.document.getElementById('installHelp').open);mainPhone.w.document.getElementById('closeInstallHelp').click();assert(!mainPhone.w.document.getElementById('installHelp').open);
+  mainPhone.w.document.querySelector('[data-install-platform="android"]').click();assert(!mainPhone.w.document.getElementById('androidHelp').hidden);
+  const failed=new mainPhone.w.Event('beforeinstallprompt',{cancelable:true});failed.prompt=async()=>{throw Error('not supported');};mainPhone.w.dispatchEvent(failed);mainPhone.button.click();await new Promise(r=>setImmediate(r));assert(mainPhone.w.document.getElementById('installHelp').open);assert(!mainPhone.button.disabled);
+  for(const h of [android,iphone,ipad,opened,mainPhone])h.dom.window.close();
+  console.log('PASS: public SWIM install link, Android prompts/cancellation/errors, iPhone/iPad guides and shared app identity; install manifest and PNG sizes; public asset delivery/CSP; offline fallback; API, auth, POST and cross-origin requests never intercepted; cache isolation; install prompt and fallback guide; installed-mode button hidden.');
 }
 main().catch(error=>{console.error(error);process.exit(1)});

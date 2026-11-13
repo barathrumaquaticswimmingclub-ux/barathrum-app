@@ -32,14 +32,6 @@ async function refresh(){
 $('loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;$('loginMessage').textContent='';try{await request('login',{username:$('username').value,password:$('password').value});$('password').value='';await refresh();}catch(err){$('loginMessage').textContent=err.message;}finally{b.disabled=false;}};
 $('refresh').onclick=()=>refresh().catch(()=>{});
 $('logout').onclick=async()=>{try{await disablePush();await request('logout',{});showLogin();}catch{$('statusMessage').textContent='Belum berhasil keluar. Periksa koneksi dan coba lagi.';}};
-let installEvent;
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvent=e;$('install').hidden=false;});
-$('install').onclick=async()=>{if(installEvent){await installEvent.prompt();installEvent=null;}else $('installHelp').showModal();};
-$('closeInstallHelp').onclick=()=>$('installHelp').close();
-const installed=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-$('install').hidden=installed();
-window.addEventListener('appinstalled',()=>{$('install').hidden=true;installEvent=null;});
-if('serviceWorker' in navigator)navigator.serviceWorker.register('/swim/sw.js',{scope:'/swim/'}).catch(()=>{});
 // Live data while open; no personal data is written to browser storage or offline cache.
 setInterval(()=>{if(!document.hidden&&!$('dashboard').hidden)refresh().catch(()=>{});},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('dashboard').hidden)refresh().catch(()=>{});});
