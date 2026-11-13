@@ -2,3 +2,5 @@
 
 /* Preserve header contrast above the older shared table rule. */
 .ops-table thead th{background:#0b3c71;color:#fff}
+
+.ops-table .status-active{background:#d3f4df;color:#11552d;border:2px solid #278447;font-weight:700}.ops-table .status-inactive{background:#fbe0e0;color:#812323;border:2px solid #b94a4a;font-weight:700}

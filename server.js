@@ -64,7 +64,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/api/community/announcements',express.json({limit:'8mb'}));
   app.use('/api/program',express.json({limit:'30mb'}));
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
-  app.use('/api/owner/staff',express.json({limit:'8mb'}));
+  app.use('/api/owner/staff',express.json({limit:'30mb'}));
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
@@ -325,7 +325,12 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if(old?.sppDikelola&&old.status==='Lunas'&&out.status==='Belum Lunas'&&old.penerimaanTunai>0&&(input.catatan===old.catatan||!input.catatan||input.catatan.trim().length<8))throw fail(400,'Tuliskan alasan baru untuk koreksi pembayaran minimal 8 karakter.');
       if(old?.status==='Lunas'&&out.status==='Belum Lunas'&&(!input.catatan||input.catatan===old.catatan||input.catatan.trim().length<8))throw fail(400,'Isi alasan koreksi pembayaran minimal 8 karakter.');
       const packs = await payments(db), previous = old && packs.find(p => p.id === old.id);
-      if (previous?.terpakai > 0 && (out.atletId !== old.atletId || out.jenisKelas !== B.canonical(old.jenisKelas) || out.tanggal !== old.tanggal)) throw fail(400, 'Identitas, tanggal, kelas, dan status paket yang telah dipakai tidak boleh diganti');
+      if (previous?.terpakai > 0 && (out.atletId !== old.atletId || out.jenisKelas !== B.canonical(old.jenisKelas))) throw fail(400, 'Identitas dan kelas paket yang telah dipakai tidak boleh diganti');
+      if(previous?.terpakai>0&&out.jenisKelas!=='Prestasi Class'){
+        const dates=(await rows(db,'absensi')).filter(r=>r.paketId===old.id&&r.status==='Hadir').map(r=>r.tanggal);
+        const end=old.pengecualian?.berlakuSampai>out.tanggalBerakhir?old.pengecualian.berlakuSampai:out.tanggalBerakhir;
+        if(dates.some(d=>d<out.tanggal||d>end))throw fail(400,'Tanggal paket harus tetap mencakup seluruh latihan yang sudah digunakan');
+      }
       if(previous && out.totalPertemuan!==null && out.totalPertemuan<previous.terpakai)throw fail(400,'Kuota tidak boleh lebih kecil dari pertemuan terpakai');
       out.pemakaianAwal = previous?.pemakaianAwal || 0; delete out.sisaPertemuan; if (old) out.pengecualian = old.pengecualian || null;
       const duplicate = packs.find(p => p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));

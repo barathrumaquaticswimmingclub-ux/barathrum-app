@@ -39,4 +39,5 @@ function bill(res,p,kind,id){
  }
  d.end();
 }
-module.exports={club,program,bill,terbilang};
+function receipts(res,list,range){const d=doc(res,'BRTM-Penerimaan-'+range.key+'-'+B.today(),true);heading(d,'LAPORAN PENERIMAAN • '+range.label);d.fontSize(11).text('Tanggal '+range.start+' sampai '+range.end+' (WIB)').text('Dicetak '+new Date().toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})+' WIB');d.text('Total '+money(list.reduce((n,r)=>n+r.amount,0))+' • '+list.length+' penerimaan');d.moveDown();rows(d,['No.','Tanggal bayar','Nama atlet','Kelas','Uang diterima'],list.map((r,i)=>[i+1,r.paidOn,r.nama,r.kelas,money(r.amount)]),[35,100,235,235,160]);d.fontSize(9).text('Berdasarkan tanggal penerimaan uang. Penggunaan kredit tidak dihitung sebagai uang masuk baru. Minggu dimulai Senin.');footer(d);}
+module.exports={club,program,bill,terbilang,receipts};

@@ -164,7 +164,7 @@ function field(name,label,type='text',value='',options={}) {
   const required=options.required!==false,req=required?' required':'',full=options.full?' full':''; let input;
   if(Array.isArray(type))input=`<select id="f_${name}" name="${name}"${req}${options.disabled?' disabled':''}>${options.placeholder!==false?'<option value="">Pilih…</option>':''}${type.map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`}).join('')}</select>`;
   else if(type==='textarea')input=`<textarea id="f_${name}" name="${name}"${req} maxlength="${options.max||2000}">${esc(value)}</textarea>`;
-  else input=`<input id="f_${name}" name="${name}" type="${type}" value="${esc(value)}"${req}${options.readonly?' readonly':''}${type==='number'?' min="0.01" step="0.01"':''}${type==='password'?' minlength="5" maxlength="128" autocomplete="new-password"':''}${options.max?' maxlength="'+options.max+'"':''}>`;
+  else input=`<input id="f_${name}" name="${name}" type="${type}" value="${esc(value)}"${req}${options.readonly?' readonly':''}${type==='number'?' min="0" step="0.01"':''}${type==='password'?' minlength="5" maxlength="128" autocomplete="new-password"':''}${options.max?' maxlength="'+options.max+'"':''}>`;
   return `<div class="field${full}"><label for="f_${name}">${esc(label)}${required?' *':''}</label>${input}${options.help?'<small>'+esc(options.help)+'</small>':''}</div>`;
 }
 function check(name,label,checked=false){return `<label class="check"><input type="checkbox" name="${name}" id="f_${name}"${checked?' checked':''}>${esc(label)}</label>`;}

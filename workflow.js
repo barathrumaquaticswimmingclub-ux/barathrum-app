@@ -45,7 +45,7 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
   }
  }
 }
-function mount(app,h){const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
+function mount(app,h){require('./owner-finance').mount(app,h);const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
  const tx=fn=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');return fn(c);});
  app.post('/api/session-entry',wrap(async(req,res)=>{
   const result=await tx(async c=>{
@@ -84,7 +84,7 @@ function mount(app,h){const {pool,wrap,owner,transaction,rows,record,save,audit,
   await tx(async c=>{const u=(await c.query('INSERT INTO brtm_users(nama,username,role,password_hash,must_change,profile) VALUES($1,$2,$3,$4,FALSE,$5) RETURNING id',[d.nama.trim().slice(0,100),d.username,d.role,hash,JSON.stringify({jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)})])).rows[0];await audit(c,req.user,'tambah-staf','akun',String(u.id));});res.json({ok:true});
  }));
  app.put('/api/owner/staff/:id/profile',owner,wrap(async(req,res)=>{
-  const d=req.body;const profile={jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)};if(d.photo)profile.photo=await require('./images').compress(d.photo);
+  const d=req.body;const profile={jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)};if(d.photo)profile.photo=await require('./images').staff(d.photo);
   await tx(async c=>{const u=(await c.query('SELECT * FROM brtm_users WHERE id=$1',[req.params.id])).rows[0];if(!u)throw fail(404,'Staf tidak ditemukan');const next={...u.profile,...profile};await c.query('UPDATE brtm_users SET profile=$1 WHERE id=$2',[JSON.stringify(next),u.id]);await audit(c,req.user,'ubah-profil-staf','akun',String(u.id),u.profile,next);});res.json({ok:true});
  }));
  app.get('/api/owner/staff/:id/photo',owner,wrap(async(req,res)=>{const p=(await pool.query('SELECT profile FROM brtm_users WHERE id=$1',[req.params.id])).rows[0]?.profile?.photo;if(!p)throw fail(404,'Foto tidak tersedia');res.type(p.mime).send(Buffer.from(p.base64,'base64'));}));
@@ -92,6 +92,10 @@ function mount(app,h){const {pool,wrap,owner,transaction,rows,record,save,audit,
   await tx(async c=>{const u=(await c.query('SELECT * FROM brtm_users WHERE id=$1',[req.params.id])).rows[0];if(!u||u.role==='owner')throw fail(400,'Akun Owner tidak dapat dihapus');
    // Archive the identity referenced by immutable activity and attendance records.
    await c.query("UPDATE brtm_users SET active=FALSE,profile=profile||'{\"archived\":true}'::jsonb WHERE id=$1",[u.id]);await c.query('DELETE FROM brtm_sessions WHERE user_id=$1',[u.id]);await c.query('DELETE FROM brtm_weekly_slots WHERE coach_id=$1',[u.id]);await audit(c,req.user,'hapus-staf','akun',String(u.id));});res.json({ok:true});
+ }));
+ app.put('/api/owner/athlete/:id/status',owner,wrap(async(req,res)=>{
+  if(!['Aktif','Nonaktif'].includes(req.body.status))throw fail(400,'Pilih status atlet');
+  await tx(async c=>{const a=await record(c,'atlet',req.params.id,true);await save(c,req.user,'atlet',{...a,status:req.body.status},a);await materialize(c,h,req.user);});res.json({ok:true});
  }));
  app.put('/api/owner/time/:id/status',owner,wrap(async(req,res)=>{if(typeof req.body.active!=='boolean')throw fail(400,'Status tidak valid');await tx(async c=>{const a=await record(c,'atlet',req.params.id,true);if(a.kelompok!=='Prestasi Class')throw fail(400,'Khusus atlet Prestasi');await save(c,req.user,'atlet',{...a,waktuAktif:req.body.active},a);});res.json({ok:true});}));
  app.put('/api/owner/package/:id/status',owner,wrap(async(req,res)=>{if(!['Aktif','Kedaluwarsa','Otomatis'].includes(req.body.status))throw fail(400,'Status tidak valid');await tx(async c=>{const p=await record(c,'pembayaran',req.params.id,true);if(p.jenisKelas==='Prestasi Class')throw fail(400,'Status Prestasi mengikuti bulan berjalan');const current=(await payments(c)).find(x=>x.id===p.id);if(req.body.status==='Aktif'&&current.sisaPertemuan===0)throw fail(400,'Kuota sudah habis. Atur kuota atau pilih paket berikutnya.');const next={...p,statusManual:req.body.status==='Otomatis'?null:req.body.status};if(req.body.status==='Aktif'&&current.berlakuSampai<B.today())next.pengecualian={alasan:'Masa berlaku diaktifkan kembali oleh Owner',berlakuSampai:B.addMonth(B.today()),oleh:req.user.username,pada:new Date().toISOString()};await save(c,req.user,'pembayaran',next,p);});res.json({ok:true});}));

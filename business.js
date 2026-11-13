@@ -47,7 +47,8 @@ function price(input, athlete) {
   let potonganDiskon = wantsDiscount ? 25000 : 0;
   const custom = input.paketKhusus === true || input.paketKhusus === 'true';
   const kuota = custom ? Number(input.kuotaKhusus) : kelas.sesi;
-  const tarif = custom ? Number(input.biayaKhusus) : kelas.tarif;
+  const tarif = custom || input.rincianOwner===true && jenisKelas==='Prestasi Class' ? Number(input.biayaKhusus??kelas.tarif) : kelas.tarif;
+  if(!Number.isSafeInteger(tarif)||tarif<1||tarif>100000000)throw new Error('Harga harus berupa rupiah bulat yang valid');
   if (custom && (jenisKelas === 'Prestasi Class' || !Number.isInteger(kuota) || kuota < 1 || kuota > 100 || !Number.isSafeInteger(tarif) || tarif < 1 || tarif > 100000000)) throw new Error('Paket khusus nonprestasi: kuota 1–100 dan biaya rupiah bulat harus valid');
   if(input.rincianOwner===true){
     biayaPendaftaran=Number(input.biayaPendaftaran??0);potonganDiskon=Number(input.potonganDiskon??0);
@@ -57,7 +58,7 @@ function price(input, athlete) {
   const alasanKhusus = custom ? String(input.alasanKhusus || '').trim() : '';
   if (custom && (alasanKhusus.length < 5 || alasanKhusus.length > 500)) throw new Error('Isi keterangan paket khusus (5–500 karakter)');
   return {
-    paketKhusus:custom, alasanKhusus, jenisKelas, jumlah: tarif, biayaPendaftaran, potonganDiskon,
+    paketKhusus:custom, alasanKhusus, ...(jenisKelas==='Prestasi Class'&&input.rincianOwner===true?{sppHargaOwner:tarif,sppPotonganOwner:potonganDiskon}:{}), jenisKelas, jumlah: tarif, biayaPendaftaran, potonganDiskon,
     totalTagihan: tarif + biayaPendaftaran - potonganDiskon,
     status: input.status, tanggal: input.tanggal,
     tanggalBerakhir: jenisKelas === 'Prestasi Class' ? monthEnd(input.tanggal) : addMonth(input.tanggal),
