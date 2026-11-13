@@ -335,7 +335,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.pemakaianAwal = previous?.pemakaianAwal || 0; delete out.sisaPertemuan; if (old) out.pengecualian = old.pengecualian || null;
       const duplicate = packs.find(p => p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
       if (duplicate) throw fail(409, 'Tagihan atlet untuk tanggal/periode ini sudah ada. Edit tagihan tersebut.');
-      out.catatan = text(input.catatan, 'Catatan pembayaran', false, 1000); out.dibayarPada = out.status === 'Lunas' ? old?.status === 'Lunas' ? old.dibayarPada || old.tanggal : B.today() : null; return out;
+      out.catatan = text(input.catatan, 'Catatan pembayaran', false, 1000);out.dibayarWaktu=out.status==='Lunas'?(old?.status==='Lunas'?old.dibayarWaktu||null:new Date().toISOString()):null; out.dibayarPada = out.status === 'Lunas' ? old?.status === 'Lunas' ? old.dibayarPada || old.tanggal : B.today() : null; return out;
     }
     if (['absensi','perkembangan','catatanwaktu'].includes(kind)) {
       const aid = id(input.atletId || old?.atletId), athlete = await record(db, 'atlet', aid), allowed = await accessible(req, db);

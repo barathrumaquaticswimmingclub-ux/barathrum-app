@@ -7,6 +7,8 @@ async function initDb(db){
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_spp_receipts (id SERIAL PRIMARY KEY, event_key TEXT UNIQUE NOT NULL, invoice_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, athlete_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, amount INTEGER NOT NULL CHECK(amount>=0), registration_fee INTEGER NOT NULL DEFAULT 0, paid_on TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE)`);
  await db.query(`ALTER TABLE brtm_spp_receipts DROP CONSTRAINT IF EXISTS brtm_spp_receipts_amount_check`);
  await db.query(`ALTER TABLE brtm_spp_receipts ADD CONSTRAINT brtm_spp_receipts_amount_check CHECK(amount>=0)`);
+ await db.query(`ALTER TABLE brtm_spp_receipts ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ`);
+ await db.query(`ALTER TABLE brtm_spp_receipts ALTER COLUMN received_at SET DEFAULT NOW()`);
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_spp_accounts (athlete_id INTEGER PRIMARY KEY REFERENCES data_klub(id) ON DELETE CASCADE, state JSONB NOT NULL)`);
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_spp_pending (id SERIAL PRIMARY KEY, athlete_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, requested_by INTEGER, status TEXT NOT NULL DEFAULT 'Pending', detail JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), approved_at TIMESTAMPTZ, approved_by INTEGER)`);
  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_spp_pending_one ON brtm_spp_pending(athlete_id) WHERE status='Pending'`);
@@ -47,7 +49,7 @@ async function reconcile(db,aid,user={username:'sistem-spp'},force=false){
  }
  bills=[...grouped.entries()].sort(([a],[b])=>a.localeCompare(b));
  // Import existing full payments once; managed status may later reflect credit rather than cash.
- for(const [,p] of bills)if(!p.sppDikelola&&p.status==='Lunas')await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key) SELECT $1,$2,$3,$4,$5,$6 WHERE NOT EXISTS(SELECT 1 FROM brtm_spp_receipts WHERE invoice_id=$1) ON CONFLICT DO NOTHING',[p.id,aid,fee,Number(p.biayaPendaftaran||0),p.dibayarPada||p.tanggal,'legacy:'+p.id]);
+ for(const [,p] of bills)if(!p.sppDikelola&&p.status==='Lunas')await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key,received_at) SELECT $1,$2,$3,$4,$5,$6,NULL WHERE NOT EXISTS(SELECT 1 FROM brtm_spp_receipts WHERE invoice_id=$1) ON CONFLICT DO NOTHING',[p.id,aid,fee,Number(p.biayaPendaftaran||0),p.dibayarPada||p.tanggal,'legacy:'+p.id]);
  const receipts=(await db.query('SELECT * FROM brtm_spp_receipts WHERE athlete_id=$1 AND active=TRUE ORDER BY paid_on,id',[aid])).rows;
  const sources=receipts.map(r=>({...r,remaining:r.amount})),allocations=[];
  for(const [month,p] of bills)if(counts[month]>0){

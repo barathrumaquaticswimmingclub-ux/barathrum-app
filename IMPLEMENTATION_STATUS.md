@@ -1,3 +1,17 @@
+# Parent portal navigation and notification update — 13 November 2026 (WIB)
+
+Parent-only Dashboard now contains profile/biodata, allocated sessions, current-month attendance, remaining quota, last/next payment, feedback and payment documents. Added separate SPP & Payments, Schedule, Notifications and (Prestasi only) personal-times tabs. Owner SWIM preview continues through its existing rendering path. Owner package quotas, discounts and custom terms remain authoritative; Prestasi is a flexible monthly plan.
+
+Parent payment history projects only the child's receipt ledger, newest first, including corrections/cancellations. New SPP receipts have a nullable received_at timestamp with a default for future writes; existing rows and legacy imports retain unknown timestamps rather than invented times. Non-Prestasi receipt history uses audited payment transitions and stored recording timestamps. The UI explicitly labels recording time in WIB. Statement PDFs and per-event receipts are authenticated to the child's own records, avoiding aggregate receipts for repeated SPP payments.
+
+Schedules include past and upcoming entries, attendance status and coach attendance comments. Upcoming unmarked schedules are first, followed by past unmarked and recorded schedules. Coach-name buttons open only profiles associated with the child's schedule, exposing name, title, WA and photo. Parent-safe coaching evaluations are retained within the Schedule tab. Personal time reports remove Base time while retaining personal best, latest, delta and complete history.
+
+Notifications show unread indicators, open one message in a full-screen dismissible dialog, mark only that message read, and remain accessible in the Notifications archive with older-page loading. Device push clicks focus the existing app and refresh/open the inbox, or open the app with an inbox intent. Evaluation/attendance read acknowledgements now follow the visible tab, rather than automatically claiming every hidden section was rendered. In-flight requests are guarded against logout/reset.
+
+Validation: full npm suite passed, including 83 workflow/API/DOM and 35 parent-portal API checks plus parent DOM cases for ledger privacy, cancellation order, unknown old times, own statement/receipt PDFs, historical schedules, coach access restrictions, tabs, personal best and notification paging/read/reopen. Statement PDF was rendered and visually inspected. Targeted parent suite re-run after retaining the complete time-history accordion. All sample data is isolated; production athlete records were not edited. Deployment confirmation follows terminal Railway SUCCESS and live file/health checks.
+
+---
+
 # Coach profile, schedules and mandatory noted — 13 November 2026 (WIB)
 
 Added Coach Profile immediately after Dashboard, showing the existing Owner-managed staff photo, name, title and WhatsApp through self-only authenticated endpoints. Coach schedules now offer All, Today, This Week (Monday–Sunday), This Month, and Completed. Completion requires recorded attendance for every rostered athlete; a past date alone and holidays do not mean completed.

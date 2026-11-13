@@ -2,13 +2,14 @@
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = v => v ? new Intl.DateTimeFormat('id-ID', {day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jakarta'}).format(new Date(v+'T12:00:00+07:00')) : 'Belum tercatat';
+let swimViewVersion=0;
 let loading = false, ownerMode=false, selectedId=null, ownerData=null;
 const profileLabels={nama:'Nama lengkap',namaPanggilan:'Nama panggilan',tanggalLahir:'Tanggal lahir',jk:'Jenis kelamin',namaOrtu:'Nama orang tua / wali',noHpOrtu:'Nomor WhatsApp',sekolah:'Nama sekolah',kelasSekolah:'Kelas sekolah',alamat:'Alamat rumah',tujuan:'Tujuan latihan',riwayatRenang:'Riwayat latihan renang'};
 async function request(url, body, method) {
   const r = await fetch('/swim/api/'+url, { credentials:'same-origin', ...(body ? {method:method||'POST',headers:{'Content-Type':'application/json','X-BRTM-Request':'1'},body:JSON.stringify(body)} : {}), cache:'no-store' });
   const d = await r.json(); if(!r.ok){const e=Error(d.pesan||'Data belum bisa dimuat.');e.status=r.status;throw e;} return d;
 }
-function showLogin(){ ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
+function showLogin(){swimViewVersion++; ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
 const metric = (label,value,detail) => `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`;
 function render(d){
   ownerMode=d.role==='owner';
@@ -19,8 +20,8 @@ function render(d){
   $('updated').textContent='Diperbarui '+new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Jakarta'}).format(new Date(d.updatedAt))+' WIB';
 }
 async function refresh(){
-  if(loading)return;loading=true;$('refresh').disabled=true;$('statusMessage').textContent='Memuat data terbaru…';$('statusMessage').className='';
-  try{const d=await request(selectedId?'owner/atlet/'+selectedId:'dashboard');render(d);$('login').hidden=true;$('dashboard').hidden=false;$('logout').hidden=false;$('statusMessage').textContent='';if(!ownerMode&&d.viewRefs?.length&&!document.hidden)await request('viewed',{entries:d.viewRefs});await refreshNotifications();}
+  if(loading)return;const viewVersion=swimViewVersion;loading=true;$('refresh').disabled=true;$('statusMessage').textContent='Memuat data terbaru…';$('statusMessage').className='';
+  try{const d=await request(selectedId?'owner/atlet/'+selectedId:'dashboard');if(viewVersion!==swimViewVersion)return;render(d);$('login').hidden=true;$('dashboard').hidden=false;$('logout').hidden=false;$('statusMessage').textContent='';if(!ownerMode&&d.viewRefs?.length&&!document.hidden)await request('viewed',{entries:typeof visibleParentRefs==='function'?visibleParentRefs(d):d.viewRefs});await refreshNotifications();}
   catch(e){if(e.status===401){showLogin();throw e;}$('statusMessage').textContent='Data belum diperbarui. Periksa koneksi lalu coba lagi.';$('statusMessage').className='error';throw e;}
   finally{loading=false;$('refresh').disabled=false;}
 }

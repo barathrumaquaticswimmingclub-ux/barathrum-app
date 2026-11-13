@@ -18,4 +18,4 @@ self.addEventListener('push',event=>{
  let d={};try{d=event.data.json();}catch{}
  event.waitUntil(showBrtmPush(d));
 });
-self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil((async()=>{const list=await self.clients.matchAll({type:'window',includeUncontrolled:true});const page=list.find(c=>new URL(c.url).pathname.startsWith('/swim/'));if(page){await page.focus();await page.navigate('/swim/');}else await self.clients.openWindow('/swim/');})());});
+self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil((async()=>{const list=await self.clients.matchAll({type:'window',includeUncontrolled:true});const page=list.find(c=>new URL(c.url).pathname.startsWith('/swim/'));if(page){await page.focus();page.postMessage({type:'BRTM_OPEN_NOTIFICATIONS'});}else await self.clients.openWindow('/swim/?notifications=1');})());});
