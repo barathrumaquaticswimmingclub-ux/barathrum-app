@@ -11,17 +11,17 @@
   "theme_color": "#003ca6",
   "icons": [
     {
-      "src": "/swim/icons/brtm-swim-20261114-192.png",
+      "src": "/swim/icons/brtm-swim-20261114b-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/swim/icons/brtm-swim-20261114-512.png",
+      "src": "/swim/icons/brtm-swim-20261114b-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "/swim/icons/brtm-swim-20261114-maskable-512.png",
+      "src": "/swim/icons/brtm-swim-20261114b-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
