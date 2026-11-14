@@ -1,13 +1,13 @@
-# SPP Prestasi berdasarkan kehadiran
+# SPP Prestasi: pembayaran mengaktifkan atlet
 
-- Kehadiran pertama pada suatu bulan membuat satu tagihan Rp250.000, jatuh tempo akhir bulan WIB. Kehadiran berikutnya tidak membuat tagihan baru.
-- Nol kehadiran berarti tidak ada SPP bulan tersebut. Koreksi atau penghapusan kehadiran terakhir membatalkan kewajiban, bukan menghapus riwayat.
-- Uang yang sudah diterima tetap tercatat ketika kewajiban dibatalkan. Rp250.000 menjadi kredit atlet dan otomatis dialokasikan ke tagihan tertua. Penggunaan kredit bukan pemasukan uang baru.
-- Koreksi absensi yang memengaruhi kredit yang telah digunakan membekukan perhitungan keuangan sampai Owner menyetujui di dashboard. Tinjauan menampilkan bulan dan nominal sebelum/sesudah; data yang berubah setelah tinjauan harus dimuat ulang sebelum persetujuan.
-- Pengiriman ulang pembayaran dengan kode permintaan yang sama tidak menambah penerimaan. Pembayaran berikutnya menggunakan formulir baru. Koreksi penerimaan memerlukan alasan dan disimpan dalam audit.
-- Riwayat SPP otomatis tidak dapat dihapus. Cadangan mencakup penerimaan, saldo/alokasi, permintaan koreksi, dan audit. Arsip massal tester diblokir bila sudah ada penerimaan atau koreksi SPP tertunda agar riwayat keuangan tidak hilang.
-
-Saat server mulai, migrasi mengimpor pembayaran Prestasi lama satu kali dan menghitung ulang tagihan dari absensi. Migrasi berulang tidak menggandakan tagihan/penerimaan. Data lama dengan periode tidak valid atau tagihan ganda perlu diperiksa Owner; migrasi berhenti daripada menebak penyelesaiannya.
+- Konfirmasi pembayaran Lunas langsung mengaktifkan atlet, termasuk ketika absensi masih 0.
+- Pembayaran mengikat SPP pada bulan tagihan tersebut. Nol kehadiran maupun koreksi/penghapusan absensi tidak mengubah pembayaran menjadi saldo kredit.
+- Bulan tanpa kehadiran dan tanpa pembayaran tidak ditagih. Kehadiran pertama membuat satu tagihan bulanan Rp250.000.
+- Penerimaan membayar bulan tagihannya terlebih dahulu. Hanya kelebihan saldo yang tersedia untuk alokasi ke tagihan lain; penerimaan uang tidak dihitung dua kali.
+- Koreksi pembayaran tetap memerlukan alasan dan audit; pengiriman ulang pembayaran tidak menambah penerimaan.
+- Saat server mulai, perhitungan lama diperbaiki berdasarkan penerimaan yang sudah tercatat tanpa membuat pembayaran baru. Permintaan koreksi absensi lama diselesaikan berdasarkan aturan pembayaran ini dan dicatat dalam audit.
+- Jatuh tempo mengikuti tanggal pembayaran pertama, dengan penyesuaian akhir bulan pendek. Pemberitahuan invoice diberikan setiap akhir bulan.
+- Riwayat SPP otomatis tidak dapat dihapus. Cadangan mencakup penerimaan, alokasi, koreksi dan audit.
 
 Private Class dibatasi tepat satu anak untuk satu pelatih pada pembuatan maupun perubahan jadwal, melalui antarmuka dan validasi server.
 
