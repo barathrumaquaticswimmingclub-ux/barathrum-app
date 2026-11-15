@@ -248,25 +248,26 @@ function mount(app, h) {
     B.validateAge(out);
     if(input.versiKetentuan){
       const required=['namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
-      if(required.some(k=>!out[k])||out.persetujuan!=='Saya telah membaca dan menyetujui ketentuan BRTM.'||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');
+      if(required.some(k=>!out[k])||!['Saya telah membaca dan menyetujui ketentuan BRTM.',require('./registration').CONSENT].includes(out.persetujuan)||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');
     }
     if(!input.foto)throw fail(400,'Foto anak wajib diunggah (foto bebas)');
     out.foto=P.photo(input.foto);
     return out;
   }
-  async function applyRegistration(db, registration, target) {
+  async function applyRegistration(db, registration, target, source='Google Form') {
     let p;
     try { p = cleanPayload(registration.payload, registration.kind); }
     catch (e) { if (target === 'new') throw e; p = {}; }
     let a;
     if (target === 'new') {
       const profile={...p};delete profile.foto;
-      a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: 'Google Form' }, null);
+      a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: source }, null);
     } else {
       const old = await record(db, 'atlet', target, true);
       // Keep existing class, name, status and training/financial history. Fill missing profile fields only.
       const data = { ...old };
       for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','jadwalPilihan']) if (!data[k] && p[k]) data[k] = p[k];
+      if(source==='Formulir BRTM'&&p.jadwalPilihan)data.jadwalPilihan=p.jadwalPilihan;
       a = await save(db, system, 'atlet', data, old);
     }
     if(p.foto) await putPhoto(db,a.id,p.foto);
@@ -274,6 +275,7 @@ function mount(app, h) {
     await db.query("UPDATE brtm_registrations SET status='Tersambung',athlete_id=$1,note=$2 WHERE id=$3", [a.id, target === 'new' ? 'Atlet baru dibuat' : 'Terhubung ke atlet lama; riwayat dipertahankan', registration.id]);
     return a;
   }
+  require('./registration').mount(app,{pool,wrap,transaction,rows,limit,cleanPayload,applyRegistration});
   app.post('/integrations/google-forms/:kind', wrap(async (req, res) => {
     const kind = req.params.kind; if (!['prestasi','nonprestasi'].includes(kind)) throw fail(404, 'Formulir tidak ditemukan');
     limit(req, 'form-total', 300);
