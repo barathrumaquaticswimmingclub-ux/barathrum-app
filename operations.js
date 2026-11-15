@@ -16,7 +16,7 @@ function mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,paymen
  app.post('/api/prestasi/attendance',team,wrap(async(req,res)=>{
   const today=B.today(),{entries,batchId}=req.body;
   if(new Date(today+'T12:00:00+07:00').getUTCDay()===0)throw fail(400,'Hari Minggu tidak ada absensi rutin');
-  if(!Array.isArray(entries)||!entries.length||entries.length>300||!/^[-\w]{10,80}$/.test(batchId||''))throw fail(400,'Isi absensi atlet aktif');
+  if(!Array.isArray(entries)||!entries.length||!/^[-\w]{10,80}$/.test(batchId||''))throw fail(400,'Isi absensi atlet aktif');
   const result=await transaction(async c=>{
    await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
    if((await rows(c,'absensi')).some(r=>r.batchId===batchId&&r.dibuatOlehId===String(req.user.id)))return {duplicate:true};

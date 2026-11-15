@@ -1,15 +1,26 @@
 'use strict';
 
 const CLASSES = Object.freeze({
-  'Private Class': { tarif: 400000, sesi: 4 },
-  'Semi Private Class': { tarif: 200000, sesi: 4 },
-  'Group Class': { tarif: 150000, sesi: 4 },
-  'Private Couple Class': { tarif: 300000, sesi: 4 },
-  'Hydro Terapi Class': { tarif: 300000, sesi: 4 },
-  'Regular Class (1x Seminggu)': { tarif: 150000, sesi: 4 },
-  'Regular Class (2x Seminggu)': { tarif: 250000, sesi: 8 },
-  'Prestasi Class': { tarif: 250000, sesi: null }
+  'Private Class': { tarif: 400000, sesi: 4, kapasitas: 1 },
+  'Semi Private Class': { tarif: 200000, sesi: 4, kapasitas: 3 },
+  'Group Class': { tarif: 150000, sesi: 4, kapasitas: 6 },
+  'Private Couple Class': { tarif: 300000, sesi: 4, kapasitas: 2 },
+  'Hydro Terapi Class': { tarif: 300000, sesi: 4, kapasitas: 6 },
+  'Regular Class (1x Seminggu)': { tarif: 150000, sesi: 4, kapasitas: 16 },
+  'Regular Class (2x Seminggu)': { tarif: 250000, sesi: 8, kapasitas: 16 },
+  'Prestasi Class': { tarif: 250000, sesi: null, kapasitas: null }
 });
+function validateCapacity(kind, count) {
+  const kelas = CLASSES[canonical(kind)];
+  if (!kelas) throw Object.assign(Error('Pilih kelas'), {status:400});
+  if (kelas.kapasitas !== null && count > kelas.kapasitas) throw Object.assign(Error(`${canonical(kind)} maksimal ${kelas.kapasitas} anak untuk 1 pelatih.`), {status:400});
+}
+function validateAge(athlete) {
+  if(canonical(athlete.kelompok)!=='Private Class'||!athlete.tanggalLahir)return;
+  const now=today(),birth=athlete.tanggalLahir;
+  const age=Number(now.slice(0,4))-Number(birth.slice(0,4))-(now.slice(5)<birth.slice(5)?1:0);
+  if(age<4)throw Object.assign(Error('Private Class minimal usia 4 tahun.'),{status:400});
+}
 function canonical(value) {
   return String(value || '').replace(/^Reguler Class/, 'Regular Class');
 }
@@ -86,4 +97,4 @@ function prestasiNextDue(packs,first,now=today()){
  const month=now.slice(0,7),paid=packs.some(p=>p.periode===month&&(p.status==='Lunas'&&!p.sppTidakDitagih||cashReceived(p)>0));let next=prestasiDue(month,first);
  if(paid||next<=first||next<now)next=prestasiDue(addMonth(month+'-01').slice(0,7),first);return next;
 }
-module.exports = { cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue };
+module.exports = { validateAge, validateCapacity, cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue };

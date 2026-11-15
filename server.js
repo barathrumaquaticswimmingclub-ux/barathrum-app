@@ -68,16 +68,17 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use(express.json({ limit: '100kb' }));
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
-  function limit(req, key, max = 8) {
+  function limit(req, key, max = 8, count = true) {
     const now = Date.now();
     for (const [k, v] of attempts) if (v.until < now) attempts.delete(k);
     if (attempts.size > 10000) attempts.clear();
     const k = req.ip + ':' + key;
     const a = attempts.get(k) || { count: 0, until: now + 15 * 60000 };
-    a.count++; attempts.set(k, a);
-    if (a.count > max) throw fail(429, 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.');
+    if (count) { a.count++; attempts.set(k, a); }
+    if (count ? a.count > max : a.count >= max) throw fail(429, 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.');
     return k;
   }
+  limit.reset = key => attempts.delete(key);
   app.use(['/auth', '/api'], (req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       if (req.get('X-BRTM-Request') !== '1') return next(fail(403, 'Muat ulang halaman sebelum menyimpan'));
@@ -140,10 +141,10 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }));
   app.post('/auth/login', wrap(async (req, res) => {
     const username = String(req.body?.username || '').toLowerCase().slice(0, 50);
-    const key = limit(req, 'login:' + username, 8); limit(req, 'login-total', 40);
+    const key = limit(req, 'login:' + username, 8); limit(req, 'login-total', 40, false);
     const r = await pool.query('SELECT * FROM brtm_users WHERE username=$1', [username]); const u = r.rows[0];
     const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
-    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active) throw fail(401, 'Nama pengguna atau kata sandi salah');
+    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active) { limit(req, 'login-total', 40); throw fail(401, 'Nama pengguna atau kata sandi salah'); }
     attempts.delete(key); const token = crypto.randomBytes(32).toString('hex');
     await pool.query('DELETE FROM brtm_sessions WHERE expires_at<NOW()');
     await pool.query(`INSERT INTO brtm_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)`, [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
@@ -279,6 +280,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       for (const k of ['namaPanggilan','namaOrtu','riwayatRenang','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
       out.tanggalLahir = input.tanggalLahir ? date(input.tanggalLahir, 'Tanggal lahir') : '';
       if (out.tanggalLahir > B.today()) throw fail(400, 'Tanggal lahir tidak boleh di masa depan');
+      B.validateAge(out);
       if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nomor WhatsApp orang tua tidak valid');
       if (old && out.kelompok !== B.canonical(old.kelompok) && (await payments(db)).some(p => athleteLink(p, old) && p.statusMasaBerlaku === 'Aktif' && p.status === 'Lunas')) throw fail(400, 'Kelas baru dapat diganti setelah paket aktif selesai');
       return out;
@@ -291,9 +293,9 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const u = (await db.query('SELECT * FROM brtm_users WHERE id=$1 AND active=TRUE', [out.coachId])).rows[0]; if (!u) throw fail(400, 'Pilih akun pelatih aktif');
       out.pelatih = u.nama; out.hari = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' }).format(new Date(out.tanggal + 'T12:00:00+07:00')); out.jam = `${out.mulai}–${out.selesai}`;
       out.jenisKelas = B.canonical(input.jenisKelas); if (!Object.hasOwn(B.CLASSES, out.jenisKelas)) throw fail(400, 'Pilih kelas sesi');
-      if (!Array.isArray(input.atletIds) || !input.atletIds.length || input.atletIds.length > 200) throw fail(400, 'Pilih minimal satu atlet untuk sesi');
+      if (!Array.isArray(input.atletIds) || !input.atletIds.length) throw fail(400, 'Pilih minimal satu atlet untuk sesi');
       out.atletIds = [...new Set(input.atletIds.map(id))];
-      if(out.jenisKelas==='Private Class'&&out.atletIds.length!==1)throw fail(400,'Private Class hanya boleh 1 anak untuk 1 pelatih. Pilih kelas yang sesuai untuk beberapa anak.');
+      B.validateCapacity(out.jenisKelas, out.atletIds.length);
       for (const aid of out.atletIds) { const a = await record(db, 'atlet', aid); if (a.status === 'Nonaktif' || B.canonical(a.kelompok) !== out.jenisKelas) throw fail(400, 'Atlet sesi harus aktif dan sesuai jenis kelas'); }
       out.catatan = text(input.catatan, 'Catatan', false, 2000);
       const moving = old && (old.tanggal !== out.tanggal || old.mulai !== out.mulai || old.selesai !== out.selesai || old.coachId !== out.coachId || old.jenisKelas !== out.jenisKelas || JSON.stringify(old.atletIds) !== JSON.stringify(out.atletIds));

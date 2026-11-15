@@ -9,6 +9,7 @@ function cleanProfile(input, previous = {}) {
   }
   if (!out.nama) throw Object.assign(Error('Nama lengkap wajib diisi'),{status:400});
   if (out.tanggalLahir && (!B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today())) throw Object.assign(Error('Tanggal lahir tidak valid'),{status:400});
+  B.validateAge(out);
   if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw Object.assign(Error('Nomor WhatsApp tidak valid'),{status:400});
   if (out.jk && !['Laki-laki','Perempuan'].includes(out.jk)) throw Object.assign(Error('Jenis kelamin tidak valid'),{status:400});
   return out;
