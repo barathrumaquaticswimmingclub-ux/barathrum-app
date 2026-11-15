@@ -7,7 +7,7 @@ async function initDb(db){
 }
 function revision(r){return r.diperbaruiPada||r.dibuatPada||'legacy';}
 function parentMessage(kind,r,a,s){
- if(kind==='perkembangan'){const p=parentEvaluation(r,a,s);return ['teknik','fisik','attitude','catatan'].map(k=>p[k]).filter(Boolean).join('\n');}
+ if(kind==='perkembangan'){const p=parentEvaluation(r,a,s);return ['apresiasi','teknik','fisik','attitude','catatan'].map(k=>p[k]).filter(Boolean).join('\n');}
  if(kind==='absensi')return `${r.tanggal}: ${r.status}`;
  return `${r.jenisKelas} · ${r.status} · Rp${Number(r.totalTagihan||0).toLocaleString('id-ID')} · Mulai ${r.tanggal}`;
 }

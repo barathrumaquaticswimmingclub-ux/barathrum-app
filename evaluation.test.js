@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('fs'),{JSDOM}=require('jsdom');
+const {parentEvaluation,participantName}=require('./evaluation');
+const base={nama:'Nama Lengkap',namaPanggilan:'Uji',tanggalLahir:'1996-11-16',jk:'Laki-laki'};
+assert.equal(participantName(base,'2026-11-15'),'Kakak Uji');
+assert.equal(participantName(base,'2026-11-16'),'Ayah Uji');
+assert.equal(participantName({...base,jk:'Perempuan'},'2026-11-16'),'Bunda Uji');
+assert.equal(participantName({...base,jk:'Perempuan',tanggalLahir:'2018-02-20'},'2026-11-16'),'Kakak Uji');
+assert.equal(participantName({...base,tanggalLahir:'1990-03-21',jk:'L'},'2026-11-16'),'Ayah Uji');
+assert.equal(participantName({...base,tanggalLahir:'1990-03-21',jk:'P'},'2026-11-16'),'Bunda Uji');
+for(const birth of ['',undefined,'not-a-date','2027-01-01'])assert.equal(participantName({...base,tanggalLahir:birth},'2026-11-16'),'Uji');
+assert.equal(participantName({...base,jk:''},'2026-11-16'),'Uji');
+assert.equal(participantName({...base,namaPanggilan:''},'2026-11-15'),'Kakak Nama Lengkap');
+const item={tanggal:'2026-11-16',pelatih:'Pelatih Uji',teknik:'kepala kurang tunduk',fisik:'Kedinginan!',attitude:'kurang fokus',catatan:'Meluncur membaik. Latihan berikutnya lanjutkan gerakan kaki.'},before=JSON.stringify(item);
+const out=parentEvaluation(item,base,{mulai:'15:00'});assert.equal(out.apresiasi,'Usaha Ayah Uji dalam belajar renang patut diapresiasi.');assert.match(out.fisik,/latihan sore tanggal 2026-11-16, Ayah Uji masih merasa kedinginan/);assert.match(out.teknik,/Ayah Uji masih perlu memperbaiki posisi kepala/);assert(out.catatan.endsWith(item.catatan));assert.equal(JSON.stringify(item),before);
+const historical=parentEvaluation({...item,tanggal:'2026-11-15'},base,{mulai:'08:00'});assert.match(historical.apresiasi,/Kakak Uji/);assert.match(historical.fisik,/latihan pagi/);
+const empty=parentEvaluation({tanggal:item.tanggal},base);assert.equal(empty.apresiasi,'');assert.equal(empty.catatan,'');
+// The current parent UI places a single appreciation before all feedback fields and escapes text.
+const source=fs.readFileSync('public/swim/portal.js','utf8'),start=source.indexOf('function portalEvaluations(d)'),end=source.indexOf('\n',start),dom=new JSDOM('',{runScripts:'outside-only'}),w=dom.window;
+w.eval("const esc=v=>String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));const portalDate=v=>v;"+source.slice(start,end));
+w.data={evaluasi:[out]};w.document.body.innerHTML=w.eval('portalEvaluations(data)');const text=w.document.body.textContent;assert(text.indexOf(out.apresiasi)<text.indexOf(out.teknik));assert.equal(w.document.querySelectorAll('.evaluation-appreciation').length,1);
+w.data={evaluasi:[{...out,apresiasi:'<script>bad()</script>',catatan:'<img src=x onerror=bad()>'}]};w.document.body.innerHTML=w.eval('portalEvaluations(data)');assert.equal(w.document.querySelectorAll('script,img').length,0);dom.window.close();
+console.log('PASS respectful evaluation wording: age at training date, exact 30th birthday, gender, safe missing-data fallback, appreciation before feedback, preserved observations and escaped parent display.');

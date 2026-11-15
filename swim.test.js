@@ -40,7 +40,7 @@ async function main(){
   const schedule=(await body(write(owner,'post','/api/jadwal',{nama:'Sesi A',tanggal:today,mulai:'15:00',selesai:'16:00',lokasi:'Kolam A',coachId:staff.id,atletIds:[a.id],jenisKelas:'Private Class'}),201)).data;
   const attendance=(await body(write(owner,'post','/api/absensi',{atletId:a.id,jadwalId:schedule.id,tanggal:today,status:'Hadir'}),201)).data;
   await body(write(owner,'post','/api/perkembangan',{atletId:a.id,jadwalId:schedule.id,tanggal:today,teknik:'Meluncur membaik',fisik:'Stabil',attitude:'Baik',catatan:'Lanjutkan latihan'}),201);
-  d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,3);assert.equal(d.latihan.terpakaiPaket,1);assert.equal(d.pembayaran.terakhirBayar,today);assert.equal(d.jadwal.length,1);assert.equal(d.evaluasi[0].teknik,'Catatan pelatih untuk Adik Anak Satu: Meluncur membaik');checks++;
+  d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,3);assert.equal(d.latihan.terpakaiPaket,1);assert.equal(d.pembayaran.terakhirBayar,today);assert.equal(d.jadwal.length,1);assert.equal(d.evaluasi[0].apresiasi,'Usaha Kakak Anak Satu dalam belajar renang patut diapresiasi.');assert.equal(d.evaluasi[0].teknik,'Catatan pelatih untuk Kakak Anak Satu: Meluncur membaik');checks++;
   await body(write(owner,'put','/api/absensi/'+attendance.id,{...attendance,status:'Izin'}));
   d=await body(parent.get('/swim/api/dashboard'));assert.equal(d.latihan.sisaPertemuan,4);assert.equal(d.latihan.hadirBulanIni,0);checks++;
   await body(write(owner,'put','/api/orangtua/'+a.id,{active:false}));await body(parent.get('/swim/api/dashboard'),401);

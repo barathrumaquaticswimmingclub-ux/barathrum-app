@@ -26,7 +26,7 @@ async function main(){
  assert((await owner.get('/api/owner/activity/perkembangan')).body[0].parentOpenedAt===null);
  r=await send(parent,'post','/swim/api/viewed',{entries:dashboard.viewRefs});assert.equal(r.status,200,JSON.stringify(r.body));
  assert((await owner.get('/api/owner/activity/perkembangan')).body[0].parentOpenedAt);
- const view=(await owner.get('/api/owner/activity/perkembangan')).body[0];assert.equal(view.parentMessage,dashboard.evaluasi.map(x=>x.catatan).join(''));
+ const view=(await owner.get('/api/owner/activity/perkembangan')).body[0];assert.equal(view.parentMessage,dashboard.evaluasi.map(x=>[x.apresiasi,x.catatan].filter(Boolean).join('\n')).join('\n'));
  await send(owner,'put','/api/perkembangan/'+view.id,{...view,catatan:'versi baru',jadwalId:undefined}).then(r=>assert.equal(r.status,200));
  r=await send(team,'put','/api/perkembangan/'+view.id,{...view,catatan:'versi baru'});assert.equal(r.status,200,JSON.stringify(r.body));
  assert.equal((await owner.get('/api/owner/activity/perkembangan')).body[0].parentOpenedAt,null);

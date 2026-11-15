@@ -12,7 +12,7 @@ async function main(){
  async function call(a,m,url,body,status=200){const r=await a[m](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,status,JSON.stringify(r.body));return r.body;}
  for(const [a,u] of [[owner,'owner'],[juara,'prestasi'],[coach,'coach']])await call(a,'post','/auth/login',{username:u,password:'password'});
  const today=B.today(),create=async(kind,data)=>(await call(owner,'post','/api/'+kind,data,201)).data;
- const a=await create('atlet',{nama:'Anak Tester',namaPanggilan:'Test',kelompok:'Private Class',status:'Aktif'}),p=await create('atlet',{nama:'Anak Prestasi',kelompok:'Prestasi Class',status:'Aktif'});
+ const a=await create('atlet',{nama:'Anak Tester',namaPanggilan:'Test',tanggalLahir:'2018-04-21',kelompok:'Private Class',status:'Aktif'}),p=await create('atlet',{nama:'Anak Prestasi',kelompok:'Prestasi Class',status:'Aktif'});
  const pack=await create('pembayaran',{atletId:a.id,jenisKelas:'Private Class',tanggal:today,status:'Lunas',paketKhusus:true,kuotaKhusus:8,biayaKhusus:750000,alasanKhusus:'Private dua kali seminggu'});assert.equal(pack.totalPertemuan,8);assert.equal(pack.totalTagihan,750000);
  await call(coach,'post','/api/pembayaran',{atletId:a.id,paketKhusus:true},403);
  await call(owner,'post','/api/pembayaran',{atletId:a.id,jenisKelas:'Private Class',tanggal:B.addDays(today,1),status:'Lunas',paketKhusus:true,kuotaKhusus:1.5,biayaKhusus:750000,alasanKhusus:'Private khusus'},400);
@@ -21,7 +21,7 @@ async function main(){
  await create('perkembangan',{atletId:a.id,jadwalId:session.id,tanggal:today,fisik:'kedinginan'});
  await call(owner,'post','/api/orangtua/siapkan',{});
  await call(parent,'post','/swim/api/login',{username:'anak tester',password:'brtm'});
- let dash=await call(parent,'get','/swim/api/dashboard');assert.match(dash.evaluasi[0].fisik,/latihan sore/);assert.match(dash.evaluasi[0].fisik,/Adik Test masih merasa kedinginan/);assert.equal(dash.latihan.sisaPertemuan,7);
+ let dash=await call(parent,'get','/swim/api/dashboard');assert.match(dash.evaluasi[0].fisik,/latihan sore/);assert.match(dash.evaluasi[0].fisik,/Kakak Test masih merasa kedinginan/);assert.equal(dash.latihan.sisaPertemuan,7);
  let inbox=await call(parent,'get','/swim/api/notifications');assert.equal(inbox.length,2);
  await call(owner,'put','/api/absensi/'+att.id,{...att,status:'Hadir'});assert.equal((await call(parent,'get','/swim/api/notifications')).length,2);
  await call(juara,'get','/api/atlet/'+a.id+'/foto',undefined,403);
