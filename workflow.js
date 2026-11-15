@@ -14,7 +14,7 @@ function loginContext(req){return {ip:req.ip,device:String(req.get('user-agent')
 async function noticeBill(db,a,key,p){
  const data={...p,atletId:a.id,namaAtlet:a.nama,jenisKelas:a.kelompok,tanggal:B.today(),jatuhTempo:Object.hasOwn(p,'jatuhTempo')?p.jatuhTempo:B.today(),provisional:true};
  const r=(await db.query('INSERT INTO brtm_billing_notices(athlete_id,event_key,data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[a.id,key,JSON.stringify(data)])).rows[0];
- if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. ${data.jatuhTempo?'Batas pembayaran '+data.jatuhTempo+'.':'Tanggal batas bayar mengikuti tanggal pembayaran pertama.'} Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' SPP final mengikuti kehadiran; bulan tanpa kehadiran tidak ditagih.':''}`);
+ if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. ${data.jatuhTempo?'Batas pembayaran '+data.jatuhTempo+'.':'Tanggal batas bayar mengikuti tanggal pembayaran pertama.'} Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' Pembayaran Lunas tetap untuk bulan tagihannya dan tidak otomatis menjadi kredit karena tidak hadir.':''}`);
 }
 async function billing(db,packs){
  const athletes=(await db.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND data->>'status'='Aktif'")).rows.map(r=>({...r.data,id:String(r.id)})),first=await require('./spp').firstPayments(db);
@@ -66,9 +66,11 @@ function mount(app,h){require('./owner-finance').mount(app,h);require('./coach')
  }));
  app.put('/api/owner/schedule/:id',owner,wrap(async(req,res)=>{
   await tx(async c=>{const old=(await c.query('SELECT * FROM brtm_weekly_slots WHERE id=$1',[req.params.id])).rows[0];if(!old)throw fail(404,'Jadwal tidak ditemukan');
-   const d=req.body,ids=old.place==='Prestasi'?(await rows(c,'atlet')).filter(a=>a.status==='Aktif'&&a.kelompok==='Prestasi Class').map(a=>a.id):[...new Set((d.athleteIds||[]).map(String))];if(old.place!=='Prestasi'&&(!Array.isArray(d.athleteIds)||ids.length>200))throw fail(400,'Peserta tidak valid');
+   const d={...req.body};if(old.place==='Prestasi')d.className='Prestasi Class';
+   if(old.place!=='Prestasi'&&!Array.isArray(d.athleteIds))throw fail(400,'Peserta tidak valid');
+   const ids=old.place==='Prestasi'?(await rows(c,'atlet')).filter(a=>a.status==='Aktif'&&a.kelompok==='Prestasi Class').map(a=>a.id):[...new Set(d.athleteIds.map(String))];
    if(ids.length&&!B.CLASSES[d.className])throw fail(400,'Pilih kelas');
-   const capacity={'Private Class':1,'Private Couple Class':2,'Semi Private Class':3,'Group Class':6,'Hydro Terapi Class':6};if(ids.length>(capacity[d.className]||200))throw fail(400,'Jumlah peserta melebihi kapasitas kelas');
+   if(ids.length)B.validateCapacity(d.className,ids.length);
    for(const aid of ids){const a=await record(c,'atlet',aid);if(a.status!=='Aktif'||a.kelompok!==d.className)throw fail(400,'Pilih atlet aktif sesuai kelas');}
    const start=d.start||old.start_time,end=d.end||old.end_time;if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(end)||start>=end)throw fail(400,'Jam latihan tidak valid');
    const clashes=(await c.query('SELECT * FROM brtm_weekly_slots WHERE weekday=$1 AND id<>$2',[old.weekday,old.id])).rows;

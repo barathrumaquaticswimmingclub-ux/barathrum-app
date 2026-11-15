@@ -36,7 +36,7 @@ function bill(res,p,kind,id){
   items.forEach(([label,amount],i)=>{if(!label)return;const y=779+i*55;put(i+1,70,y,65,22,'center');put(label,165,y,450,21);put('1',645,y,185,22,'center');put(money(amount),850,y,230,22,'right');put(money(amount),1105,y,235,22,'right');});
   put(money(p.totalTagihan),1104,946,235,25,'right');
   if(p.jenisKelas==='Prestasi Class')put('Batas pembayaran: '+(p.jatuhTempo||'Mengikuti tanggal pembayaran pertama'),60,1005,1280,18);
-  if(p.provisional)put('Pemberitahuan awal; SPP final mengikuti kehadiran. Bulan tanpa hadir tidak ditagih.',60,1035,1280,18);
+  if(p.provisional)put('Pemberitahuan invoice. Pembayaran Lunas tetap untuk bulan tagihannya.',60,1035,1280,18);
  }
  d.end();
 }

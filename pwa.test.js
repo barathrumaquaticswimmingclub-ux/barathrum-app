@@ -30,7 +30,7 @@ async function main() {
   assert.equal((await dispatch('/','POST','navigate')).intercepted,false);
   assert.equal((await dispatch('/file','GET','cors','https://other.test')).intercepted,false);
   assert.equal((await dispatch('/','GET','navigate')).result,'offline page');
-  assert.equal((await dispatch('/icons/brtm-staff-20261114-192.png')).result,'public asset');
+  assert.equal((await dispatch('/icons/brtm-staff-20261114b-192.png')).result,'public asset');
   assert.equal((await dispatch('/app.js')).intercepted,false);
   context.fetch=async()=> 'fresh response';assert.equal((await dispatch('/','GET','navigate')).result,'fresh response');
   function installHarness(standalone=false) {
@@ -51,7 +51,7 @@ async function main() {
   assert.equal((await request(app).get('/swim/install/install.css')).status,200);assert.equal((await request(app).get('/swim/install-support.js')).status,200);
   const parentHtml=await request(app).get('/swim/');assert.match(parentHtml.text,/apple-mobile-web-app-capable/);assert.match(parentHtml.text,/install-support.js/);
   const swimManifest=JSON.parse(fs.readFileSync('public/swim/manifest.webmanifest','utf8'));assert.equal(swimManifest.id,'/swim/');assert.equal(swimManifest.start_url,'/swim/');
-  const staffInstallPage=await request(app).get('/club/install/');assert.equal(staffInstallPage.status,200);assert.match(staffInstallPage.text,/Owner, Coach, atau Prestasi/);assert.match(staffInstallPage.text,/href="\/manifest.webmanifest"/);assert.match(staffInstallPage.text,/brtm-staff-20261114-192.png/);assert(!staffInstallPage.text.includes('loginForm'));assert(!staffInstallPage.text.includes('BRTM SWIM'));assert.match(html.text,/apple-touch-icon/);assert.match(html.text,/iPhone · Safari/);
+  const staffInstallPage=await request(app).get('/club/install/');assert.equal(staffInstallPage.status,200);assert.match(staffInstallPage.text,/Owner, Coach, atau Prestasi/);assert.match(staffInstallPage.text,/href="\/manifest.webmanifest"/);assert.match(staffInstallPage.text,/brtm-staff-20261114b-192.png/);assert(!staffInstallPage.text.includes('loginForm'));assert(!staffInstallPage.text.includes('BRTM SWIM'));assert.match(html.text,/apple-touch-icon/);assert.match(html.text,/iPhone · Safari/);
   const {JSDOM}=require('jsdom');
   function phoneHarness({ios=false,ipad=false,standalone=false,main=false,staff=false}={}){
     const html=staff?staffInstallPage.text:main?parentHtml.text:installPage.text,dom=new JSDOM(html,{runScripts:'outside-only',url:'https://brtm.test/swim/install/'}),w=dom.window;

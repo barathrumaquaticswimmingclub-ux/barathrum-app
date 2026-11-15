@@ -52,9 +52,10 @@ function mount(app, h) {
   }
   app.post('/swim/api/login', wrap(async (req, res) => {
     const username = norm(req.body?.username).slice(0, 200);
-    limit(req, 'swim:' + username, 8); limit(req, 'swim-total', 40);
+    const attemptKey=limit(req, 'swim:' + username, 8); limit(req, 'swim-total', 40, false);
     const staff = (await pool.query("SELECT * FROM brtm_users WHERE username=$1 AND role='owner' AND active=TRUE AND must_change=FALSE", [username])).rows[0];
     if (staff && await verify(req.body?.password,staff.password_hash)) {
+      limit.reset(attemptKey);
       const token=crypto.randomBytes(32).toString('hex');
       await pool.query('DELETE FROM brtm_swim_owner_sessions WHERE expires_at<NOW()');
       await pool.query('INSERT INTO brtm_swim_owner_sessions VALUES ($1,$2,$3)',[digest(token),staff.id,new Date(Date.now()+7*86400000)]);
@@ -62,7 +63,8 @@ function mount(app, h) {
     }
     const u = (await pool.query(`SELECT p.* FROM brtm_parents p JOIN data_klub a ON a.id=p.athlete_id WHERE p.username=$1 AND a.jenis='atlet' AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif'`, [username])).rows[0];
     const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
-    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active || u.deleted) throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.');
+    if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active || u.deleted) { limit(req, 'swim-total', 40); throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.'); }
+    limit.reset(attemptKey);
     const token = crypto.randomBytes(32).toString('hex');
     await pool.query('DELETE FROM brtm_parent_sessions WHERE expires_at<NOW()');
     await pool.query('INSERT INTO brtm_parent_sessions VALUES ($1,$2,$3)', [digest(token), u.id, new Date(Date.now() + 7 * 86400000)]);
@@ -243,6 +245,7 @@ function mount(app, h) {
     if (!['Laki-laki','Perempuan'].includes(out.jk)) throw fail(400, 'Jenis kelamin tidak valid');
     out.kelompok = kind === 'prestasi' ? 'Prestasi Class' : B.canonical(out.kelompok);
     if (!Object.hasOwn(B.CLASSES, out.kelompok) || kind === 'nonprestasi' && out.kelompok === 'Prestasi Class') throw fail(400, 'Kelas tidak sesuai formulir');
+    B.validateAge(out);
     if(input.versiKetentuan){
       const required=['namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
       if(required.some(k=>!out[k])||out.persetujuan!=='Saya telah membaca dan menyetujui ketentuan BRTM.'||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');

@@ -9,8 +9,16 @@
 - Jatuh tempo mengikuti tanggal pembayaran pertama, dengan penyesuaian akhir bulan pendek. Pemberitahuan invoice diberikan setiap akhir bulan.
 - Riwayat SPP otomatis tidak dapat dihapus. Cadangan mencakup penerimaan, alokasi, koreksi dan audit.
 
-Private Class dibatasi tepat satu anak untuk satu pelatih pada pembuatan maupun perubahan jadwal, melalui antarmuka dan validasi server.
+Kapasitas per pelatih diterapkan pada jadwal per tanggal dan jadwal mingguan: Private 1, Private Couple 2, Semi Private 3, Group/Hydro Terapi 6, Regular 16; Prestasi tanpa batas peserta. Owner tetap dapat mengubah peserta jadwal Regular. Private dengan tanggal lahir yang diketahui minimal berusia 4 tahun.
 
 ## Validasi
 
 `npm test` menjalankan pengujian API, peran/privasi, formulir, PWA, program, prestasi, operasional, komunitas, dan SPP. `node spp.test.js` menguji nol hadir, tagihan bulanan, koreksi/hapus, kredit/FIFO, persetujuan Owner dan tinjauan kedaluwarsa, pengiriman ulang, beberapa penerimaan, laporan per bulan, pencadangan, aktivasi ulang, perlindungan arsip, serta kapasitas Private.
+
+## Audit peluncuran 15 November 2026
+
+Sandi orang tua `brtm` dipertahankan atas keputusan Owner. Login berhasil tidak menghabiskan batas percobaan gagal untuk pengguna dalam satu jaringan; batas per akun dan kegagalan per IP tetap berlaku.
+
+Peraturan publik dan teks PDF/pemberitahuan invoice tidak lagi memuat klausul batas bayar akhir bulan, bebas SPP karena nol hadir, atau administrasi/pendampingan event. Perubahan ini tidak mengubah transaksi historis.
+
+`npm run audit:200` memerlukan PostgreSQL lokal kosong bernama `brtm_audit_*`, `BRTM_AUDIT_DATABASE_URL`, dan `pg_dump`/`pg_restore` (opsional lokasi binari melalui `BRTM_AUDIT_PG_BIN`). Menjalankan 200 akun sintetis dengan permintaan HTTP serentak, seluruh tabel dicadangkan dan dipulihkan ke database baru. Skrip menolak host jarak jauh/database produksi. Pengujian ini berbeda dari uji beban produksi dan pemulihan volume Railway produksi.
