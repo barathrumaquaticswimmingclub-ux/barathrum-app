@@ -56,6 +56,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
+  app.use('/registration/api/submit',express.json({limit:'30mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
   app.use('/api/prestasi/time-table',express.json({limit:'1mb'}));

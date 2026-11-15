@@ -1,0 +1,46 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),request=require('supertest'),sharp=require('sharp'),fs=require('fs'),{JSDOM}=require('jsdom');
+const {initDb,createApp,passwordHash}=require('./server'),{CONSENT}=require('./registration');
+(async()=>{
+ const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
+ for(const [name,role] of [['owner','owner'],['coach','coach']])await pool.query('INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES($1,$1,$2,$3,FALSE)',[name,role,await passwordHash('registration-test')]);
+ const app=createApp({pool,secureCookies:false}),anon=request(app),owner=request.agent(app);let checks=0;
+ async function call(a,m,url,body,status=200){const r=await a[m](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,status,url+' '+JSON.stringify(r.body));checks++;return r;}
+ await call(owner,'post','/auth/login',{username:'owner',password:'registration-test'});
+ for(const [place,day,start,end] of [['Kolam Renang Pondok Selfie',1,'15:00','16:00'],['Kolam Renang Pondok Selfie',5,'16:00','17:00'],['Kolam Renang Pondok Selfie',6,'08:00','09:00'],['Kolam Renang Pondok Selfie',2,'07:00','08:00'],['Hotel Grand Wahid',2,'07:00','08:00']])await pool.query('INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time) VALUES(2,$1,$2,$3,$4)',[place,day,start,end]);
+ let config=(await call(anon,'get','/registration/api/options')).body;
+ assert.equal(config.classes['Regular Class (1x Seminggu)'].schedules.length,3);assert.equal(config.classes['Regular Class (2x Seminggu)'].sessions,2);assert(!config.classes['Prestasi Class']);assert(!JSON.stringify(config).includes('athlete_ids'));assert(!JSON.stringify(config).includes('password'));assert.equal(config.consent,CONSENT);
+ const image=await sharp({create:{width:2400,height:1800,channels:3,background:'#2386bf'}}).jpeg().withMetadata().toBuffer();
+ const first=config.classes['Regular Class (2x Seminggu)'].schedules[0].value,second=config.classes['Regular Class (2x Seminggu)'].schedules[1].value;
+ const input={nama:'Anggota Form Satu',namaPanggilan:'Satu',tanggalLahir:'2017-03-21',jk:'Perempuan',tempatLahir:'Salatiga',alamat:'Alamat uji',namaOrtu:'Wali Uji',noHpOrtu:'081234567890',sekolah:'Sekolah Uji',kelasSekolah:'3',tujuan:'Belajar berenang',foto:{mime:'application/octet-stream',base64:image.toString('base64')},kelompok:'Regular Class (2x Seminggu)',schedules:[first,second],consent:true,version:config.version,requestId:'registration-request-one-001'};
+ await call(anon,'post','/registration/api/submit',{...input,schedules:[first]},400);await call(anon,'post','/registration/api/submit',{...input,schedules:[first,first]},400);
+ await call(anon,'post','/registration/api/submit',{...input,schedules:[first,'fake']},409);await call(anon,'post','/registration/api/submit',{...input,consent:false},400);await call(anon,'post','/registration/api/submit',{...input,version:'old'},409);
+ await call(anon,'post','/registration/api/submit',{...input,tempatLahir:''},400);await call(anon,'post','/registration/api/submit',{...input,website:'spam'},400);
+ const cross=await anon.post('/registration/api/submit').set('X-BRTM-Request','1').set('Origin','https://evil.test').send(input);assert.equal(cross.status,403);
+ assert.equal((await anon.post('/registration/api/submit').send(input)).status,403);
+ const sent=(await call(anon,'post','/registration/api/submit',input,201)).body;assert.deepEqual(sent,{ok:true,installUrl:'/swim/install/'});
+ await call(anon,'post','/registration/api/submit',input,201);assert.equal((await pool.query('SELECT * FROM brtm_registrations')).rows.length,1);
+ await call(anon,'post','/registration/api/submit',{...input,nama:'Changed'},409);
+ let athletes=(await call(owner,'get','/api/atlet')).body;assert.equal(athletes.length,1);const a=athletes[0];assert(a.jadwalPilihan.includes('Senin'));assert(a.jadwalPilihan.includes('Jumat'));assert.equal(a.sumber,'Formulir BRTM');
+ assert.equal((await pool.query("SELECT count(*)::int n FROM data_klub WHERE jenis='pembayaran'")).rows[0].n,0);
+ const p=(await pool.query('SELECT * FROM brtm_photos WHERE athlete_id=$1',[a.id])).rows[0];const photo=await sharp(Buffer.from(p.base64,'base64')).metadata();assert.equal(photo.format,'webp');assert(photo.width<=1000);assert(photo.height<=1000);assert(!photo.exif);assert(Buffer.from(p.base64,'base64').length<image.length);
+ const stored=(await pool.query('SELECT payload FROM brtm_registrations')).rows[0].payload;assert.equal(stored.foto.mime,'image/webp');assert.equal(stored.jadwalStatus,'Menunggu konfirmasi admin');assert.equal(stored.persetujuan,CONSENT);
+ // A second request for the same identity links to its history; a mismatch goes to Owner review without disclosure.
+ await call(anon,'post','/registration/api/submit',{...input,schedules:[first,config.classes[input.kelompok].schedules[2].value],requestId:'registration-request-two-002'},201);const linked=(await call(owner,'get','/api/atlet')).body;assert.equal(linked.length,1);assert(linked[0].jadwalPilihan.includes('Sabtu'));
+ await call(anon,'post','/registration/api/submit',{...input,noHpOrtu:'089999999999',requestId:'registration-request-three-003'},201);assert.equal((await call(owner,'get','/api/atlet')).body.length,1);assert.equal((await pool.query("SELECT count(*)::int n FROM brtm_registrations WHERE status='Perlu diperiksa'")).rows[0].n,1);
+ const parent=request.agent(app);await call(parent,'post','/swim/api/login',{username:input.nama,password:'brtm'});assert.equal((await call(parent,'get','/swim/api/dashboard')).body.profil.nama,input.nama);
+ // Full slots, inactive coaches and unrelated locations cannot be offered or forged.
+ const full=[];for(let i=0;i<16;i++)full.push(String((await pool.query("INSERT INTO data_klub(jenis,data) VALUES('atlet',$1) RETURNING id",[{nama:'Regular '+i,status:'Aktif',kelompok:input.kelompok}])).rows[0].id));
+ await pool.query("UPDATE brtm_weekly_slots SET class_name=$1,athlete_ids=$2 WHERE weekday=1",[input.kelompok,JSON.stringify(full)]);
+ config=(await call(anon,'get','/registration/api/options')).body;assert(!config.classes[input.kelompok].schedules.some(s=>s.value===first));await call(anon,'post','/registration/api/submit',{...input,nama:'New Child',requestId:'registration-request-four-004'},409);
+ await pool.query('UPDATE brtm_users SET active=FALSE WHERE id=2');assert.equal((await call(anon,'get','/registration/api/options')).body.classes[input.kelompok].schedules.length,0);await pool.query('UPDATE brtm_users SET active=TRUE WHERE id=2');
+ // UI order, dependent menus, no cross-day choices and a retry keep the user's data.
+ const dom=new JSDOM(fs.readFileSync('public/registration/index.html','utf8'),{url:'https://brtm.test/registration/',runScripts:'outside-only'}),w=dom.window;let posts=0;
+ w.fetch=async(url,o)=>{if(url.endsWith('/options'))return {ok:true,json:async()=>config};posts++;throw Error('offline');};w.eval(fs.readFileSync('public/registration/form.js','utf8'));await new Promise(r=>setTimeout(r,20));
+ const controls=[...w.document.querySelectorAll('#registrationForm [name]')].map(x=>x.name);assert.deepEqual(controls.slice(0,13),['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','alamat','namaOrtu','noHpOrtu','sekolah','kelasSekolah','tujuan','foto','kelompok']);
+ const cls=w.document.getElementById('classSelect');cls.value=input.kelompok;cls.dispatchEvent(new w.Event('change'));const day=w.document.getElementById('day0');day.value='5';day.dispatchEvent(new w.Event('change'));assert(![...w.document.getElementById('day1').options].some(o=>o.value==='5'));assert([...w.document.getElementById('time0').options].some(o=>o.textContent.includes('16:00–17:00')));assert(!w.document.getElementById('time0').textContent.includes('08:00'));
+ dom.window.close();
+ for(const format of ['png','webp','gif','tiff','avif']){const f=await sharp({create:{width:20,height:20,channels:3,background:'red'}}).toFormat(format).toBuffer();assert.equal((await require('./images').staff({base64:f.toString('base64'),mime:'wrong'})).mime,'image/webp');}
+ await assert.rejects(()=>require('./images').staff({base64:Buffer.from('not a photo').toString('base64')}));
+ await db.close();console.log('PASS '+checks+' single-page registration API checks plus DOM: live schedules, Regular 1/2, distinct days, CSRF, replay protection, identity matching, parent access, compressed storage, common photo formats and ordered mobile form.');
+})().catch(e=>{console.error(e);process.exit(1);});
