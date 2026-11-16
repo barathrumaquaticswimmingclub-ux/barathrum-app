@@ -48,8 +48,9 @@ async function initDb(pool) {
   await require('./community').initDb(pool);
   await require('./tester-reset').initDb(pool);
   await require('./workflow').initDb(pool);
+  await require('./training-board').initDb(pool);
 }
-function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID, enforceRelease=secureCookies, release } = {}) {
+function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID, enforceRelease=secureCookies, release, trainingAiFetch } = {}) {
   const app = express();
   app.disable('x-powered-by'); app.set('trust proxy', 1);
   app.use((req, res, next) => {
@@ -166,12 +167,14 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await transaction(async c=>{await c.query('UPDATE brtm_users SET must_change=TRUE WHERE id=$1',[req.user.id]);await c.query('DELETE FROM brtm_sessions WHERE user_id=$1',[req.user.id]);await audit(c,req.user,'wajib-ganti-kata-sandi');});
     setCookie(res,'',0);res.json({pesan:'Masuk berikutnya wajib mengganti kata sandi.'});
   }));
+  app.get(['/training/','/training/index.html'],(req,res)=>res.type('html').send(require('fs').readFileSync(path.join(__dirname,'public/training/index.html'),'utf8').replaceAll('__BRTM_RELEASE__',app.locals.release.id)));
   app.get('/club/',(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
   app.get('/club/sw.js',(req,res)=>res.sendFile(path.join(__dirname,'public/sw.js')));
   require('./swim').mount(app, { pool, wrap, auth, owner, changed, transaction, rows, record, save, audit, payments, passwordHash, verify, limit, secureCookies });
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
+  require('./training-board').mount(app,{pool,wrap,transaction,rows,audit,limit,aiFetch:trainingAiFetch});
   SPP.mount(app,{pool,wrap,owner,transaction});
   require('./community').mount(app,{pool,wrap,owner,transaction,rows,audit,limit});
   require('./tester-reset').mount(app,{pool,wrap,owner,transaction,audit});
@@ -242,7 +245,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices']){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES]){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
@@ -405,6 +408,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true);
       if (kind === 'atlet') {
+        if((await c.query("SELECT id FROM brtm_training_rosters WHERE (payload->'lines'->0) @> $1::jsonb OR (payload->'lines'->1) @> $1::jsonb OR (payload->'lines'->2) @> $1::jsonb OR (payload->'lines'->3) @> $1::jsonb LIMIT 1",[JSON.stringify([old.id])])).rowCount)throw fail(400,'Atlet memiliki riwayat line latihan. Ubah status menjadi Nonaktif.');
         if((await c.query('SELECT id FROM brtm_feedback WHERE athlete_id=$1 LIMIT 1',[old.id])).rows.length)throw fail(400,'Atlet memiliki riwayat masukan. Ubah status menjadi Nonaktif.');
         const linked = (await c.query(`SELECT data FROM data_klub WHERE jenis <> 'atlet'`)).rows.some(r => String(r.data.atletId) === old.id || r.data.atletIds?.map(String).includes(old.id) || r.data.namaAtlet?.trim().toLowerCase() === old.nama?.trim().toLowerCase());
         if (linked) throw fail(400, 'Atlet memiliki riwayat. Ubah status menjadi Nonaktif.');

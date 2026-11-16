@@ -30,6 +30,7 @@ function showLogin() {
 function menuKeys() { return isOwner() ? Object.keys(title) : S.user.role === 'coach' ? ['dashboard','atlet','jadwal','absensi','perkembangan','program'] : ['dashboard','atlet','absensi','perkembangan','catatanwaktu','program']; }
 function renderNav() {
   $('nav').innerHTML = menuKeys().map(k => `<button type="button" data-menu="${k}" class="${S.section===k?'active':''}"><span aria-hidden="true">${icons[k]}</span>${esc(k === 'dashboard' ? 'Dashboard' : title[k])}</button>`).join('');
+  if(['owner','prestasi'].includes(S.user.role)){const board=document.createElement('button');board.type='button';board.textContent='▦ Training Board ↗';board.onclick=()=>{location.href='/training/';};$('nav').append(board);}
   const active = $('nav').querySelector('.active'); if (active) active.setAttribute('aria-current','page');
 }
 async function load() {
