@@ -20,7 +20,7 @@ function mount(app,{pool,owner,wrap,transaction,rows,save,payments}){
  app.get('/api/owner/holidays/preview',owner,wrap(async(req,res)=>{
   const q=selection(req.query),attendance=await rows(pool,'absensi');
   const sessions=(await rows(pool,'jadwal')).filter(s=>matches(s,q)).sort((a,b)=>String(a.mulai).localeCompare(String(b.mulai))||String(a.pelatih).localeCompare(String(b.pelatih)));
-  res.json({...q,sessions:sessions.map(s=>({id:s.id,revision:revision(s),kelas:s.jenisKelas,nama:s.nama,jam:s.jam||s.mulai+'–'+s.selesai,lokasi:s.lokasi,pelatih:s.pelatih,peserta:(s.atletIds||[]).length,libur:s.statusSesi==='Libur',alasanLibur:s.alasanLibur||'',hasAttendance:attendance.some(a=>a.jadwalId===s.id)}))});
+  res.json({...q,sessions:sessions.map(s=>({id:s.id,revision:revision(s),kelas:s.jenisKelas,nama:s.nama,jam:s.jam||s.mulai+'–'+s.selesai,lokasi:s.lokasi,pelatih:s.pelatih,peserta:(s.atletIds||[]).length,libur:s.statusSesi==='Libur',alasanLibur:s.alasanLibur||'',hasAttendance:attendance.some(a=>a.jadwalId===s.id),attendanceCount:attendance.filter(a=>a.jadwalId===s.id).length}))});
  }));
  app.post('/api/owner/holidays',owner,wrap(async(req,res)=>{
   const q=selection(req.body),reason=String(req.body.reason||'').trim(),ids=req.body.scheduleIds;
