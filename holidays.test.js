@@ -1,0 +1,50 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),request=require('supertest'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const B=require('./business'),{initDb,createApp,passwordHash}=require('./server');
+(async()=>{
+ B.today=()=> '2026-11-16';const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
+ await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
+ for(const [name,role] of [['owner','owner'],['coach','coach'],['prestasi','prestasi'],['coach2','coach']])await pool.query('INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES($1,$1,$2,$3,FALSE)',[name,role,await passwordHash('holiday-test-pass')]);
+ const app=createApp({pool,secureCookies:false}),owner=request.agent(app),coach=request.agent(app),team=request.agent(app),parent=request.agent(app);let checks=0;
+ async function call(agent,method,url,body,status=200){const r=await agent[method](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,status,url+' '+JSON.stringify(r.body));checks++;return r.body;}
+ for(const [a,role] of [[owner,'owner'],[coach,'coach'],[team,'prestasi']])await call(a,'post','/auth/login',{username:role,password:'holiday-test-pass'});
+ const create=async(kind,data)=>(await call(owner,'post','/api/'+kind,data,201)).data;
+ const athlete=await create('atlet',{nama:'Atlet Prestasi Libur',kelompok:'Prestasi Class',status:'Aktif'}),privateAthlete=await create('atlet',{nama:'Atlet Private Libur',kelompok:'Private Class',status:'Aktif'});
+ const schedule=async(a,date,start='15:00')=>create('jadwal',{nama:'Latihan '+a.nama,tanggal:date,mulai:start,selesai:start==='15:00'?'16:00':'17:00',lokasi:'Pondok Selfie',coachId:a.kelompok==='Private Class'?'4':'2',jenisKelas:a.kelompok,atletIds:[a.id]});
+ const day=B.today(),pagi=await schedule(athlete,day),sore=await schedule(athlete,day,'16:00'),regular=await schedule(privateAthlete,day),next=await schedule(athlete,'2026-11-17');
+ const paid=await create('pembayaran',{atletId:privateAthlete.id,tanggal:day,status:'Lunas'}),end=paid.tanggalBerakhir;
+ await call(owner,'post','/api/orangtua/siapkan');await call(parent,'post','/swim/api/login',{username:athlete.nama,password:'brtm'});
+ const preview=async(date,className)=>(await call(owner,'get','/api/owner/holidays/preview?date='+date+'&className='+encodeURIComponent(className)));
+ const body=(p,ids=p.sessions.filter(s=>!s.libur&&!s.hasAttendance).map(s=>s.id))=>({date:p.date,className:p.className,scheduleIds:ids,revisions:Object.fromEntries(p.sessions.map(s=>[s.id,s.revision])),reason:'Libur latihan klub'});
+ const chosen=await preview(day,'Prestasi Class');assert.deepEqual(chosen.sessions.map(s=>s.id),[pagi.id,sore.id]);assert.equal((await preview(day,'Semua kelas')).sessions.length,3);
+ await call(coach,'get','/api/owner/holidays/preview?date='+day+'&className=Prestasi%20Class',undefined,403);await call(team,'post','/api/owner/holidays',body(chosen),403);
+ await call(owner,'post','/api/owner/holidays',{...body(chosen),scheduleIds:[next.id]},409);
+ const one=body(chosen,[pagi.id]);assert.equal((await call(owner,'post','/api/owner/holidays',one)).changed,1);
+ let schedules=await call(owner,'get','/api/jadwal');assert.equal(schedules.find(s=>s.id===pagi.id).statusSesi,'Libur');assert.equal(schedules.find(s=>s.id===sore.id).statusSesi,'Terjadwal');assert.equal(schedules.find(s=>s.id===regular.id).statusSesi,'Terjadwal');assert.equal(schedules.find(s=>s.id===next.id).statusSesi,'Terjadwal');
+ await call(owner,'post','/api/absensi',{atletId:athlete.id,jadwalId:pagi.id,tanggal:day,status:'Hadir'},400);assert.equal((await call(owner,'get','/api/absensi')).length,0);assert(!(await call(owner,'get','/api/pembayaran')).some(p=>p.jenisKelas==='Prestasi Class'));
+ const dashboard=await call(parent,'get','/swim/api/dashboard');assert.equal(dashboard.jadwal.find(s=>s.id===pagi.id).statusSesi,'Libur');assert.equal(dashboard.latihan.hadirBulanIni,0);assert.equal((await call(parent,'get','/swim/api/notifications')).filter(n=>n.event_key==='libur:'+pagi.id).length,1);
+ assert.equal((await call(owner,'post','/api/owner/holidays',one)).changed,0);assert.equal((await call(parent,'get','/swim/api/notifications')).filter(n=>n.event_key==='libur:'+pagi.id).length,1);
+ const all=await preview(day,'Semua kelas');const bulk=body(all);assert.equal((await call(owner,'post','/api/owner/holidays',bulk)).changed,2);
+ let pack=(await call(owner,'get','/api/pembayaran')).find(p=>p.id===paid.id);assert.equal(pack.berlakuSampai,B.addDays(end,7));assert.equal(pack.sisaPertemuan,4);
+ await call(owner,'post','/api/owner/holidays',bulk);pack=(await call(owner,'get','/api/pembayaran')).find(p=>p.id===paid.id);assert.equal(pack.berlakuSampai,B.addDays(end,7));assert.equal((await preview(day,'Semua kelas')).sessions.filter(s=>s.libur).length,3);
+ // Validate all sessions before any write, including stale previews and attendance races.
+ const safe=await schedule(athlete,'2026-11-17','16:00'),tomorrow=await preview('2026-11-17','Prestasi Class');await call(owner,'post','/api/absensi',{atletId:athlete.id,jadwalId:next.id,tanggal:'2026-11-17',status:'Hadir'},400);
+ await pool.query("INSERT INTO data_klub(jenis,data) VALUES('absensi',$1)",[JSON.stringify({atletId:athlete.id,jadwalId:next.id,tanggal:'2026-11-17',status:'Izin'})]);
+ await call(owner,'post','/api/owner/holidays',body(tomorrow),409);assert.equal((await call(owner,'get','/api/jadwal')).find(s=>s.id===next.id).statusSesi,'Terjadwal');assert.equal((await preview('2026-11-17','Prestasi Class')).sessions[0].hasAttendance,true);assert.equal((await call(owner,'get','/api/jadwal')).find(s=>s.id===safe.id).statusSesi,'Terjadwal');
+ const later=await schedule(athlete,'2026-11-18'),laterPreview=await preview('2026-11-18','Prestasi Class');await pool.query("UPDATE data_klub SET data=data||$1::jsonb WHERE id=$2",[JSON.stringify({lokasi:'Lokasi diubah'}),later.id]);await call(owner,'post','/api/owner/holidays',body(laterPreview),409);
+ await call(owner,'post','/api/owner/holidays',{...body(laterPreview),reason:''},400);await call(owner,'get','/api/owner/holidays/preview?date=bad&className=Prestasi%20Class',undefined,400);
+ await app.locals.maintain();await app.locals.maintain();const regenerated=(await call(owner,'get','/api/jadwal')).filter(s=>s.tanggal===day&&s.jenisKelas==='Prestasi Class'&&s.mulai<'17:00'&&s.selesai>'15:00');assert(regenerated.length===2&&regenerated.every(s=>s.statusSesi==='Libur'));
+ assert((await call(owner,'get','/api/audit')).some(a=>a.jenis==='jadwal'&&a.action==='ubah'));
+ // Actual Owner dialog: class/all selector, calendar, all-session checkbox, save payload, and holiday summary.
+ const dom=new JSDOM(fs.readFileSync('public/index.html','utf8'),{url:'https://brtm.test/',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
+ w.fetch=()=>new Promise(()=>{});w.setInterval=()=>0;w.scrollTo=()=>{};w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ const vm=require('node:vm'),run=code=>vm.runInContext(code,dom.getInternalVMContext());
+ for(const file of ['app','intake','prestasi-ui','operations-ui','community-ui','spp-ui','owner-tables','coach-ui'])run(fs.readFileSync('public/'+file+'.js','utf8'));
+ const fixture=await preview('2026-11-18','Prestasi Class');w.testSessions=fixture;w.testSchedule={...later,statusSesi:'Libur',alasanLibur:'Libur latihan klub'};w.testClasses=B.CLASSES;
+ await run(`(async()=>{S.user={id:'1',role:'owner'};S.config={today:'2026-11-16',classes:testClasses};S.section='absensi';S.records={jadwal:[],atlet:[],absensi:[]};let submitted;load=async()=>{};request=async(url,options)=>{if(options?.method==='POST'){submitted=JSON.parse(options.body);return {changed:1};}return {...testSessions,date:$('f_holidayDate').value,className:$('f_holidayClass').value};};openHoliday();await Promise.resolve();await Promise.resolve();
+ if(!$('f_holidayClass').textContent.includes('Semua kelas')||$('f_holidayDate').type!=='date')throw Error('Holiday class/date controls missing');
+ $('holidayAll').checked=true;$('holidayAll').onchange({target:$('holidayAll')});await $('wfForm').onsubmit({preventDefault(){},target:$('wfForm')});if(submitted.scheduleIds[0]!==testSessions.sessions[0].id)throw Error('Wrong selected holiday sessions');
+ attendanceDay='2026-11-18';S.records.jadwal=[testSchedule];renderAttendance('','');if(!$('sectionSummary').textContent.includes('Sesi libur')||$('records').querySelector('[data-wf="attendance"]'))throw Error('Holiday attendance summary missing');
+ S.user.role='coach';renderCurrent();if(!holidayButton.classList.contains('hidden'))throw Error('Holiday action exposed to Coach');})()`);
+ dom.window.close();await db.close();console.log('PASS '+checks+' holiday API/DOM checks: class/all/date/session selection, role boundaries, partial/full cancellation, attendance/stale-preview safety, parent notices, zero attendance, package extension, retries and holiday summary.');
+})().catch(e=>{console.error(e);process.exit(1);});

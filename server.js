@@ -317,11 +317,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.alasanLibur=out.statusSesi==='Libur'?text(input.alasanLibur||old?.alasanLibur,'Alasan libur',true,500):'';
       if(out.statusSesi==='Libur' && old?.statusSesi!=='Libur') {
         if((await rows(db,'absensi')).some(a=>a.jadwalId===old?.id))throw fail(400,'Sesi yang sudah diabsen tidak boleh diliburkan');
-        const packs=await payments(db,true);
-        for(const p of packs.filter(p=>out.atletIds.includes(String(p.atletId))&&p.totalPertemuan!==null&&p.tanggal<=out.tanggal&&p.berlakuSampai>=out.tanggal)) {
-          const pengecualian={alasan:'Libur BRTM: '+out.alasanLibur,berlakuSampai:B.addDays(p.berlakuSampai,7),oleh:user.username,pada:new Date().toISOString()};
-          await save(db,user,'pembayaran',{...p,pengecualian},p);
-        }
+        await require('./holidays').extendPackages(db,user,out,payments,save);
       }
       const clash = (await rows(db, 'jadwal')).find(s => s.statusSesi!=='Libur' && out.statusSesi!=='Libur' && s.id !== old?.id && s.tanggal === out.tanggal && s.mulai < out.selesai && s.selesai > out.mulai && (s.coachId === out.coachId || s.atletIds?.some(a => out.atletIds.includes(String(a)))));
       if (clash) throw fail(400, 'Jadwal bentrok dengan sesi ' + clash.nama); return out;

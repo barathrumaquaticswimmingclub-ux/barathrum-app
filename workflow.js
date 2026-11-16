@@ -53,13 +53,15 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
    if(old&&(old.statusSesi==='Libur'||attendance.some(a=>a.jadwalId===old.id)))continue;
    if(!e.ids.length){if(old)await db.query("DELETE FROM data_klub WHERE jenis='jadwal' AND id=$1",[old.id]);continue;}
    const coach=users.find(u=>u.id===e.coach_id),d={nama:e.class_name,tanggal,mulai:e.start_time,selesai:e.end_time,jam:e.start_time+'–'+e.end_time,lokasi:e.place,jenisKelas:e.class_name,coachId:String(e.coach_id),pelatih:e.class_name==='Prestasi Class'?'Coach Adhi':coach.nama,atletIds:e.ids,statusSesi:'Terjadwal',weeklyKey:e.key,hari:new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(tanggal+'T12:00:00Z'))};
+   // A cancelled manual/old-slot session must not be recreated by the recurring scheduler.
+   if(schedules.some(s=>s.statusSesi==='Libur'&&s.tanggal===tanggal&&B.canonical(s.jenisKelas)===e.class_name&&s.mulai<d.selesai&&s.selesai>d.mulai&&(s.coachId===d.coachId||s.atletIds?.some(id=>d.atletIds.includes(String(id))))))continue;
    const clash=schedules.find(s=>s.id!==old?.id&&s.tanggal===tanggal&&s.statusSesi!=='Libur'&&s.mulai<d.selesai&&s.selesai>d.mulai&&(s.coachId===d.coachId||s.atletIds?.some(id=>d.atletIds.includes(String(id)))));
    if(clash)continue;
    if(!old||['coachId','atletIds','mulai','selesai','jenisKelas','lokasi','pelatih'].some(k=>JSON.stringify(old[k])!==JSON.stringify(d[k]))){const saved=await save(db,user,'jadwal',{...old,...d},old);if(old)Object.assign(old,saved);else schedules.push(saved);}
   }
  }
 }
-function mount(app,h){require('./owner-finance').mount(app,h);require('./coach').mount(app,h);const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
+function mount(app,h){require('./holidays').mount(app,h);require('./owner-finance').mount(app,h);require('./coach').mount(app,h);const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
  const tx=fn=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');return fn(c);});
  app.post('/api/session-entry',wrap(async(req,res)=>{
   const result=await tx(async c=>{
