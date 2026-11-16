@@ -27,3 +27,8 @@ const monday=P.generate('2026-11-30');for(const [i,t] of [[0,'@2:10'],[2,'@1:30'
 
 const T=require('./training-board');for(const d of ['2026-11-17','2026-11-18'])for(const f of ['skill','aerobic','speed'])assert.doesNotThrow(()=>T.validPlan(T.starter(d,f)));
 assert(P.generate('2026-11-21').lines[2].split('SET ·')[1].includes('@1:20'));console.log('PASS Coach-confirmed 100 m send-offs and all starters.');
+
+const S50=require('./training-prescription').SENDOFF50;assert.deepEqual(S50,{1:{EN2:80,EN3:70},3:{EN2:60,EN3:50},4:{EN2:70,EN3:60}});
+for(const date of ['2026-11-17','2026-11-18','2026-11-21']){const p=P.generate(date);const rows=p.lines[1].split('\n').filter(r=>/^\d+ x 50 /.test(r));for(const r of rows)assert(/rest (15|20) detik$/.test(r));}
+const fast=P.generate('2026-11-18');assert(fast.lines[0].includes('FR · EN3 · HR=19/6 detik | @1:10'));assert(fast.lines[3].includes('FR · EN3 · HR=19/6 detik | @1:00'));
+console.log('PASS independent 50m send-offs, unchanged 100m anchors, and Line 2 fixed 15/20-second rests.');
