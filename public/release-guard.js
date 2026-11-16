@@ -49,7 +49,7 @@
   return response;
  };
  document.addEventListener('DOMContentLoaded',gate);
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
- window.addEventListener('pageshow',()=>check());window.addEventListener('focus',()=>check());
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)check(true);});
+ window.addEventListener('pageshow',()=>check(true));window.addEventListener('focus',()=>check(true));
  setInterval(()=>{if(!document.hidden)check(true);},60000);check();
 })();

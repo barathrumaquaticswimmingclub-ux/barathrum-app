@@ -20,6 +20,8 @@ const {createApp}=require('./server'),R=require('./releases');
  }
  for(const kind of ['staff','swim']){
   const t=await dom({kind});assert(!t.w.document.documentElement.classList.contains('brtm-release-locked'));await t.w.fetch('/'+(kind==='swim'?'swim/':'')+'api/test',{method:'POST',headers:{'X-BRTM-Request':'1','Content-Type':'application/json'},body:'{}'});assert.equal(t.calls[0].headers.get('X-BRTM-Release'),'current');assert.equal(t.calls[0].headers.get('X-BRTM-Request'),'1');
+  for(const event of ['focus','pageshow','visibilitychange']){const target=event==='visibilitychange'?t.w.document:t.w;target.dispatchEvent(new t.w.Event(event));assert(!t.w.document.documentElement.classList.contains('brtm-release-locked'),'Foreground checks must not open a blocking gate for a ready app');await new Promise(r=>setTimeout(r,20));checks++;}
+  t.setOffline(true);t.w.dispatchEvent(new t.w.Event('focus'));await new Promise(r=>setTimeout(r,20));assert(!t.w.document.documentElement.classList.contains('brtm-release-locked'));t.setOffline(false);checks++;
   await t.w.fetch('https://other.test/data');assert.equal(t.calls[1].headers.get('X-BRTM-Release'),null);t.setRelease({...fixture,id:'next'});t.w.document.dispatchEvent(new t.w.Event('visibilitychange'));await new Promise(r=>setTimeout(r,20));assert(t.w.document.body.textContent.includes('Pembaruan aplikasi wajib'));await assert.rejects(()=>t.w.fetch('/api/test',{method:'POST'}));assert.equal(t.calls.length,2);t.d.window.close();checks+=5;
  }
  // A normal foreground return must re-check; offline blocks until a successful retry without sending writes.

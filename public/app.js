@@ -22,6 +22,8 @@ async function request(url, options = {}) {
 }
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.remove('hidden'); $('notice').classList.toggle('error', error); }
 function showLogin() {
+  loadSequence++;loadingData=false;S.pendingSnapshot=null;setDataAvailable(false);
+  for(const key of ['workspace','announcements','finance','coachProfile','coachNoted'])delete S[key];
   S.user = null; S.records = {}; S.config = null; S.viewToken++;
   $('app').classList.add('hidden'); $('loginView').classList.remove('hidden');
   $('dashboard').replaceChildren(); $('records').replaceChildren(); $('sectionSummary').replaceChildren();
@@ -35,27 +37,53 @@ function renderNav() {
 }
 function captureListPosition() {
   const x=window.scrollX,y=window.scrollY,section=S.section;
-  const scrollers=[...$('records').querySelectorAll('.ops-scroll,.table-scroll')].map(el=>({x:el.scrollLeft,y:el.scrollTop}));
+  const root=$('listSection'),details=[...root.querySelectorAll('details')].map(el=>({key:el.dataset.viewKey||el.id||el.querySelector('summary')?.textContent,open:el.open}));
+  const scrollers=[...document.querySelectorAll('#records .ops-scroll,#records .table-scroll,#records .time-scroll,#sectionSummary .ops-scroll')].map(el=>({x:el.scrollLeft,y:el.scrollTop}));
+  const focused=document.activeElement,focusId=focused?.id;
   return ()=>{
     if(S.section!==section)return;
-    $('records').querySelectorAll('.ops-scroll,.table-scroll').forEach((el,i)=>{if(scrollers[i]){el.scrollLeft=scrollers[i].x;el.scrollTop=scrollers[i].y;}});
+    root.querySelectorAll('details').forEach(el=>{const state=details.find(d=>d.key===(el.dataset.viewKey||el.id||el.querySelector('summary')?.textContent));if(state)el.open=state.open;});
+    document.querySelectorAll('#records .ops-scroll,#records .table-scroll,#records .time-scroll,#sectionSummary .ops-scroll').forEach((el,i)=>{if(scrollers[i]){el.scrollLeft=scrollers[i].x;el.scrollTop=scrollers[i].y;}});
+    if(focusId)$(focusId)?.focus({preventScroll:true});
     window.scrollTo({left:x,top:y,behavior:'instant'});
   };
 }
+let loadSequence=0,loadingData=false;
+function dataSnapshot(){return Object.fromEntries(['config','records','workspace','announcements','finance','coachProfile','coachNoted'].map(k=>[k,S[k]??null]));}
+function setDataAvailable(available){
+  $('refreshButton').dataset.available=String(available);
+  $('refreshButton').title=available?'Data baru tersedia. Tekan untuk menampilkan pembaruan.':'Muat ulang data';
+  $('refreshButton').setAttribute('aria-label',$('refreshButton').title);
+}
+function applySnapshot(snapshot){
+  if(S.config?.today!==snapshot.config?.today&&typeof attendanceDay!=='undefined')attendanceDay='';
+  Object.assign(S,snapshot);S.pendingSnapshot=null;setDataAvailable(false);
+}
 async function load(options = {}) {
-  const uid = S.user?.id; if (!uid) return;
-  const section=S.section;
-  if (!options.background) $('loading').classList.remove('hidden');
-  const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
-  try {
-    const results = await Promise.all(kinds.map(async kind => [kind, await request(isOwner()&&['perkembangan','absensi','pembayaran'].includes(kind)?'/api/owner/activity/'+kind:'/api/'+kind)]));
-    if (S.user?.id !== uid) return;
-    // Recheck after the network request: a user may have opened attendance or a form meanwhile.
-    if(options.background&&(S.section!==section||!canAutoRefresh()))return;
-    const restore=captureListPosition();
-    S.records = Object.fromEntries(results); renderCurrent();
-    $('loading').classList.add('hidden');restore();
-  } finally { if (!options.background) $('loading').classList.add('hidden'); }
+  const uid=S.user?.id;if(!uid||options.background&&loadingData)return;
+  const sequence=++loadSequence;loadingData=true;
+  if(!options.background)$('loading').classList.remove('hidden');
+  const owner=isOwner(),role=S.user.role;
+  const kinds=owner?['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua']:['atlet','jadwal','absensi','perkembangan','program',...(role==='prestasi'?['catatanwaktu']:[])];
+  try{
+    const config=await request('/api/config');
+    if(S.user?.id!==uid||sequence!==loadSequence)return;
+    if(owner&&!options.background&&S.syncedDay!==config.today){await request('/api/owner/schedule/sync',{method:'POST',body:'{}'});}
+    const extra=owner?[['workspace','/api/owner/workspace'],['announcements','/api/community/announcements'],['finance','/api/owner/receipts']]:role==='coach'?[['coachProfile','/api/coach/profile'],['coachNoted','/api/coach/noted']]:[];
+    const [results,extras]=await Promise.all([
+      Promise.all(kinds.map(async kind=>[kind,await request(owner&&['perkembangan','absensi','pembayaran'].includes(kind)?'/api/owner/activity/'+kind:'/api/'+kind)])),
+      Promise.all(extra.map(async([key,url])=>[key,await request(url)]))
+    ]);
+    if(S.user?.id!==uid||sequence!==loadSequence)return;
+    const snapshot={...dataSnapshot(),config,records:Object.fromEntries(results),...Object.fromEntries(extras)};
+    // Timers never replace a live page, even if the user started scrolling or opened a form during the request.
+    if(options.background){
+      const changed=JSON.stringify(snapshot)!==JSON.stringify(dataSnapshot());
+      S.pendingSnapshot=changed?snapshot:null;setDataAvailable(changed);return;
+    }
+    const restore=captureListPosition();applySnapshot(snapshot);if(owner)S.syncedDay=config.today;
+    renderCurrent();$('loading').classList.add('hidden');restore();
+  }finally{if(sequence===loadSequence){loadingData=false;$('loading').classList.add('hidden');}}
 }
 async function start(user) {
   S.user = user; $('loginView').classList.add('hidden');
@@ -81,6 +109,7 @@ function renderDashboard() {
 }
 function navigate(kind) {
   if (!menuKeys().includes(kind)) return;
+  if(S.pendingSnapshot)applySnapshot(S.pendingSnapshot);
   S.section=kind; $('search').value=''; $('filter').innerHTML=''; $('monthFilter').value='';
   renderNav(); configureFilter(); renderCurrent();
   window.scrollTo({top:0,behavior:'smooth'});
