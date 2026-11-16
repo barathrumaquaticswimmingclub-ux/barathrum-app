@@ -1,7 +1,7 @@
 'use strict';
 // BRTM coaching templates. Distances are nominal (one 22m length is written as 25m).
 // These are planning assumptions, never measured pace or a predicted performance.
-const VERSION='BRTM-PERIODISASI-20261116';
+const VERSION='BRTM-PERIODISASI-20261116-VOLUME-COACH';
 const DAY=86400000, stamp=d=>Date.parse(d+'T12:00:00Z');
 const week=d=>Math.floor((stamp(d)-stamp('2026-11-16'))/(7*DAY));
 const dayIndex=d=>(new Date(d+'T12:00:00Z').getUTCDay()+6)%7;
@@ -60,6 +60,7 @@ function main(d,line,phase,deload){
  return [row(n,50,'FR: 25 turn quality + 25 finish',35,1.1),row(4,100,mod(w,2)?'FR kontrol pace, catat konsistensi':'25 BK + 25 BR + 50 FR, transisi rapi',30,1.15),row(4,25,'gaya pilihan, evaluasi satu koreksi teknik',40,1.2)];
 }
 function buildLine(d,line,phase,deload){
+ if(line!==2)return experiencedLine(d,line,phase,deload);
  const blocks=[
   {name:'WU',budget:15,rows:[row(line===2?2:line===3?4:3,50,'FR easy',15,1.15),row(line===2?2:4,50,'Rotate Comby + F',20,1.2),row(2,50,'FR smooth + F',15,1.1)]},
   {name:'PRE MS',budget:20,rows:skill(d,line,dayIndex(d)===5?'turn':'skill')},
@@ -70,6 +71,64 @@ function buildLine(d,line,phase,deload){
  const note=line===2?'Waktu fleksibel untuk demonstrasi dan koreksi; repetisi batas atas, bukan kewajiban.':'Jika blok waktu habis, kurangi repetisi; simpan waktu CD. Pace belum dikalibrasi di kolam BRTM.';
  return {text:text+'\n\nTARGET '+total+' m nominal | '+Math.round(total*22/25)+' m aktual\n'+note,total,minutes:Math.ceil(time/60)};
 }
+// Coach supplied completed moderate sessions: L1 3400, L3 4200;
+// both handwritten examples belong to L4 (3600 and 4200 nominal).
+// Completion is reported; elapsed time, splits and individual responses are unknown.
+const MODERATE={1:[3400,3200,3000,2600,3400,3200],3:[4200,4000,3800,3200,4200,4000],4:[4000,3800,3600,3000,4200,3800]};
+const round50=n=>Math.round(n/50)*50;
+function experiencedLine(d,line,phase,deload){
+ const day=dayIndex(d),variant=mod(week(d),3);
+ let factor=['taper','meet','recovery'].includes(phase.key)?phase.scale:d.slice(0,7)==='2027-02'?.75:d.slice(0,7)==='2027-03'?.9:1;
+ if(deload)factor=Math.min(factor,.8);
+ const target=round50(MODERATE[line][day]*factor);
+ const dist=n=>Math.max(50,round50(n*factor));
+ const wu=variant===1?[row(1,dist(400),'IM + F, gerakan nyaman',20),row(1,dist(400),'Rotate Comby + F',20)]:variant===2?[row(1,dist(400),'FR + F, ritme nyaman',20),row(1,dist(400),'Rotate Comby + F',20),row(1,dist(600),'hand push / scull ringan, koreksi posisi tangan',20)]:[row(1,dist(400),'IM + F, gerakan nyaman',20),row(1,dist(400),'FR + F, ritme nyaman',20),row(1,dist(400),'Rotate Comby + F',20)];
+ const drills=['FR side balance / swim + F','BK round kick streamline + S','BR tangan dada / kaki kupu + F','FR scull / swim + S'];
+ const drill=drills[mod(week(d)+day,4)];
+ const pre=[row(dist(400)/50,50,drill,20,1.2),row(dist(400)/50,50,day===1?'FR kick + B + F, pinggul stabil':'FR pull + PB + S, fokus catch',20,1.1)];
+ if(variant===1)pre.push(row(dist(400)/50,50,'FR kick + B, dorongan kaki rapi',25,1.3));
+ const cd=[row(1,Math.max(200,dist(line===3?600:400)),'swim off FR / BK easy',0,1.2)];
+ const volume=rows=>rows.reduce((n,r)=>n+r.n*r.m,0);
+ let remaining=target-volume(wu)-volume(pre)-volume(cd);
+ // Keep room for the session's main objective when tapering or on a shorter day.
+ while(remaining<400){
+  const r=wu.filter(r=>r.m>50).sort((a,b)=>b.m-a.m)[0];
+  if(!r)throw Error('Main set too short for reference volume');
+  r.m-=50;remaining+=50;
+ }
+ const split=(amount,unit,text,rest=25)=>{
+  const n=Math.floor(amount/unit),tail=amount-n*unit;
+  return [...(n?[row(n,unit,text,rest)]:[]),...(tail?[row(1,tail,text,rest)]:[])];
+ };
+ let sets=[];
+ if(['taper','meet'].includes(phase.key)){
+  const speed=phase.key==='meet'?2:4;
+  sets=[row(speed,25,'gaya lomba: akselerasi singkat lalu easy; tanpa alat',75),...split(remaining-speed*25,100,'FR smooth / turn quality, rasa air',30)];
+ }else if(day===3||phase.key==='recovery'||deload){
+  const a=round50(remaining/2);
+  sets=[...split(a,50,'25 drill + 25 swim smooth + F',20),...split(remaining-a,100,'FR / BK easy, evaluasi panjang kayuhan',20)];
+ }else if(day===0){
+  const a=round50(remaining*.75),phrases=['FR kontrol ritme, pace nyaman stabil','FR negative split terkendali','FR ganjil smooth, genap sedikit lebih cepat'];
+  sets=[...split(a,variant===1?200:100,phrases[variant],25),...split(remaining-a,50,'BK easy / FR smooth, turn rapi',20)];
+ }else if(day===1){
+  const a=round50(remaining*.5),b=round50((remaining-a)/2);
+  sets=[...split(a,50,'FR kick + B + F, dorongan stabil',25),...split(b,100,'FR pull + PB + S, efisiensi catch',25),...split(remaining-a-b,50,'FR tanpa alat, terapkan posisi tubuh',20)];
+ }else if(day===2){
+  const sprint=line===1?4:6;
+  sets=[row(sprint,25,'FR / gaya lomba: akselerasi 6–8 kayuhan lalu easy, tanpa alat',60),...split(remaining-sprint*25,100,'FR smooth, selingi BK, pertahankan teknik',25)];
+ }else if(day===4){
+  const a=Math.min(400,round50(remaining*.4)),b=round50((remaining-a)/2);
+  sets=[...split(a,50,phase.key==='specific'?'gaya lomba: 25 cepat rapi + 25 smooth, tanpa alat':'FR build 1–4, ulang pola, teknik tetap rapi',45),...split(b,100,'FR pull + PB + P kecil + S bila catch stabil; lepas P bila belum siap',25),...split(remaining-a-b,100,'FR tanpa alat, kontrol pace dan transfer catch',25)];
+ }else{
+  const a=Math.min(600,round50(remaining*.5));
+  sets=[...split(a,50,'25 approach turn + 25 finish, gaya pilihan',30),...split(remaining-a,100,variant===1?'FR kontrol pace, catat konsistensi':'25 BK + 25 BR + 50 FR, transisi rapi',25)];
+ }
+ const blocks=[{name:'WU',budget:25,rows:wu},{name:'PRE MS',budget:20,rows:pre},{name:'SET',budget:35,rows:sets},{name:'CD',budget:10,rows:cd}];
+ const total=blocks.reduce((n,b)=>n+volume(b.rows),0);
+ if(total!==target)throw Error('Reference volume does not equal set total');
+ const text=blocks.map(b=>`${b.name} · alokasi ${b.budget} menit\n`+b.rows.map(r=>`${r.n} x ${r.m} ${r.text}${r.rest?', rest '+r.rest+' detik':''}`).join('\n')).join('\n\n');
+ return {text:text+`\n\nTARGET ${total} m nominal | ${Math.round(total*22/25)} m aktual\nVolume mengacu contoh latihan yang Coach laporkan selesai. Alokasi blok fleksibel, bukan durasi yang sudah terukur. Waktu tersisa dari WU/Pre MS boleh dialihkan ke SET; tutup SET paling lambat menit ke-80 agar tersedia 10 menit CD. Catat repetisi yang terlaksana dalam batas 90 menit.`,total,minutes:null};
+}
 function generate(d,peaks=[]){
  if(d<'2026-11-16'||d>'2027-12-31'||dayIndex(d)===6)return null;
  const phase=phaseFor(d,peaks),w=week(d),deload=mod(w,4)===3;
@@ -77,7 +136,7 @@ function generate(d,peaks=[]){
  const names=['Kontrol ritme & efisiensi','Kick, catch & koordinasi','Kecepatan dengan teknik rapi','Pemulihan aktif & koreksi','Pace spesifik & transfer alat','Turn, finish & evaluasi'];
  const micro=deload?'Minggu pemulihan':'Minggu pola '+(mod(w,3)+1);
  return {date:d,title:names[dayIndex(d)],phase:phase.label+' · '+micro,dryland:['Mobilitas bahu/pinggul, koordinasi dan core ringan','Keseimbangan dan kontrol tubuh; kualitas gerak','Koordinasi cepat singkat dengan pemulihan penuh','Mobilitas dan peregangan dinamis ringan','Stabilitas dan aktivasi, hindari kelelahan sebelum air','Mobilitas, koordinasi dan evaluasi gerak'][dayIndex(d)],
-  note:`Tujuan: ${names[dayIndex(d)]}. ${micro}. ${phase.confirmed?'Mengikuti tanggal peak resmi tersimpan: '+phase.peak+'.':'Peak April, September dan November masih jendela perkiraan; taper menunggu tanggal resmi.'} Perkiraan durasi renang+rest Line 1/3/4: ${result[0].minutes}/${result[2].minutes}/${result[3].minutes} menit, berdasarkan asumsi pace konservatif; belum hasil tes. Sisa waktu untuk instruksi/koreksi, total air maksimum 90 menit. +F fins; +PB pull buoy; +B board; +P paddle; +S snorkel. Line 2 hanya +PB/+F/+B. Acuan EN2 kolam 50m tidak dipakai sebagai interval otomatis. Nomor lomba dan target waktu individual belum tersedia; set pace masih perlu dikalibrasi.`,
-  lines:result.map(r=>r.text),targetTotals:result.map(r=>r.total),estimatedMinutes:result.map(r=>r.minutes),source:'Program periodisasi BRTM · whiteboard rinci',planningVersion:VERSION};
+  note:`Tujuan: ${names[dayIndex(d)]}. ${micro}. ${phase.confirmed?'Mengikuti tanggal peak resmi tersimpan: '+phase.peak+'.':'Peak April, September dan November masih jendela perkiraan; taper menunggu tanggal resmi.'} Acuan volume sedang dari contoh Coach: Line 1 3400 m, Line 3 4200 m, Line 4 3600–4200 m nominal. Kedua catatan tangan adalah Line 4. Volume harian berubah menurut fokus, pemulihan dan fase. Penyelesaian contoh dilaporkan Coach; durasi sebenarnya dan split belum tersedia. Batas air 90 menit termasuk instruksi; alokasi WU/PRE MS/SET/CD fleksibel dan belum terukur. Waktu tersisa boleh dialihkan ke SET; akhiri SET paling lambat menit ke-80 untuk CD. Catat realisasi untuk kalibrasi. +F fins; +PB pull buoy; +B board; +P paddle; +S snorkel. Line 2 hanya +PB/+F/+B dan tetap teknik. Acuan EN2 kolam 50m tidak dipakai sebagai interval otomatis. Nomor lomba dan target waktu individual belum tersedia; set pace masih perlu dikalibrasi.`,
+  lines:result.map(r=>r.text),targetTotals:result.map(r=>r.total),estimatedMinutes:result.map(r=>r.minutes),waterMinutesLimit:90,volumeReference:{line1:3400,line3:4200,line4:[3600,4200],source:'Contoh selesai menurut Coach; kedua catatan tangan untuk Line 4',elapsedMinutes:null},source:'Program periodisasi BRTM · volume acuan Coach',planningVersion:VERSION};
 }
 module.exports={VERSION,phaseFor,generate};
