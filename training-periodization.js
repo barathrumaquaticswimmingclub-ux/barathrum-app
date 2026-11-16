@@ -129,7 +129,7 @@ function experiencedLine(d,line,phase,deload){
  const text=blocks.map(b=>`${b.name} · alokasi ${b.budget} menit\n`+b.rows.map(r=>`${r.n} x ${r.m} ${r.text}${r.rest?', rest '+r.rest+' detik':''}`).join('\n')).join('\n\n');
  return {text:text+`\n\nTARGET ${total} m nominal | ${Math.round(total*22/25)} m aktual\nVolume mengacu contoh latihan yang Coach laporkan selesai. Alokasi blok fleksibel, bukan durasi yang sudah terukur. Waktu tersisa dari WU/Pre MS boleh dialihkan ke SET; tutup SET paling lambat menit ke-80 agar tersedia 10 menit CD. Catat repetisi yang terlaksana dalam batas 90 menit.`,total,minutes:null};
 }
-function generate(d,peaks=[]){
+function historicalGenerate(d,peaks=[]){
  if(d<'2026-11-16'||d>'2027-12-31'||dayIndex(d)===6)return null;
  const phase=phaseFor(d,peaks),w=week(d),deload=mod(w,4)===3;
  const result=[1,2,3,4].map(l=>buildLine(d,l,phase,deload));
@@ -139,4 +139,6 @@ function generate(d,peaks=[]){
   note:`Tujuan: ${names[dayIndex(d)]}. ${micro}. ${phase.confirmed?'Mengikuti tanggal peak resmi tersimpan: '+phase.peak+'.':'Peak April, September dan November masih jendela perkiraan; taper menunggu tanggal resmi.'} Acuan volume sedang dari contoh Coach: Line 1 3400 m, Line 3 4200 m, Line 4 3600–4200 m nominal. Kedua catatan tangan adalah Line 4. Volume harian berubah menurut fokus, pemulihan dan fase. Penyelesaian contoh dilaporkan Coach; durasi sebenarnya dan split belum tersedia. Batas air 90 menit termasuk instruksi; alokasi WU/PRE MS/SET/CD fleksibel dan belum terukur. Waktu tersisa boleh dialihkan ke SET; akhiri SET paling lambat menit ke-80 untuk CD. Catat realisasi untuk kalibrasi. +F fins; +PB pull buoy; +B board; +P paddle; +S snorkel. Line 2 hanya +PB/+F/+B dan tetap teknik. Acuan EN2 kolam 50m tidak dipakai sebagai interval otomatis. Nomor lomba dan target waktu individual belum tersedia; set pace masih perlu dikalibrasi.`,
   lines:result.map(r=>r.text),targetTotals:result.map(r=>r.total),estimatedMinutes:result.map(r=>r.minutes),waterMinutesLimit:90,volumeReference:{line1:3400,line3:4200,line4:[3600,4200],source:'Contoh selesai menurut Coach; kedua catatan tangan untuk Line 4',elapsedMinutes:null},source:'Program periodisasi BRTM · volume acuan Coach',planningVersion:VERSION};
 }
+function generate(d,peaks=[]){return d<'2026-11-17'?historicalGenerate(d,peaks):require('./training-prescription').generate(d,peaks,phaseFor);}
 module.exports={VERSION,phaseFor,generate};
+
