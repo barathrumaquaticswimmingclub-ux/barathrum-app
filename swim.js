@@ -92,17 +92,18 @@ function mount(app, h) {
     const allSchedules=await rows(pool,'jadwal');
     const schedules = allSchedules.filter(x => x.atletIds?.map(String).includes(a.id)).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
-    const hasMonthlyAttendance=present.some(x=>x.tanggal?.startsWith(month)&&B.canonical(x.jenisKelas||allSchedules.find(s=>s.id===x.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
     const firstPayment=prestasi?(await SPP.firstPayments(pool))[a.id]:null;
+    const cycleMonth=B.prestasiPeriod(today,firstPayment);
+    const hasMonthlyAttendance=present.some(x=>B.prestasiPeriod(x.tanggal,firstPayment)===cycleMonth&&B.canonical(x.jenisKelas||allSchedules.find(s=>s.id===x.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
     const nextPayment = prestasi?B.prestasiNextDue(packs,firstPayment,today):unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
     res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
-      latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?settled.some(p=>p.periode===month):pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
-      pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: unpaid.length > 0, status: sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':unpaid.length ? 'Belum Lunas' : prestasi ? settled.some(p => p.periode === month) ? 'Lunas bulan ini' : hasMonthlyAttendance ? 'Belum Lunas' : 'Tidak Ada SPP Bulan Ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
+      latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?settled.some(p=>p.periode===cycleMonth):pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
+      pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: prestasi?unpaid.some(p=>p.jatuhTempo<today):unpaid.length > 0, status: sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':unpaid.length ? 'Belum Lunas' : prestasi ? settled.some(p => p.periode === cycleMonth) ? 'Lunas periode ini' : hasMonthlyAttendance ? 'Belum Lunas' : 'Tidak Ada SPP Bulan Ini' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
       riwayatPembayaran:await require('./parent-ledger').list(pool,a.id,packs),
       jadwal: schedules.map(x => {const r=attendance.find(r=>r.jadwalId===x.id);return {id:x.id,tanggal:x.tanggal,mulai:x.mulai,selesai:x.selesai,lokasi:x.lokasi,pelatih:x.pelatih,coachId:x.coachId||null,statusSesi:x.statusSesi||'Terjadwal',alasanLibur:x.alasanLibur||'',absensi:r?{status:r.status,keterangan:r.catatan||''}:null};}),
-      tagihan: packs.map(r=>({id:r.id,jenisKelas:r.jenisKelas,status:r.status,totalTagihan:r.totalTagihan,tanggal:r.tanggal,berlakuSampai:r.berlakuSampai,sisaPertemuan:r.sisaPertemuan,sppMetode:r.sppMetode,sppTidakDitagih:r.sppTidakDitagih,penerimaanTunai:B.cashReceived(r)})),
+      tagihan: packs.map(r=>({id:r.id,jenisKelas:r.jenisKelas,status:r.status,totalTagihan:r.totalTagihan,tanggal:r.tanggal,berlakuSampai:r.berlakuSampai,sisaPertemuan:r.sisaPertemuan,sppMetode:r.sppMetode,sppTidakDitagih:r.sppTidakDitagih,penerimaanTunai:B.cashReceived(r),periodeMulai:r.periodeMulai,periodeSelesai:r.periodeSelesai,periodeLabel:r.periodeLabel,invoicePada:r.invoicePada,invoiceTersedia:r.invoiceTersedia,jatuhTempo:r.jatuhTempo})),
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
       evaluasi: evaluations.map(x => parentEvaluation(x,a,allSchedules.find(s=>s.id===x.jadwalId))) });
   }
@@ -163,7 +164,7 @@ function mount(app, h) {
   app.get('/swim/api/notifications',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
     const before=req.query.before;if(before&&!/^[1-9]\d{0,17}$/.test(before))throw fail(400,'Nomor halaman tidak valid');
-    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,n.event_key,n.read_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 AND ($2::bigint IS NULL OR n.id<$2::bigint) ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id,before||null])).rows);
+    res.json((await pool.query(`SELECT n.id,n.title,n.body,n.created_at,n.event_key,n.read_at,p.announcement_id AS photo_id FROM brtm_notifications n LEFT JOIN brtm_announcement_photos p ON n.event_key='pengumuman:'||p.announcement_id::text WHERE n.athlete_id=$1 AND NOT EXISTS(SELECT 1 FROM brtm_billing_notices b WHERE n.event_key='invoice:'||b.id::text AND b.data->>'sppSuperseded'='true') AND ($2::bigint IS NULL OR n.id<$2::bigint) ORDER BY n.id DESC LIMIT 50`,[req.parent.athlete_id,before||null])).rows);
   }));
   app.get('/swim/api/push/key',parentAuth,wrap(async(req,res)=>{
     if(!req.parent)throw fail(403,'Notifikasi khusus akun orang tua');
@@ -189,9 +190,10 @@ function mount(app, h) {
   app.get('/swim/api/statement',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');const a=await record(pool,'atlet',req.parent.athlete_id),packs=(await payments()).filter(p=>String(p.atletId)===String(a.id));require('./reports').statement(res,a,await require('./parent-ledger').list(pool,a.id,packs));}));
   app.get('/swim/api/documents/:kind/:id',parentAuth,wrap(async(req,res)=>{
     const kind=req.params.kind;let p;
-    if(kind==='notice'){const n=(await pool.query('SELECT * FROM brtm_billing_notices WHERE id=$1',[req.params.id])).rows[0];if(n)p=n.data;}
+    if(kind==='notice'){const n=(await pool.query('SELECT * FROM brtm_billing_notices WHERE id=$1',[req.params.id])).rows[0];if(n&&!n.data.sppSuperseded)p=n.data;}
     else if(['invoice','receipt'].includes(kind))p=await record(pool,'pembayaran',req.params.id);
     if(!p||!req.swimOwner&&String(p.atletId)!==String(req.parent.athlete_id))throw fail(404,'Dokumen tidak tersedia');
+    if(kind==='invoice'&&p.jenisKelas==='Prestasi Class'){p=B.prestasiView(p,(await SPP.firstPayments(pool))[p.atletId]);if(!p.invoiceTersedia)throw fail(409,'Invoice periode ini tersedia pada '+p.invoicePada+'. Toleransi pembayaran sampai akhir bulan.');}
     if(kind==='receipt'&&B.cashReceived(p)<=0)throw fail(400,'Belum ada penerimaan pembayaran');
     require('./reports').bill(res,p,kind==='receipt'?'receipt':'invoice',(kind==='notice'?'N':'')+req.params.id);
   }));

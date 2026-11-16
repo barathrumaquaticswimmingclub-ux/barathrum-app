@@ -90,11 +90,31 @@ function packageView(item, attendanceCount = 0) {
   return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku: jenisKelas!=='Prestasi Class'&&item.statusManual&&['Aktif','Kedaluwarsa'].includes(item.statusManual)?item.statusManual:statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
 function cashReceived(p,month=''){if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
-// Billing day stays anchored to the first valid cash payment; short months clamp locally.
-function prestasiDue(month,first){const base=month+'-01';if(!validDate(base))return null;const end=monthEnd(base);if(!validDate(first))return end;return month+'-'+String(Math.min(Number(first.slice(8,10)),Number(end.slice(8,10)))).padStart(2,'0');}
-function prestasiNextDue(packs,first,now=today()){
- const unpaid=packs.filter(p=>p.jenisKelas==='Prestasi Class'&&p.status==='Belum Lunas'&&p.totalTagihan>0).map(p=>prestasiDue(p.periode||p.tanggal.slice(0,7),first)).filter(Boolean).sort();if(unpaid.length)return unpaid[0];if(!validDate(first))return null;
- const month=now.slice(0,7),paid=packs.some(p=>p.periode===month&&(p.status==='Lunas'&&!p.sppTidakDitagih||cashReceived(p)>0));let next=prestasiDue(month,first);
- if(paid||next<=first||next<now)next=prestasiDue(addMonth(month+'-01').slice(0,7),first);return next;
+// A period uses the first payment day; payment tolerance ends on the last day of its start month.
+function prestasiStart(month,first){const base=month+'-01';if(!validDate(base))return null;return month+'-'+String(validDate(first)?Math.min(Number(first.slice(8,10)),Number(monthEnd(base).slice(8,10))):1).padStart(2,'0');}
+function prestasiPeriod(date,first){
+ if(!validDate(date))return null;
+ const month=date.slice(0,7);
+ // Keep obligations accrued before the first payment in their original calendar month.
+ if(!validDate(first)||date<=first||date>=prestasiStart(month,first))return month;
+ return addDays(month+'-01',-1).slice(0,7);
 }
-module.exports = { validateAge, validateCapacity, cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue };
+function prestasiCycle(month,first){
+ const start=prestasiStart(month,first);if(!start)return {};
+ const end=prestasiStart(addMonth(month+'-01').slice(0,7),first);
+ const name=value=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric',timeZone:'Asia/Jakarta'}).format(new Date(value+'T12:00:00Z'));
+ return {periodeMulai:start,periodeSelesai:end,periodeLabel:name(start)+' – '+name(end),invoicePada:monthEnd(start)};
+}
+function prestasiDue(month){return validDate(month+'-01')?monthEnd(month+'-01'):null;}
+function prestasiView(item,first,now=module.exports.today()){
+ const cycle=prestasiCycle(item.periode||item.tanggal?.slice(0,7),first);
+ return {...item,...cycle,tanggalPembayaranPertama:first||null,jatuhTempo:cycle.invoicePada,tanggalBerakhir:cycle.periodeSelesai,invoiceTersedia:item.status==='Lunas'||Number(item.totalTagihan)>0&&!!cycle.invoicePada&&now>=cycle.invoicePada};
+}
+function prestasiNextDue(packs,first,now=module.exports.today()){
+ const unpaid=packs.filter(p=>p.jenisKelas==='Prestasi Class'&&p.status==='Belum Lunas'&&p.totalTagihan>0).map(p=>prestasiDue(p.periode||p.tanggal.slice(0,7),first)).filter(Boolean).sort();if(unpaid.length)return unpaid[0];if(!validDate(first))return null;
+ let month=prestasiPeriod(now,first);
+ // Advance through payments made ahead of time, without extending the original anchor.
+ while(packs.some(p=>p.periode===month&&p.status==='Lunas'&&!p.sppTidakDitagih))month=addMonth(month+'-01').slice(0,7);
+ return prestasiDue(month);
+}
+module.exports = { validateAge, validateCapacity, cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue, prestasiPeriod, prestasiCycle, prestasiView };

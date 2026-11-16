@@ -1,12 +1,12 @@
 # SPP Prestasi: pembayaran mengaktifkan atlet
 
 - Konfirmasi pembayaran Lunas langsung mengaktifkan atlet, termasuk ketika absensi masih 0.
-- Pembayaran mengikat SPP pada bulan tagihan tersebut. Nol kehadiran maupun koreksi/penghapusan absensi tidak mengubah pembayaran menjadi saldo kredit.
-- Bulan tanpa kehadiran dan tanpa pembayaran tidak ditagih. Kehadiran pertama membuat satu tagihan bulanan Rp250.000.
+- Pembayaran mengikat SPP pada periode tagihan tersebut. Periode mengikuti tanggal pembayaran pertama, misalnya 28 November–28 Desember, lalu 28 Desember–28 Januari (tanggal akhir merupakan awal periode berikutnya). Nol kehadiran maupun koreksi/penghapusan absensi tidak mengubah pembayaran menjadi saldo kredit.
+- Periode tanpa kehadiran dan tanpa pembayaran tidak ditagih. Kehadiran pertama dalam periode membuat satu tagihan Rp250.000; pergantian bulan kalender tidak membuat tagihan tambahan dalam periode yang sudah lunas.
 - Penerimaan membayar bulan tagihannya terlebih dahulu. Hanya kelebihan saldo yang tersedia untuk alokasi ke tagihan lain; penerimaan uang tidak dihitung dua kali.
 - Koreksi pembayaran tetap memerlukan alasan dan audit; pengiriman ulang pembayaran tidak menambah penerimaan.
 - Saat server mulai, perhitungan lama diperbaiki berdasarkan penerimaan yang sudah tercatat tanpa membuat pembayaran baru. Permintaan koreksi absensi lama diselesaikan berdasarkan aturan pembayaran ini dan dicatat dalam audit.
-- Jatuh tempo mengikuti tanggal pembayaran pertama, dengan penyesuaian akhir bulan pendek. Pemberitahuan invoice diberikan setiap akhir bulan.
+- Invoice dan batas toleransi pembayaran berada pada hari terakhir bulan awal periode (WIB), bukan pada awal bulan berikutnya. Contoh: bayar 28 November melunasi November–Desember; tidak ada invoice baru 30 November atau 1 Desember. Periode Desember–Januari yang belum lunas dan memiliki kehadiran diinvoiskan 31 Desember. Februari menyesuaikan 28/29 hari; tanggal jangkar 31 kembali ke 31 pada bulan panjang. Pembayaran lebih awal menghilangkan invoice periode yang sudah lunas. Uang masuk tetap mengikuti tanggal penerimaan, bukan label periode.
 - Riwayat SPP otomatis tidak dapat dihapus. Cadangan mencakup penerimaan, alokasi, koreksi dan audit.
 
 Kapasitas per pelatih diterapkan pada jadwal per tanggal dan jadwal mingguan: Private 1, Private Couple 2, Semi Private 3, Group/Hydro Terapi 6, Regular 16; Prestasi tanpa batas peserta. Owner tetap dapat mengubah peserta jadwal Regular. Private dengan tanggal lahir yang diketahui minimal berusia 4 tahun.

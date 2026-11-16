@@ -27,25 +27,27 @@ async function persist(db,user,next,old){
  const r=old?await db.query("UPDATE data_klub SET data=$1 WHERE id=$2 AND jenis='pembayaran' RETURNING id,data",[JSON.stringify(payload),old.id]):await db.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1) RETURNING id,data",[JSON.stringify(payload)]);
  const out={...r.rows[0].data,id:String(r.rows[0].id)};await audit(db,user,old?'hitung-ulang-spp':'buat-tagihan-spp',out.id,old,out);if(out.status==='Lunas'&&old?.status!=='Lunas'&&out.sppMetode==='Kredit')await N.enqueue(db,out.atletId,'kredit-spp:'+out.id+':'+out.diperbaruiPada,'SPP dilunasi dengan kredit','SPP Prestasi bulan '+out.periode+' dilunasi menggunakan saldo kredit Rp'+charge(out).toLocaleString('id-ID')+'. Tidak ada penerimaan uang baru.');return out;
 }
-async function monthlyAttendance(db,aid,athlete){
+async function monthlyAttendance(db,aid,athlete,first){
  const attendance=(await db.query(`SELECT a.data,s.data AS schedule FROM data_klub a LEFT JOIN data_klub s ON s.id::text=a.data->>'jadwalId' AND s.jenis='jadwal' WHERE a.jenis='absensi' AND a.data->>'atletId'=$1 AND a.data->>'status'='Hadir'`,[String(aid)])).rows;
- const counts={};for(const a of attendance){const kind=a.data.jenisKelas||a.schedule?.jenisKelas||athlete.kelompok;if(B.canonical(kind)==='Prestasi Class'&&B.validDate(a.data.tanggal)){const m=a.data.tanggal.slice(0,7);counts[m]=(counts[m]||0)+1;}}
+ const counts={};for(const a of attendance){const kind=a.data.jenisKelas||a.schedule?.jenisKelas||athlete.kelompok;if(B.canonical(kind)==='Prestasi Class'&&B.validDate(a.data.tanggal)){const m=B.prestasiPeriod(a.data.tanggal,first);counts[m]=(counts[m]||0)+1;}}
  return counts;
 }
 async function reconcile(db,aid,user={username:'sistem-spp'},force=false){
  const athlete=(await db.query("SELECT data FROM data_klub WHERE id=$1 AND jenis='atlet'",[aid])).rows[0]?.data;if(!athlete)return;
  const pending=(await db.query("SELECT id FROM brtm_spp_pending WHERE athlete_id=$1 AND status='Pending'",[aid])).rows[0];
- const counts=await monthlyAttendance(db,aid,athlete);
- let bills=await invoices(db,aid);if(!bills.length&&!Object.keys(counts).length)return;
+ let bills=await invoices(db,aid);
+ // Import legacy receipts before computing periods so the anchor is available on the first migration.
+ for(const p of bills)if(!p.sppDikelola&&p.status==='Lunas')await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key,received_at) SELECT $1,$2,$3,$4,$5,$6,NULL WHERE NOT EXISTS(SELECT 1 FROM brtm_spp_receipts WHERE invoice_id=$1) ON CONFLICT DO NOTHING',[p.id,aid,fee,Number(p.biayaPendaftaran||0),p.dibayarPada||p.tanggal,'legacy:'+p.id]);
+ const receipts=(await db.query('SELECT * FROM brtm_spp_receipts WHERE athlete_id=$1 AND active=TRUE ORDER BY paid_on,id',[aid])).rows;
+ const first=receipts[0]?.paid_on;
+ const counts=await monthlyAttendance(db,aid,athlete,first);
+ if(!bills.length&&!Object.keys(counts).length)return;
  const grouped=new Map();for(const p of bills){const month=p.periode||p.tanggal?.slice(0,7);if(!/^\d{4}-\d{2}$/.test(month||'')||!B.validDate(month+'-01'))throw fail(409,'Periode SPP lama perlu diperiksa Owner');if(grouped.has(month))throw fail(409,'Ada tagihan Prestasi ganda. Owner perlu memeriksa sebelum mengubah absensi.');grouped.set(month,p);}
  const oldState=(await db.query('SELECT state FROM brtm_spp_accounts WHERE athlete_id=$1',[aid])).rows[0]?.state;
  for(const month of Object.keys(counts).sort())if(!grouped.has(month)){
   const p=await persist(db,user,{...B.price({tanggal:month+'-01',status:'Belum Lunas',jenisKelas:'Prestasi Class'},{kelompok:'Prestasi Class'}),atletId:String(aid),namaAtlet:athlete.nama,sppDikelola:true,sppHadir:counts[month],catatan:'SPP Prestasi otomatis berdasarkan kehadiran'},null);grouped.set(month,p);
  }
  bills=[...grouped.entries()].sort(([a],[b])=>a.localeCompare(b));
- // Import existing full payments once; managed status may later reflect credit rather than cash.
- for(const [,p] of bills)if(!p.sppDikelola&&p.status==='Lunas')await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key,received_at) SELECT $1,$2,$3,$4,$5,$6,NULL WHERE NOT EXISTS(SELECT 1 FROM brtm_spp_receipts WHERE invoice_id=$1) ON CONFLICT DO NOTHING',[p.id,aid,fee,Number(p.biayaPendaftaran||0),p.dibayarPada||p.tanggal,'legacy:'+p.id]);
- const receipts=(await db.query('SELECT * FROM brtm_spp_receipts WHERE athlete_id=$1 AND active=TRUE ORDER BY paid_on,id',[aid])).rows;
  const sources=receipts.map(r=>({...r,remaining:r.amount})),allocations=[];
  // Confirmed payments commit their own month, even before the first attendance.
  // Reserve each receipt for that invoice before allocating any genuine surplus FIFO.
@@ -61,7 +63,7 @@ async function reconcile(db,aid,user={username:'sistem-spp'},force=false){
   const billable=counts[month]>0||committed.has(p.id),allocation=allocations.find(a=>a.targetId===p.id),due=(billable?charge(p):0)+Number(p.biayaPendaftaran||0),registrationPaid=registrationCash>=Number(p.biayaPendaftaran||0);
   const allocated=allocations.filter(a=>a.targetId===p.id).reduce((n,a)=>n+a.amount,0);
   const status=!billable&&due===0?'Tidak Ditagih':allocated>=charge(p)&&registrationPaid?'Lunas':'Belum Lunas';
-  await persist(db,user,{...p,periode:month,jatuhTempo:B.prestasiDue(month,receipts[0]?.paid_on),sppDikelola:true,sppHadir:counts[month]||0,sppTidakDitagih:!billable,sppPaidFrom:allocation?.sourceId||null,sppMetode:allocation?allocation.sourceId===p.id?'Tunai / transfer':'Kredit':'',jumlah:Number(p.sppHargaOwner??fee),potonganDiskon:Number(p.sppPotonganOwner??0),totalTagihan:due,status,penerimaanTunai:cash,penerimaanPerBulan:cashMonths,dibayarPada:receipt?.paid_on||null,pemakaianAwal:0,totalPertemuan:null},p);
+  await persist(db,user,{...p,...B.prestasiCycle(month,first),periode:month,jatuhTempo:B.prestasiDue(month),sppDikelola:true,sppHadir:counts[month]||0,sppTidakDitagih:!billable,sppPaidFrom:allocation?.sourceId||null,sppMetode:allocation?allocation.sourceId===p.id?'Tunai / transfer':'Kredit':'',jumlah:Number(p.sppHargaOwner??fee),potonganDiskon:Number(p.sppPotonganOwner??0),totalTagihan:due,status,penerimaanTunai:cash,penerimaanPerBulan:cashMonths,dibayarPada:receipt?.paid_on||null,pemakaianAwal:0,totalPertemuan:null},p);
  }
  const state={available:sources.reduce((n,r)=>n+r.remaining,0),allocations,attendance:counts};
  if(JSON.stringify(oldState)!==JSON.stringify(state)){await db.query('INSERT INTO brtm_spp_accounts(athlete_id,state) VALUES($1,$2) ON CONFLICT(athlete_id) DO UPDATE SET state=EXCLUDED.state',[aid,JSON.stringify(state)]);await audit(db,user,'alokasi-kredit-spp-fifo',aid,oldState,state);}
@@ -96,15 +98,16 @@ async function afterSave(db,user,kind,value,old){
   }
  }
  await reconcile(db,value.atletId,user);
- if(cashAdded)await N.enqueue(db,value.atletId,'penerimaan-spp:'+value.id+':'+value.diperbaruiPada,'Pembayaran SPP diterima','Pembayaran SPP Prestasi Rp'+charge(value).toLocaleString('id-ID')+' diterima sebagai SPP bulan ' + value.periode + '. Atlet aktif meskipun belum ada kehadiran.');
+ if(cashAdded)await N.enqueue(db,value.atletId,'penerimaan-spp:'+value.id+':'+value.diperbaruiPada,'Pembayaran SPP diterima','Pembayaran SPP Prestasi Rp'+charge(value).toLocaleString('id-ID')+' diterima untuk periode ' + B.prestasiCycle(value.periode,(await firstPayments(db))[value.atletId]).periodeLabel + '. Atlet aktif meskipun belum ada kehadiran.');
 }
 async function firstPayments(db){return Object.fromEntries((await db.query('SELECT athlete_id,MIN(paid_on) AS first_payment FROM brtm_spp_receipts WHERE active=TRUE GROUP BY athlete_id')).rows.map(r=>[String(r.athlete_id),r.first_payment]));}
 async function summaries(db){const states=(await db.query('SELECT athlete_id,state FROM brtm_spp_accounts')).rows,pending=(await db.query("SELECT athlete_id FROM brtm_spp_pending WHERE status='Pending'")).rows;return Object.fromEntries(states.map(r=>[String(r.athlete_id),{saldoKredit:r.state.available||0,sppMenungguOwner:pending.some(p=>p.athlete_id===r.athlete_id)}]));}
-async function migrate(pool){const c=await pool.connect();try{await c.query('BEGIN');await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const ids=(await c.query("SELECT DISTINCT a.id FROM data_klub a LEFT JOIN data_klub p ON p.jenis='pembayaran' AND p.data->>'atletId'=a.id::text AND p.data->>'jenisKelas'='Prestasi Class' WHERE a.jenis='atlet' AND (a.data->>'kelompok'='Prestasi Class' OR p.id IS NOT NULL)")).rows;for(const a of ids)await reconcile(c,String(a.id));await c.query('COMMIT');}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
+async function migrate(pool){const c=await pool.connect();try{await c.query('BEGIN');await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const ids=(await c.query("SELECT DISTINCT a.id FROM data_klub a LEFT JOIN data_klub p ON p.jenis='pembayaran' AND p.data->>'atletId'=a.id::text AND p.data->>'jenisKelas'='Prestasi Class' WHERE a.jenis='atlet' AND (a.data->>'kelompok'='Prestasi Class' OR p.id IS NOT NULL)")).rows;for(const a of ids)await reconcile(c,String(a.id));await require('./workflow').retireEarlyNotices(c);await c.query('COMMIT');}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
 async function review(db,aid){
  const records=(await db.query("SELECT id,data FROM data_klub WHERE id=$1 OR (jenis IN ('absensi','pembayaran') AND data->>'atletId'=$2) ORDER BY id",[aid,String(aid)])).rows;
  const athlete=records.find(r=>String(r.id)===String(aid))?.data;
- const attendance=await monthlyAttendance(db,aid,athlete),state=(await db.query('SELECT state FROM brtm_spp_accounts WHERE athlete_id=$1',[aid])).rows[0]?.state||{available:0,attendance:{}};
+ const first=(await firstPayments(db))[String(aid)];
+ const attendance=await monthlyAttendance(db,aid,athlete,first),state=(await db.query('SELECT state FROM brtm_spp_accounts WHERE athlete_id=$1',[aid])).rows[0]?.state||{available:0,attendance:{}};
  return {revision:crypto.createHash('sha256').update(JSON.stringify(records)).digest('hex'),saldoKredit:state.available,months:[...new Set([...Object.keys(state.attendance),...Object.keys(attendance)])].sort().map(month=>({month,before:state.attendance[month]?fee:0,after:attendance[month]?fee:0,present:attendance[month]||0}))};
 }
 function mount(app,{pool,wrap,owner,transaction}){

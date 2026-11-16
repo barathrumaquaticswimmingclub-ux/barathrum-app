@@ -219,7 +219,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   async function payments(db = pool, lock = false) {
     const list = await rows(db, 'pembayaran', lock);
     const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' AND data->>'paketId' IS NOT NULL GROUP BY data->>'paketId'`)).rows;
-    const used = Object.fromEntries(counts.map(x => [x.paket, Number(x.jumlah)])),first=await SPP.firstPayments(db);return list.map(x => B.packageView(x.jenisKelas==='Prestasi Class'?{...x,tanggalPembayaranPertama:first[x.atletId]||null,jatuhTempo:B.prestasiDue(x.periode||x.tanggal.slice(0,7),first[x.atletId])}:x,used[x.id]||0));
+    const used = Object.fromEntries(counts.map(x => [x.paket, Number(x.jumlah)])),first=await SPP.firstPayments(db);return list.map(x => B.packageView(x.jenisKelas==='Prestasi Class'?B.prestasiView(x,first[x.atletId]):x,used[x.id]||0));
   }
   function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }
   async function athleteList(req) {
@@ -228,9 +228,10 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const related = packs.filter(p => athleteLink(p, a)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
       const active = related.find(p => p.statusMasaBerlaku === 'Aktif'); const latest = active || related[0];
       const isPrestasi = B.canonical(a.kelompok) === 'Prestasi Class';
-      const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === B.today().slice(0, 7) && p.jenisKelas === 'Prestasi Class'&&!p.sppTidakDitagih);
+      const cycleMonth=B.prestasiPeriod(B.today(),related.find(p=>p.tanggalPembayaranPertama)?.tanggalPembayaranPertama);
+      const paidMonth = related.find(p => p.status === 'Lunas' && p.periode === cycleMonth && p.jenisKelas === 'Prestasi Class'&&!p.sppTidakDitagih);
       const op = isPrestasi ? { statusPaket: 'Bulanan', sisaPertemuan: null, berlakuSampai: B.monthEnd(B.today()) } : { statusPaket: latest ? latest.statusMasaBerlaku : 'Belum ada paket', sisaPertemuan: latest?.sisaPertemuan ?? null, berlakuSampai: latest?.berlakuSampai || '' };
-      const presentMonth=attendance.some(r=>r.atletId===a.id&&r.status==='Hadir'&&r.tanggal?.startsWith(B.today().slice(0,7))&&B.canonical(r.jenisKelas||schedules.find(s=>s.id===r.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
+      const presentMonth=attendance.some(r=>r.atletId===a.id&&r.status==='Hadir'&&B.prestasiPeriod(r.tanggal,related.find(p=>p.tanggalPembayaranPertama)?.tanggalPembayaranPertama)===cycleMonth&&B.canonical(r.jenisKelas||schedules.find(s=>s.id===r.jadwalId)?.jenisKelas||a.kelompok)==='Prestasi Class');
       const overdue=related.some(p=>p.status==='Belum Lunas'&&p.totalTagihan>0);
       const finance = { statusSPP: isPrestasi ? sppStates[a.id]?.sppMenungguOwner?'Menunggu Persetujuan Owner':overdue?'Belum Lunas':paidMonth?'Lunas':presentMonth?'Belum Lunas':'Tidak Ada SPP Bulan Ini' : related.some(p=>p.status==='Belum Lunas') ? 'Belum Lunas' : active ? 'Lunas' : latest?.status === 'Belum Lunas' ? 'Belum Lunas' : latest ? 'Perlu perpanjangan' : 'Belum ada pembayaran', jatuhTempo: isPrestasi ? B.prestasiNextDue(related,related.find(p=>p.tanggalPembayaranPertama)?.tanggalPembayaranPertama,B.today())||'' : latest?.berlakuSampai || '', paketId: active?.id || '' };
       if (req.user.role === 'owner') return { ...a, memberId:a.memberId, kelompok: B.canonical(a.kelompok), ...op, ...finance, ...(sppStates[a.id]||{saldoKredit:0,sppMenungguOwner:false}), foto:'/api/atlet/'+a.id+'/foto' };

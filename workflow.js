@@ -14,14 +14,28 @@ function loginContext(req){return {ip:req.ip,device:String(req.get('user-agent')
 async function noticeBill(db,a,key,p){
  const data={...p,atletId:a.id,namaAtlet:a.nama,jenisKelas:a.kelompok,tanggal:B.today(),jatuhTempo:Object.hasOwn(p,'jatuhTempo')?p.jatuhTempo:B.today(),provisional:true};
  const r=(await db.query('INSERT INTO brtm_billing_notices(athlete_id,event_key,data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[a.id,key,JSON.stringify(data)])).rows[0];
- if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. ${data.jatuhTempo?'Batas pembayaran '+data.jatuhTempo+'.':'Tanggal batas bayar mengikuti tanggal pembayaran pertama.'} Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' Pembayaran Lunas tetap untuk bulan tagihannya dan tidak otomatis menjadi kredit karena tidak hadir.':''}`);
+ if(r)await N.enqueue(db,a.id,'invoice:'+r.id,'Invoice pembayaran BRTM',`Invoice ${a.kelompok} untuk Adik ${a.nama}: Rp${Number(data.totalTagihan).toLocaleString('id-ID')}. ${data.jatuhTempo?'Batas pembayaran'+(a.kelompok==='Prestasi Class'?' (toleransi akhir bulan)':'')+' '+data.jatuhTempo+'.':'Tanggal batas bayar mengikuti tanggal pembayaran pertama.'} ${data.periodeLabel?' Periode '+data.periodeLabel+'. ':''}Rincian dan PDF tersedia di kotak masuk.${a.kelompok==='Prestasi Class'?' Pembayaran Lunas tetap untuk bulan tagihannya dan tidak otomatis menjadi kredit karena tidak hadir.':''}`);
 }
 async function billing(db,packs){
  const athletes=(await db.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND data->>'status'='Aktif'")).rows.map(r=>({...r.data,id:String(r.id)})),first=await require('./spp').firstPayments(db);
  for(const a of athletes){const related=packs.filter(p=>String(p.atletId)===a.id).sort((x,y)=>String(y.tanggal).localeCompare(String(x.tanggal))||Number(y.id)-Number(x.id));
   if(a.kelompok==='Prestasi Class'){
-   if(B.today()===B.monthEnd(B.today())){const month=B.addMonth(B.today().slice(0,7)+'-01').slice(0,7),existing=related.find(p=>p.periode===month);if(!existing||existing.status!=='Lunas')await noticeBill(db,a,'prestasi-akhir-bulan:'+a.id+':'+month,{jumlah:existing?.jumlah??250000,biayaPendaftaran:0,potonganDiskon:existing?.potonganDiskon||0,totalTagihan:(existing?.jumlah??250000)-(existing?.potonganDiskon||0),periode:month,jatuhTempo:first[a.id]?B.prestasiDue(month,first[a.id]):null});}
+   if(B.today()===B.monthEnd(B.today())){
+    const month=B.prestasiPeriod(B.today(),first[a.id]);
+    // Bill the cycle already in progress, never the following month's unpaid preview.
+    const existing=related.find(p=>p.periode===month);
+    if(existing?.status==='Belum Lunas'&&existing.totalTagihan>0)await noticeBill(db,a,'prestasi-periode:'+a.id+':'+month,{jumlah:existing.jumlah,biayaPendaftaran:existing.biayaPendaftaran||0,potonganDiskon:existing.potonganDiskon||0,totalTagihan:existing.totalTagihan,periode:month,...B.prestasiCycle(month,first[a.id]),jatuhTempo:B.prestasiDue(month)});
+   }
   }else if(related[0]?.sisaPertemuan===0){const p=related[0];await noticeBill(db,a,'paket-habis:'+p.id,{jumlah:p.jumlah,biayaPendaftaran:0,potonganDiskon:p.potonganDiskon,totalTagihan:p.jumlah-p.potonganDiskon,totalPertemuan:p.totalPertemuan});}
+ }
+}
+async function retireEarlyNotices(db){
+ // Retain the old invoice and its audit trail, but retire previews issued for a future cycle.
+ const notices=(await db.query("SELECT id,athlete_id,data FROM brtm_billing_notices WHERE data->>'jenisKelas'='Prestasi Class' AND COALESCE(data->>'sppSuperseded','false')<>'true'")).rows;
+ for(const n of notices)if(n.data.periode>n.data.tanggal?.slice(0,7)){
+  const next={...n.data,sppSuperseded:true,sppSupersededReason:'Periode Prestasi ditagih pada akhir bulan awal periode, dengan toleransi akhir bulan.'};
+  await db.query('UPDATE brtm_billing_notices SET data=$1 WHERE id=$2',[JSON.stringify(next),n.id]);
+  await db.query("INSERT INTO brtm_audit(username,action,jenis,record_id,before_data,after_data) VALUES('sistem-spp','arsip-invoice-terlalu-awal','spp',$1,$2,$3)",[String(n.id),JSON.stringify(n.data),JSON.stringify(next)]);
  }
 }
 async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'},days=35){
@@ -108,4 +122,4 @@ function mount(app,h){require('./owner-finance').mount(app,h);require('./coach')
  app.get('/api/owner/program/pdf',owner,wrap(async(req,res)=>require('./reports').program(res,(await rows(pool,'program')).filter(p=>p.jenis==='Program'),req.query.month||B.today().slice(0,7))));
  app.get('/api/owner/documents/:kind/:id',owner,wrap(async(req,res)=>{const p=await record(pool,'pembayaran',req.params.id);if(!['invoice','receipt'].includes(req.params.kind)||req.params.kind==='receipt'&&B.cashReceived(p)<=0)throw fail(400,'Dokumen pembayaran belum tersedia');require('./reports').bill(res,p,req.params.kind,p.id);}));
 }
-module.exports={initDb,mount,materialize,billing,loginContext};
+module.exports={initDb,mount,materialize,billing,loginContext,retireEarlyNotices};
