@@ -171,10 +171,12 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.get('/club/',(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
   app.get('/club/sw.js',(req,res)=>res.sendFile(path.join(__dirname,'public/sw.js')));
   require('./swim').mount(app, { pool, wrap, auth, owner, changed, transaction, rows, record, save, audit, payments, passwordHash, verify, limit, secureCookies });
+  require('./training-access').mount(app,{pool,wrap,auth,changed,secureCookies});
+  require('./training-board').mount(app,{pool,wrap,transaction,rows,audit,limit,aiFetch:trainingAiFetch});
   app.use('/api', auth, changed);
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
-  require('./training-board').mount(app,{pool,wrap,transaction,rows,audit,limit,aiFetch:trainingAiFetch});
+
   SPP.mount(app,{pool,wrap,owner,transaction});
   require('./community').mount(app,{pool,wrap,owner,transaction,rows,audit,limit});
   require('./tester-reset').mount(app,{pool,wrap,owner,transaction,audit});

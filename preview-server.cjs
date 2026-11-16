@@ -29,6 +29,7 @@ if(process.env.NODE_ENV==='production'||process.env.RAILWAY_ENVIRONMENT_ID)throw
   const portArg=process.argv.indexOf('--port');
   const preview=express();
   preview.use((req,res,next)=>{const set=res.setHeader.bind(res);res.setHeader=(name,value)=>set(name,name.toLowerCase()==='x-frame-options'?'SAMEORIGIN':name.toLowerCase()==='content-security-policy'?String(value).replace("frame-ancestors 'none'","frame-ancestors 'self'"):value);next();});
+  preview.get('/mobile-training',(req,res)=>res.type('html').send('<!doctype html><html><head><title>BRTM Mobile Training QA</title><style>body{margin:0;background:#071222;display:grid;place-items:center;min-height:100vh}iframe{border:0;width:390px;height:844px;background:#001428}</style></head><body><iframe title="BRTM tampilan HP" src="/training/"></iframe></body></html>'));
   preview.get('/mobile',(req,res)=>res.type('html').send('<!doctype html><html><head><title>BRTM Mobile QA</title><style>body{margin:0;background:#e3ebef;display:grid;place-items:center;min-height:100vh}iframe{border:0;width:390px;height:844px;box-shadow:0 10px 60px #0002;background:white}</style></head><body><iframe title="BRTM tampilan HP" src="/"></iframe></body></html>'));
   // Synthetic preview accounts only; this server is never used by npm start.
   preview.get('/preview/:role',async(req,res)=>{
