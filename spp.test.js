@@ -1,4 +1,5 @@
 'use strict';
+require('./business').time=()=> '23:59:00';
 const assert=require('node:assert/strict'),request=require('supertest'),{PGlite}=require('@electric-sql/pglite');
 const {createApp,initDb,passwordHash}=require('./server'),B=require('./business'),SPP=require('./spp');
 async function main(){

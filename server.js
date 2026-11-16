@@ -269,7 +269,9 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       else if (kind === 'program') list = req.user.role === 'prestasi' ? list : list.filter(p => p.dibuatOleh === req.user.username || p.jenis === 'Program');
       else list = list.filter(x => allowed.has(String(x.atletId)) && (req.user.role !== 'coach' || kind !== 'absensi' || x.coachId === String(req.user.id)));
       if(kind==='jadwal')list=list.map(s=>({...s,atletIds:(s.atletIds||[]).filter(a=>allowed.has(String(a)))}));
-    } res.json(kind==='program'?list.map(require('./program').project):list);
+    }
+    if(kind==='jadwal')list=list.map(s=>({...s,absensiWindow:require('./attendance-time').windowFor(s,req.user.role)}));
+    res.json(kind==='program'?list.map(require('./program').project):list);
   }));
   async function validate(req, db, kind, input, old) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Isi formulir tidak valid');
@@ -367,6 +369,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (!schedule.atletIds?.map(String).includes(aid)) throw fail(400, 'Atlet tidak terdaftar pada sesi ini');
       if (schedule.tanggal !== out.tanggal) throw fail(400, 'Tanggal harus sesuai jadwal sesi');
       if (!isOwner && String(schedule.coachId) !== String(user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
+      if(kind==='absensi')require('./attendance-time').enforce(schedule,user.role);
       if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
       out.jenisKelas=B.canonical(schedule.jenisKelas);
       out.coachId = String(schedule.coachId); out.pelatih = B.canonical(schedule.jenisKelas)==='Prestasi Class'?'Coach Adhi':schedule.pelatih; out.catatan = text(input.catatan, 'Catatan', false, 2000);

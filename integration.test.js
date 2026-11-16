@@ -1,4 +1,5 @@
 'use strict';
+require('./business').time=()=> '23:59:00';
 const { PGlite } = require('@electric-sql/pglite');
 const supertest = require('supertest');
 const assert = require('node:assert/strict');

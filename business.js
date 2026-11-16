@@ -27,6 +27,7 @@ function canonical(value) {
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+function time(){return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jakarta',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date());}
 function validDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(value + 'T00:00:00Z');
@@ -117,4 +118,4 @@ function prestasiNextDue(packs,first,now=module.exports.today()){
  while(packs.some(p=>p.periode===month&&p.status==='Lunas'&&!p.sppTidakDitagih))month=addMonth(month+'-01').slice(0,7);
  return prestasiDue(month);
 }
-module.exports = { validateAge, validateCapacity, cashReceived, CLASSES, canonical, today, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue, prestasiPeriod, prestasiCycle, prestasiView };
+module.exports = { validateAge, validateCapacity, cashReceived, CLASSES, canonical, today, time, validDate, addMonth, monthEnd, addDays, discountSchool, price, packageView, prestasiDue, prestasiNextDue, prestasiPeriod, prestasiCycle, prestasiView };

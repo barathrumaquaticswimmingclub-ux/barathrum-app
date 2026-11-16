@@ -24,8 +24,12 @@ function mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,paymen
    const ids=new Set(entries.map(x=>String(x.atletId)));
    if(ids.size!==entries.length||ids.size!==athletes.length||athletes.some(a=>!ids.has(a.id)))throw fail(409,'Daftar atlet aktif berubah. Muat ulang dan isi kembali.');
    const schedules=(await rows(c,'jadwal')).filter(s=>s.tanggal===today&&B.canonical(s.jenisKelas)==='Prestasi Class');
-   if(schedules.some(s=>s.statusSesi==='Libur'))throw fail(400,'Hari ini diliburkan Owner');
-   let schedule=schedules.find(s=>s.sesiRutin===true);
+   if(schedules.length&&schedules.every(s=>s.statusSesi==='Libur'))throw fail(400,'Semua sesi hari ini diliburkan Owner');
+   const availableSchedules=schedules.filter(s=>s.statusSesi!=='Libur');
+   const timing=require('./attendance-time');
+   let schedule=req.user.role==='owner'?availableSchedules.find(s=>s.sesiRutin===true):availableSchedules.filter(s=>s.atletIds?.length&&s.mulai).sort((a,b)=>a.mulai.localeCompare(b.mulai)).find(s=>timing.windowFor(s,req.user.role).allowed);
+   if(req.user.role!=='owner'&&!schedule){const first=availableSchedules.filter(s=>s.mulai).sort((a,b)=>a.mulai.localeCompare(b.mulai))[0];if(first)timing.enforce(first,req.user.role);throw fail(403,'Jadwal dengan jam mulai yang valid belum tersedia. Hubungi Owner.');}
+
    if(!schedule)schedule=await save(c,req.user,'jadwal',{nama:'Latihan Prestasi',tanggal:today,jenisKelas:'Prestasi Class',mulai:'',selesai:'',jam:'Harian',lokasi:'Kolam Renang Pondok Selfie',coachId:String(req.user.id),pelatih:req.user.nama,atletIds:athletes.map(a=>a.id),statusSesi:'Terjadwal',sesiRutin:true},null);
    else if(athletes.some(a=>!schedule.atletIds.includes(a.id)))schedule=await save(c,req.user,'jadwal',{...schedule,atletIds:[...new Set([...schedule.atletIds,...athletes.map(a=>a.id)])]},schedule);
    const existing=await rows(c,'absensi');

@@ -1,4 +1,5 @@
 'use strict';
+require('./business').time=()=> '23:59:00';
 const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),request=require('supertest'),sharp=require('sharp');
 const {initDb,createApp,passwordHash}=require('./server'),B=require('./business');
 async function main(){
@@ -15,6 +16,8 @@ async function main(){
  assert.equal((await send(team,'post','/api/perkembangan',{atletId:other.id,catatan:'tidak boleh'})).status,403);
  assert.equal((await send(team,'post','/api/prestasi/attendance',{batchId:'attendance-test-001',entries:[{atletId:a.id,status:'Hadir'}]})).status,409);
  const input={batchId:'attendance-test-002',entries:[{atletId:a.id,status:'Hadir',catatan:''},{atletId:b.id,status:'Izin',catatan:'Acara sekolah'}]};
+ assert.equal((await send(team,'post','/api/prestasi/attendance',input)).status,403);
+ const timed=await send(owner,'post','/api/jadwal',{nama:'Prestasi terjadwal',tanggal:B.today(),jenisKelas:'Prestasi Class',mulai:'15:00',selesai:'17:00',lokasi:'Pondok Selfie',coachId:'2',atletIds:[a.id,b.id]});assert.equal(timed.status,201,JSON.stringify(timed.body));
  r=await send(team,'post','/api/prestasi/attendance',input);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.count,2);
  assert.equal((await send(team,'post','/api/prestasi/attendance',input)).body.duplicate,true);
  assert.equal((await send(team,'post','/api/prestasi/attendance',{...input,batchId:'attendance-test-003'})).status,409);
