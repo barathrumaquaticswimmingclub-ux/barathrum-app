@@ -19,7 +19,7 @@ function validateAge(athlete) {
   if(canonical(athlete.kelompok)!=='Private Class'||!athlete.tanggalLahir)return;
   const now=today(),birth=athlete.tanggalLahir;
   const age=Number(now.slice(0,4))-Number(birth.slice(0,4))-(now.slice(5)<birth.slice(5)?1:0);
-  if(age<4)throw Object.assign(Error('Private Class minimal usia 4 tahun.'),{status:400});
+  if(age<2)throw Object.assign(Error('Private Class minimal usia 2 tahun.'),{status:400});
 }
 function canonical(value) {
   return String(value || '').replace(/^Reguler Class/, 'Regular Class');
