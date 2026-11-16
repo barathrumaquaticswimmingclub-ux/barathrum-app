@@ -10,7 +10,7 @@ let count=0;for(const date of Object.keys(seed.programs).filter(d=>d>='2026-11-1
  assert(!/gerakan nyaman|ritme nyaman|kontrol ritme|pace nyaman|sesuai kebutuhan|ulang.*tidak rapi|turn rapi|rest bebas/i.test(text),date);
  assert(text.includes('ganti alat 45 detik'));assert(text.includes('Rotate Comby + F'));assert(text.includes('menit ke-90'));
  if(i===1)assert(!/\bEN[23]\b|HR=|@\s*\d|\+\s*(?:P|S)\b/.test(text),date+' foundation');
- else assert(text.includes('HR=17')||text.includes('HR target'));
+ else assert(text.includes('EN2/EN3 adalah jenis latihan'));
  sets.push(text.split('SET ·')[1].split('CD ·')[0].replace(/\d+/g,'#'));
  });
  assert.equal(new Set(sets).size,4,date+' different line objectives');
@@ -30,5 +30,23 @@ assert(P.generate('2026-11-21').lines[2].split('SET ·')[1].includes('@1:20'));c
 
 const S50=require('./training-prescription').SENDOFF50;assert.deepEqual(S50,{1:{EN2:80,EN3:70},3:{EN2:60,EN3:50},4:{EN2:70,EN3:60}});
 for(const date of ['2026-11-17','2026-11-18','2026-11-21']){const p=P.generate(date);const rows=p.lines[1].split('\n').filter(r=>/^\d+ x 50 /.test(r));for(const r of rows)assert(/rest (15|20) detik$/.test(r));}
-const fast=P.generate('2026-11-18');assert(fast.lines[0].includes('FR · EN3 · HR=19/6 detik | @1:10'));assert(fast.lines[3].includes('FR · EN3 · HR=19/6 detik | @1:00'));
+const fast=P.generate('2026-11-18');assert(fast.lines[0].includes('FR EN3 (HR=19/6 detik) @1:10'));assert(fast.lines[3].includes('FR EN3 (HR=19/6 detik) @1:00'));
 console.log('PASS independent 50m send-offs, unchanged 100m anchors, and Line 2 fixed 15/20-second rests.');
+
+
+// Remainders must preserve the component sum, not copy a longer drill.
+for(let at=Date.parse('2026-11-17T12:00:00Z');at<=Date.parse('2027-12-31T12:00:00Z');at+=86400000){
+ const date=new Date(at).toISOString().slice(0,10);
+ for(const focus of [undefined,'skill','aerobic','speed']){
+  const p=require('./training-prescription').generate(date,peaks,P.phaseFor,focus);if(!p)continue;
+  require('./training-board').validPlan(p);
+  p.lines.forEach((text,line)=>{
+   const rows=text.split('\n').filter(r=>/^\d+ x \d+ /.test(r));
+   const total=rows.reduce((sum,r)=>{const m=r.match(/^(\d+) x (\d+) /);const pieces=r.match(/^\d+ x \d+ (25|50) .+? \+ (25|50|75) (?:FR|BK)/);if(pieces)assert.equal(+pieces[1]+ +pieces[2],+m[2],date+' '+r);return sum+ +m[1]* +m[2];},0);
+   assert.equal(total,p.targetTotals[line],date+' total');
+   assert(!text.includes('ACUAN 50 m')&&!text.includes('ACUAN 100 m'));
+   assert(!/pull \+ PB \+ 25 FR tanpa alat|kick \+ F \+ B \+ 25 FR/.test(text));
+  });
+ }
+}
+console.log('PASS all dates and focus variants: component distances, nominal totals, foundation restrictions and equipment transitions.');
