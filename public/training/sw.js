@@ -1,0 +1,5 @@
+'use strict';
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+// Never cache athlete records, reports, cookies, access links, or API requests.
+self.addEventListener('fetch',event=>{const u=new URL(event.request.url);if(event.request.method!=='GET'||u.origin!==self.location.origin||event.request.mode!=='navigate'||!u.pathname.startsWith('/training/')||u.pathname==='/training/access')return;event.respondWith(fetch(event.request).catch(()=>new Response('<!doctype html><html lang="id"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BRTM Program Latihan</title><body style="background:#001428;color:white;font:18px system-ui;padding:30px"><h1>BRTM Program Latihan</h1><p>Hubungkan internet untuk membuka program dan menyimpan laporan.</p><a href="/training/" style="color:#58d7ff">Coba lagi</a></body></html>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}})));});

@@ -57,5 +57,5 @@ $('migrate').onclick=()=>$('migrationFile').click();$('migrationFile').onchange=
 $('chatDraftCards').onclick=e=>{const b=e.target.closest('[data-chat-draft]');if(b)reviewChatDraft(b.dataset.chatDraft).catch(error);};
 $('useChatDraft').onclick=async()=>{const b=$('useChatDraft');b.disabled=true;try{const d=S.chatDraft,target=await api('/api/training/day?date='+d.target_date);await post('/api/training/chat-drafts/'+d.id+'/apply',{planRevision:target.plan.revision});$('chatDraftDialog').close();$('version').value='draft';await loadDay(d.target_date);setTab('program');toast('Revisi sudah menjadi program Coach.');}catch(e){toast(e.message);error(e);}finally{b.disabled=false;}};
 $('dismissChatDraft').onclick=async()=>{if(!confirm('Tandai draf ini tidak digunakan? Riwayatnya tetap tersimpan.'))return;try{await post('/api/training/chat-drafts/'+S.chatDraft.id+'/dismiss',{});$('chatDraftDialog').close();await loadChatDrafts();toast('Draf ditandai tidak digunakan.');}catch(e){toast(e.message);error(e);}};
-$('install').onclick=()=>$('installDialog').showModal();window.addEventListener('beforeunload',e=>{if(S.reportDirty||S.rosterDirty){e.preventDefault();e.returnValue='';}});boot();
+window.addEventListener('beforeunload',e=>{if(S.reportDirty||S.rosterDirty){e.preventDefault();e.returnValue='';}});boot();
 })();
