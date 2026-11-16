@@ -33,15 +33,29 @@ function renderNav() {
   if(['owner','prestasi'].includes(S.user.role)){const board=document.createElement('button');board.type='button';board.textContent='▦ Training Board ↗';board.onclick=()=>{location.href='/training/';};$('nav').append(board);}
   const active = $('nav').querySelector('.active'); if (active) active.setAttribute('aria-current','page');
 }
-async function load() {
+function captureListPosition() {
+  const x=window.scrollX,y=window.scrollY,section=S.section;
+  const scrollers=[...$('records').querySelectorAll('.ops-scroll,.table-scroll')].map(el=>({x:el.scrollLeft,y:el.scrollTop}));
+  return ()=>{
+    if(S.section!==section)return;
+    $('records').querySelectorAll('.ops-scroll,.table-scroll').forEach((el,i)=>{if(scrollers[i]){el.scrollLeft=scrollers[i].x;el.scrollTop=scrollers[i].y;}});
+    window.scrollTo({left:x,top:y,behavior:'instant'});
+  };
+}
+async function load(options = {}) {
   const uid = S.user?.id; if (!uid) return;
-  $('loading').classList.remove('hidden');
+  const section=S.section;
+  if (!options.background) $('loading').classList.remove('hidden');
   const kinds = isOwner() ? ['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua'] : ['atlet','jadwal','absensi','perkembangan','program', ...(S.user.role==='prestasi'?['catatanwaktu']:[])];
   try {
     const results = await Promise.all(kinds.map(async kind => [kind, await request(isOwner()&&['perkembangan','absensi','pembayaran'].includes(kind)?'/api/owner/activity/'+kind:'/api/'+kind)]));
     if (S.user?.id !== uid) return;
+    // Recheck after the network request: a user may have opened attendance or a form meanwhile.
+    if(options.background&&(S.section!==section||!canAutoRefresh()))return;
+    const restore=captureListPosition();
     S.records = Object.fromEntries(results); renderCurrent();
-  } finally { $('loading').classList.add('hidden'); }
+    $('loading').classList.add('hidden');restore();
+  } finally { if (!options.background) $('loading').classList.add('hidden'); }
 }
 async function start(user) {
   S.user = user; $('loginView').classList.add('hidden');
