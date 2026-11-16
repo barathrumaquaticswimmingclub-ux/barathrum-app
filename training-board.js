@@ -1,6 +1,6 @@
 'use strict';
 const crypto=require('crypto'),B=require('./business'),seed=require('./training-seed');
-const TABLES=['brtm_training_rosters','brtm_training_plans','brtm_training_reports','brtm_training_peaks','brtm_training_history','brtm_training_ai'];
+const TABLES=['brtm_training_rosters','brtm_training_plans','brtm_training_reports','brtm_training_peaks','brtm_training_history','brtm_training_ai','brtm_training_chat_drafts'];
 const bad=(status,message)=>Object.assign(Error(message),{status});
 const hash=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const str=(x,label,max=16000)=>{if(typeof x!=='string'||x.length>max)throw bad(400,label+' tidak valid');return x.trim();};
@@ -12,6 +12,7 @@ function unsafeFoundation(x){return /@\s*\d|\bEN2\b|aerobic|aerobik|endurance/i.
 const DEFAULT_PEAKS=[{id:'peak1',name:'POPDA Kota · Peak 1',start:'2027-04-01',end:'2027-04-15',confirmed:false,target:'Nomor dan target waktu per atlet belum diisi.'},{id:'peak2',name:'POPDA Provinsi · Peak 2',start:'2027-09-01',end:'2027-09-30',confirmed:false,target:'Tanggal resmi dan target per atlet perlu dikonfirmasi.'},{id:'peak3',name:'Akhir musim · Peak 3',start:'2027-11-01',end:'2027-11-30',confirmed:false,target:'Pilih event atau time trial, lalu tetapkan target.'}];
 const RESEARCH=[{title:'USA Swimming · American Development Model',url:'https://www.usaswimming.org/coaches-leaders/coaches/american-development-model',reviewed:'2026-11-16',application:'Tahapan perkembangan, kualitas teknik, dan perbedaan kemampuan individu.'},{title:'Swimming Canada · Appropriate Athlete Development',url:'https://www.swimming.ca/blog/new-athlete-development-philosophy-launched-after-years-of-collaboration/',reviewed:'2026-11-16',application:'Seimbangkan kemampuan fisik, teknik, mental, dan kecakapan hidup.'},{title:'Australian Institute of Sport · Training load',url:'https://www.ausport.gov.au/ais/position_statements/training-load-in-relation-to-loading-and-unloading-phases-of-training',reviewed:'2026-11-16',application:'Bandingkan rencana, realisasi, dan respons atlet sebelum mengubah beban.'}];
 async function initDb(db){
+ await require('./training-chat').initDb(db);
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_training_rosters(id SERIAL PRIMARY KEY,effective_date DATE NOT NULL,payload JSONB NOT NULL,user_id INTEGER NOT NULL REFERENCES brtm_users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
  await db.query('CREATE INDEX IF NOT EXISTS brtm_training_roster_date ON brtm_training_rosters(effective_date,id)');
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_training_plans(date DATE PRIMARY KEY,payload JSONB NOT NULL,revision INTEGER NOT NULL DEFAULT 1,user_id INTEGER NOT NULL REFERENCES brtm_users(id),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
@@ -50,6 +51,7 @@ async function modelResponse(context,question,fetcher=fetch){
 function mount(app,{pool,wrap,transaction,rows,audit,limit,aiFetch}){
  const access=(req,res,next)=>['owner','prestasi'].includes(req.user.role)?next():next(bad(403,'Training Board khusus Owner dan tim Prestasi.'));
  app.use('/api/training',access);
+ require('./training-chat').mount(app,{pool,wrap,transaction,rows,audit,limit,helpers:{plan,roster,peaks,starter,validPlan,history,unsafeFoundation}});
  const snapshotAthletes=async db=>(await rows(db,'atlet')).filter(a=>B.canonical(a.kelompok)==='Prestasi Class').map(a=>({id:a.id,memberId:a.memberId||'',name:a.nama||'',nickname:a.namaPanggilan||'',birthDate:a.tanggalLahir||'',group:B.canonical(a.kelompok),active:a.status!=='Nonaktif'}));
  app.get('/api/training/bootstrap',wrap(async(req,res)=>res.json({today:B.today(),athletes:await snapshotAthletes(pool),peaks:await peaks(pool),ai:aiConfig(),research:RESEARCH,monthly:seed.monthly,speedTests:seed.speedTests,events:seed.events})));
  app.get('/api/training/day',wrap(async(req,res)=>{const d=day(req.query.date);const p=await plan(pool,d),r=await roster(pool,d);const reports=(await pool.query('SELECT line,payload,revision,updated_at FROM brtm_training_reports WHERE date=$1 ORDER BY line',[d])).rows;const analyses=(await pool.query("SELECT id,line,report_revision,status,payload,created_at FROM brtm_training_ai WHERE date=$1 ORDER BY created_at DESC LIMIT 40",[d])).rows.map(r=>({...r,payload:{question:r.payload.question||'',result:r.payload.result||null,error:r.payload.error||null}}));res.json({date:d,plan:p,roster:r,reports,analyses,foundationNeedsReview:unsafeFoundation(p.original?.lines[1]||'')});}));

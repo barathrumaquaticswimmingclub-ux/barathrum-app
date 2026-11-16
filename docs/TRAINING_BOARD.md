@@ -28,3 +28,11 @@ References are curated and dated 16 November 2026. No live web research or recur
 ## Verification
 
 `npm test` runs the existing suite and `training-board.test.js`. The new tests use isolated PGlite, synthetic staff/athletes and a mock provider. They exercise role restrictions, roster date/revision behavior, immutable snapshots, duplicate prevention, foundation rules, peak changes, export coverage, disabled AI, provider request idempotency, explicit apply and stale-report protection. A mock provider test is not a successful live OpenAI call.
+
+## Conversation-to-draft bridge
+
+A private Site MCP relay exposes only `training_get_context` and `training_save_draft`. The relay checks the verified ChatGPT owner email and Site-scoped identity. It calls a fixed BRTM integration endpoint using a generated, narrowly scoped server secret (`BRTM_CHAT_BRIDGE_TOKEN`) stored only in runtime configuration. No API inference key is needed for conversation-based evaluation. The endpoint has no account, finance, attendance, or program-activation action.
+
+`brtm_training_chat_drafts` stores proposals, idempotency fingerprints, per-line source report revisions and target program snapshots. Chat writes only create pending drafts; Owner reviews them under Draf ChatGPT. Explicit Use program is required to activate. Application checks source-report revisions and touched-line content, preserves unrelated line edits, records history/audit, and is idempotent. Dismissed drafts remain in history. Operational and training exports include the table. Existing browser/API sessions cannot call the integration without its scoped bearer credential.
+
+The Site preserves its owner-only audience and uses `BRTM_CHAT_OWNER_EMAIL` plus `BRTM_CHAT_BRIDGE_TOKEN` runtime secrets. Install/connect the private Site-created plugin in ChatGPT if its tools are not automatically available. Publishing a relay is not proof of a connected plugin: verify with `training_get_context`.

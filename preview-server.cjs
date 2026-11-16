@@ -22,6 +22,10 @@ if(process.env.NODE_ENV==='production'||process.env.RAILWAY_ENVIRONMENT_ID)throw
   await seed('pembayaran',{atletId:String(aid),namaAtlet:'Atlet Contoh',...B.price({tanggal:B.today(),jenisKelas:'Private Class',status:'Lunas'},{kelompok:'Private Class'}),pemakaianAwal:0});
   await seed('jadwal',{nama:'Private • Sesi sore',tanggal:B.today(),mulai:'15:00',selesai:'16:00',jam:'15:00–16:00',lokasi:'Hotel Grand Wahid Salatiga',coachId:'2',pelatih:'Coach 1',atletIds:[String(aid)],jenisKelas:'Private Class'});
   await seed('catatanwaktu',{atletId:String(prid),namaAtlet:'Atlet Prestasi',tanggal:B.today(),gaya:'Bebas',jarak:50,kolam:25,detik:32.7,dibuatOleh:'prestasi'});
+  // Synthetic ChatGPT proposal for review-flow QA only; this preview server is disabled in production.
+  const draftDate=B.today(),draftBase=require('./training-seed').programs[draftDate]||require('./training-board').starter(draftDate),draftProgram=require('./training-board').starter(draftDate);
+  const draftPayload={title:'Contoh draf evaluasi · data uji',rationale:'Contoh untuk memeriksa tinjauan draf; bukan evaluasi atlet sebenarnya.',lines:draftProgram.lines.map((program,i)=>({line:i+1,program,sourceReportRevision:0})),dryland:null,expectedPlanRevision:0,targetSnapshot:{lines:draftBase.lines.map((program,i)=>({line:i+1,program})),dryland:null},origin:'Percakapan ChatGPT · draf uji'};
+  await pool.query('INSERT INTO brtm_training_chat_drafts(id,target_date,source_date,request_hash,payload,owner_id) VALUES($1,$2,$2,$3,$4,1)',['00000000-0000-4000-8000-000000000026',draftDate,'synthetic-preview',JSON.stringify(draftPayload)]);
   const portArg=process.argv.indexOf('--port');
   const preview=express();
   preview.use((req,res,next)=>{const set=res.setHeader.bind(res);res.setHeader=(name,value)=>set(name,name.toLowerCase()==='x-frame-options'?'SAMEORIGIN':name.toLowerCase()==='content-security-policy'?String(value).replace("frame-ancestors 'none'","frame-ancestors 'self'"):value);next();});
