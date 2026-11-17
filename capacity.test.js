@@ -10,7 +10,7 @@ const {initDb,createApp,passwordHash}=require('./server'),B=require('./business'
  const owner=request.agent(createApp({pool,secureCookies:false}));let checks=0;
  async function call(m,url,body,status=200){const r=await owner[m](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,status,url+' '+JSON.stringify(r.body));checks++;return r.body;}
  await call('post','/auth/login',{username:'owner',password:'capacity-test'});
- await call('post','/api/atlet',{nama:'Private terlalu muda',kelompok:'Private Class',status:'Aktif',tanggalLahir:'2024-01-01'},400);
+ await call('post','/api/atlet',{nama:'Private terlalu muda',kelompok:'Private Class',status:'Aktif',tanggalLahir:new Date().toISOString().slice(0,10)},400);
  await call('post','/api/atlet',{nama:'Private cukup umur',kelompok:'Private Class',status:'Aktif',tanggalLahir:'2020-01-01'},201);
  let index=0;
  for(const [kind,config] of Object.entries(B.CLASSES)){

@@ -262,6 +262,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.get('/api/:jenis', wrap(async (req, res) => {
     const kind = req.params.jenis; if (!KINDS.includes(kind)) throw fail(404, 'Bagian tidak ditemukan');
     if (req.user.role !== 'owner' && ['pembayaran','pelatih'].includes(kind)) throw fail(403, 'Hanya Owner yang dapat melihat bagian ini');
+    if (['atlet','jadwal'].includes(kind)) await syncSchedules();
     if (kind === 'atlet') return res.json(await athleteList(req)); if (kind === 'pembayaran') return res.json(await payments());
     const allowed = await accessible(req); let list = await rows(pool, kind);
     if (allowed) {
@@ -428,6 +429,13 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (status >= 500) console.error('BRTM request failed:', error.code || error.name);
     res.status(status).json({ pesan: error.code === '23505' ? 'Data sudah tercatat. Muat ulang daftar sebelum menyimpan lagi.' : status >= 500 ? 'Server belum dapat memproses data. Coba lagi.' : error.message });
   });
+  let scheduleSync=null,lastScheduleSync=0;
+  async function syncSchedules(){
+    if(scheduleSync)return scheduleSync;
+    if(Date.now()-lastScheduleSync<15000)return;
+    scheduleSync=transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save},undefined,35,false);}).then(()=>{lastScheduleSync=Date.now();}).finally(()=>{scheduleSync=null;});
+    return scheduleSync;
+  }
   app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));});
   return app;
 }

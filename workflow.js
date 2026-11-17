@@ -38,21 +38,39 @@ async function retireEarlyNotices(db){
   await db.query("INSERT INTO brtm_audit(username,action,jenis,record_id,before_data,after_data) VALUES('sistem-spp','arsip-invoice-terlalu-awal','spp',$1,$2,$3)",[String(n.id),JSON.stringify(n.data),JSON.stringify(next)]);
  }
 }
-async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'},days=35){
+async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'},days=35,seedDefaults=true){
  const athletes=await rows(db,'atlet'),users=(await db.query('SELECT * FROM brtm_users WHERE active=TRUE')).rows;
  const adhi=users.find(u=>/adhi/i.test(u.nama)&&u.role==='coach')||users.find(u=>u.role==='prestasi');
- if(adhi&&!(await db.query("SELECT id FROM brtm_weekly_slots WHERE place='Prestasi' LIMIT 1")).rows.length){for(let day=1;day<=6;day++){for(const [start,end] of (day===1||day===3?[['05:00','06:30'],['15:00','17:00']]:[['15:00','17:00']]))await db.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES($1,'Prestasi',$2,$3,$4,'Prestasi Class') ON CONFLICT DO NOTHING",[adhi.id,day,start,end]);}}
+ if(seedDefaults&&adhi&&!(await db.query("SELECT id FROM brtm_weekly_slots WHERE place='Prestasi' LIMIT 1")).rows.length){for(let day=1;day<=6;day++){for(const [start,end] of (day===1||day===3?[['05:00','06:30'],['15:00','17:00']]:[['15:00','17:00']]))await db.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES($1,'Prestasi',$2,$3,$4,'Prestasi Class') ON CONFLICT DO NOTHING",[adhi.id,day,start,end]);}}
  const slots=(await db.query('SELECT * FROM brtm_weekly_slots ORDER BY id')).rows;
  const schedules=await rows(db,'jadwal'),attendance=await rows(db,'absensi');
- for(let offset=0;offset<days;offset++){
+ // Recover only recent dates supported by the Owner's recorded weekly assignment.
+ // A current timetable alone must never manufacture historical attendance sessions.
+ const changes=(await db.query("SELECT record_id,before_data,created_at FROM brtm_audit WHERE action='ubah-jadwal-mingguan' ORDER BY created_at,id")).rows;
+ for(let offset=-7;offset<days;offset++){
   const tanggal=B.addDays(B.today(),offset),day=new Date(tanggal+'T12:00:00Z').getUTCDay();
-  const entries=slots.filter(s=>s.weekday===day&&users.some(u=>u.id===s.coach_id)).map(s=>({...s,ids:s.place==='Prestasi'?athletes.filter(a=>a.status==='Aktif'&&a.kelompok==='Prestasi Class').map(a=>a.id):s.athlete_ids.map(String).filter(id=>athletes.some(a=>a.id===id&&a.status==='Aktif'&&a.kelompok===s.class_name)),key:'weekly:'+s.id,place:s.place==='Prestasi'?(s.start_time<'12:00'?'Kolam Renang Kalitaman':places[1]):s.place}));
+  const cutoff=new Date(tanggal+'T23:59:59.999+07:00').getTime();
+  const datedSlots=offset<0?slots.flatMap(s=>{
+   const edits=changes.filter(c=>String(c.record_id)===String(s.id));
+   if(!edits.some(c=>new Date(c.created_at).getTime()<=cutoff))return [];
+   const later=edits.find(c=>new Date(c.created_at).getTime()>cutoff);
+   return [later?.before_data||s];
+  }):slots;
+  const entries=datedSlots.filter(s=>Number(s.weekday)===day&&users.some(u=>String(u.id)===String(s.coach_id))).map(s=>({...s,ids:s.place==='Prestasi'?athletes.filter(a=>a.status==='Aktif'&&B.canonical(a.kelompok)==='Prestasi Class').map(a=>String(a.id)):(s.athlete_ids||[]).map(String).filter(id=>athletes.some(a=>String(a.id)===id&&a.status==='Aktif'&&B.canonical(a.kelompok)===B.canonical(s.class_name))),class_name:B.canonical(s.class_name),key:'weekly:'+s.id,place:s.place==='Prestasi'?(s.start_time<'12:00'?'Kolam Renang Kalitaman':places[1]):s.place}));
 
   for(const e of entries){
-   const old=schedules.find(s=>s.weeklyKey===e.key&&s.tanggal===tanggal);
-   if(old&&(old.statusSesi==='Libur'||attendance.some(a=>a.jadwalId===old.id)))continue;
-   if(!e.ids.length){if(old)await db.query("DELETE FROM data_klub WHERE jenis='jadwal' AND id=$1",[old.id]);continue;}
-   const coach=users.find(u=>u.id===e.coach_id),d={nama:e.class_name,tanggal,mulai:e.start_time,selesai:e.end_time,jam:e.start_time+'–'+e.end_time,lokasi:e.place,jenisKelas:e.class_name,coachId:String(e.coach_id),pelatih:e.class_name==='Prestasi Class'?'Coach Adhi':coach.nama,atletIds:e.ids,statusSesi:'Terjadwal',weeklyKey:e.key,hari:new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(tanggal+'T12:00:00Z'))};
+   const old=schedules.find(s=>s.weeklyKey===e.key&&s.tanggal===tanggal)||schedules.find(s=>!s.weeklyKey&&s.tanggal===tanggal&&String(s.coachId)===String(e.coach_id)&&s.lokasi===e.place&&B.canonical(s.jenisKelas)===e.class_name&&s.mulai===e.start_time&&s.selesai===e.end_time);
+   if(old?.statusSesi==='Libur'||old?.jadwalSebelumnya)continue;
+   const recorded=old&&attendance.some(a=>String(a.jadwalId)===String(old.id));
+   if(!e.ids.length){if(old&&!recorded&&offset>=0){await db.query("DELETE FROM data_klub WHERE jenis='jadwal' AND id=$1",[old.id]);schedules.splice(schedules.indexOf(old),1);}continue;}
+   const coach=users.find(u=>String(u.id)===String(e.coach_id));let d={nama:e.class_name,tanggal,mulai:e.start_time,selesai:e.end_time,jam:e.start_time+'–'+e.end_time,lokasi:e.place,jenisKelas:e.class_name,coachId:String(e.coach_id),pelatih:e.class_name==='Prestasi Class'?'Coach Adhi':coach.nama,atletIds:e.ids,statusSesi:'Terjadwal',weeklyKey:e.key,hari:new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(tanggal+'T12:00:00Z'))};
+   if(old&&(recorded||offset<0)){
+    // Keep the session identity, coach, time and all prior participants/records.
+    // Only append missing assigned children to the SAME session, never duplicate it.
+    if(String(old.coachId)!==d.coachId||old.mulai!==d.mulai||old.selesai!==d.selesai||old.lokasi!==d.lokasi||B.canonical(old.jenisKelas)!==d.jenisKelas)continue;
+    d={...old,weeklyKey:e.key,atletIds:[...new Set([...(old.atletIds||[]).map(String),...d.atletIds])]};
+    try{B.validateCapacity(d.jenisKelas,d.atletIds.length);}catch{continue;}
+   }
    // A cancelled manual/old-slot session must not be recreated by the recurring scheduler.
    if(schedules.some(s=>s.statusSesi==='Libur'&&s.tanggal===tanggal&&B.canonical(s.jenisKelas)===e.class_name&&s.mulai<d.selesai&&s.selesai>d.mulai&&(s.coachId===d.coachId||s.atletIds?.some(id=>d.atletIds.includes(String(id))))))continue;
    const clash=schedules.find(s=>s.id!==old?.id&&s.tanggal===tanggal&&s.statusSesi!=='Libur'&&s.mulai<d.selesai&&s.selesai>d.mulai&&(s.coachId===d.coachId||s.atletIds?.some(id=>d.atletIds.includes(String(id)))));
