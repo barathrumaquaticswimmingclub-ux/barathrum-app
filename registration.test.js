@@ -28,6 +28,10 @@ const {initDb,createApp,passwordHash}=require('./server'),{CONSENT}=require('./r
  // A second request for the same identity links to its history; a mismatch goes to Owner review without disclosure.
  await call(anon,'post','/registration/api/submit',{...input,schedules:[first,config.classes[input.kelompok].schedules[2].value],requestId:'registration-request-two-002'},201);const linked=(await call(owner,'get','/api/atlet')).body;assert.equal(linked.length,1);assert(linked[0].jadwalPilihan.includes('Sabtu'));
  await call(anon,'post','/registration/api/submit',{...input,noHpOrtu:'089999999999',requestId:'registration-request-three-003'},201);assert.equal((await call(owner,'get','/api/atlet')).body.length,1);assert.equal((await pool.query("SELECT count(*)::int n FROM brtm_registrations WHERE status='Perlu diperiksa'")).rows[0].n,1);
+ // A spelling variation with the same verified identity is held for review, not duplicated.
+ const near=(await call(anon,'post','/registration/api/submit',{...input,nama:'Anggota Form Sato',requestId:'registration-name-variation-001'},201)).body;
+ assert.deepEqual(near,{ok:true,installUrl:'/swim/install/'});assert.equal((await call(owner,'get','/api/atlet')).body.length,1);
+ assert.equal((await pool.query("SELECT status FROM brtm_registrations WHERE response_id='web-registration-name-variation-001'")).rows[0].status,'Perlu diperiksa');
  const parent=request.agent(app);await call(parent,'post','/swim/api/login',{username:input.nama,password:'brtm'});assert.equal((await call(parent,'get','/swim/api/dashboard')).body.profil.nama,input.nama);
  // Full slots, inactive coaches and unrelated locations cannot be offered or forged.
  const full=[];for(let i=0;i<16;i++)full.push(String((await pool.query("INSERT INTO data_klub(jenis,data) VALUES('atlet',$1) RETURNING id",[{nama:'Regular '+i,status:'Aktif',kelompok:input.kelompok}])).rows[0].id));

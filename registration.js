@@ -61,9 +61,11 @@ function mount(app,{pool,wrap,transaction,rows,limit,cleanPayload,applyRegistrat
    const jadwalPilihan=schedules.map(s=>`${s.dayLabel} ${s.start}–${s.end} · ${s.place}`).join('; ');
    const data={...clean,jadwalPilihan,schedules:schedules.map(s=>s.value),submissionHash,sumber:'Formulir BRTM',jadwalStatus:'Menunggu konfirmasi admin'};
    const r=(await c.query("INSERT INTO brtm_registrations(kind,response_id,payload,status) VALUES('nonprestasi',$1,$2,'Perlu diperiksa') RETURNING *",[responseId,JSON.stringify(data)])).rows[0];
-   const same=(await rows(c,'atlet')).filter(a=>norm(a.nama)===norm(data.nama));
+   const athletes=(await rows(c,'atlet')).filter(a=>!a.mergedInto);
+   const same=athletes.filter(a=>(norm(a.nama)===norm(data.nama)||(a.nameAliases||[]).some(n=>norm(n)===norm(data.nama))));
+   const similar=athletes.filter(a=>require('./roster-identity').strongMatch(a,data));
    const exact=same.filter(a=>a.tanggalLahir===data.tanggalLahir&&phone(a.noHpOrtu)===phone(data.noHpOrtu)&&B.canonical(a.kelompok)===data.kelompok&&a.status!=='Nonaktif');
-   if(!same.length)await applyRegistration(c,r,'new','Formulir BRTM');
+   if(!same.length&&!similar.length)await applyRegistration(c,r,'new','Formulir BRTM');
    else if(same.length===1&&exact.length===1)await applyRegistration(c,r,exact[0].id,'Formulir BRTM');
    else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2',['Pendaftaran web: Owner perlu mencocokkan identitas/kelas. Jadwal menunggu konfirmasi admin.',r.id]);
   });

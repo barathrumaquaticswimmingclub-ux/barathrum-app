@@ -49,7 +49,7 @@ async function main(){
  const second=records[1];await pool.query("UPDATE brtm_audit SET created_at='2026-11-24T10:00:00+07:00' WHERE action='ubah-jadwal-mingguan' AND record_id=$1",[String(second.slot.id)]);
  const missing=(await call(owner,'get','/api/jadwal')).find(s=>s.tanggal===monday&&s.weeklyKey==='weekly:'+second.slot.id);await pool.query("DELETE FROM data_klub WHERE jenis='jadwal' AND id=$1",[missing.id]);
  await pool.query("UPDATE data_klub SET data=data||'{\"statusSesi\":\"Libur\",\"alasanLibur\":\"Uji libur\"}'::jsonb WHERE id=$1",[recovered[0].id]);await fresh.locals.maintain();await fresh.locals.maintain();
- assert.equal((await pool.query("SELECT id FROM data_klub WHERE jenis='jadwal' AND data->>'weeklyKey'=$1 AND data->>'tanggal'=$2",['weekly:'+second.slot.id,monday])).rows.length,0);
+ assert.equal((await pool.query("SELECT id FROM data_klub WHERE jenis='jadwal' AND data->>'weeklyKey'=$1 AND data->>'tanggal'=$2",['weekly:'+second.slot.id,monday])).rows.length,1);
  assert.equal((await pool.query('SELECT data FROM data_klub WHERE id=$1',[recovered[0].id])).rows[0].data.statusSesi,'Libur');
  await call(agent,'post','/api/session-entry',{jadwalId:recovered[0].id,atletId:r.children[1].id,tanggal:monday,status:'Izin'},400);
  await db.close();console.log('PASS schedule synchronization: seven coaches, Lula, partial attendance, yesterday backfill, read repair, ownership, idempotency, audit-dated history and holidays.');

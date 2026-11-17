@@ -123,7 +123,14 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
-    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out); await SPP.afterSave(db,user,kind,out,previous); if(kind!=='pembayaran'||B.canonical(out.jenisKelas)!=='Prestasi Class')await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return kind==='pembayaran'&&B.canonical(out.jenisKelas)==='Prestasi Class'?record(db,kind,out.id):out;
+    await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out);
+    await SPP.afterSave(db,user,kind,out,previous);
+    if(kind==='pembayaran'&&B.canonical(out.jenisKelas)!=='Prestasi Class'&&out.status==='Lunas'&&previous?.status!=='Lunas'){
+      const athlete=await record(db,'atlet',out.atletId,true);
+      if(athlete.status!=='Aktif')await save(db,user,'atlet',{...athlete,status:'Aktif'},athlete);
+      await require('./workflow').materialize(db,{rows,save},user,35,false);
+    }
+    if(kind!=='pembayaran'||B.canonical(out.jenisKelas)!=='Prestasi Class')await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return kind==='pembayaran'&&B.canonical(out.jenisKelas)==='Prestasi Class'?record(db,kind,out.id):out;
   }
   function setCookie(res, token, maxAge = 7 * 86400) { res.setHeader('Set-Cookie', `brtm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`); }
   app.get('/health', wrap(async (req, res) => { await pool.query('SELECT 1'); res.json({ status: 'ok', database: 'ok', version: APP_VERSION }); }));
@@ -223,7 +230,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }
   async function athleteList(req) {
-    const allowed = await accessible(req); const list = (await rows(pool, 'atlet')).filter(a => !allowed || allowed.has(a.id)); const packs = await payments();const attendance=await rows(pool,'absensi'),schedules=await rows(pool,'jadwal'),sppStates=await SPP.summaries(pool);
+    const allowed = await accessible(req); const list = (await rows(pool, 'atlet')).filter(a => !a.mergedInto&&(!allowed || allowed.has(a.id))); const packs = await payments();const attendance=await rows(pool,'absensi'),schedules=await rows(pool,'jadwal'),sppStates=await SPP.summaries(pool);
     return list.map(a => {
       const related = packs.filter(p => athleteLink(p, a)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
       const active = related.find(p => p.statusMasaBerlaku === 'Aktif'); const latest = active || related[0];
