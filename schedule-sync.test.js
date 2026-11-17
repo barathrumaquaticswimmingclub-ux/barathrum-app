@@ -26,6 +26,7 @@ async function main(){
   assert.deepEqual((await pool.query("SELECT id,data FROM data_klub WHERE jenis='absensi' AND data->>'jadwalId'=$1",[session.id])).rows,before);
   records.push({coach,children,slot,session});
  }
+ const report=await app.locals.rosterAudit();assert(report.targets.some(a=>/Alula/.test(a.name)));assert.equal(report.issues.length,0);
  await pool.query("UPDATE brtm_audit SET created_at='2026-11-16T10:00:00+07:00' WHERE action='ubah-jadwal-mingguan'");day='2026-11-17';await app.locals.maintain();
  for(const {coach,children,session} of records){
   assert((await call(coach,'get','/api/atlet')).some(a=>a.id===children[1].id));

@@ -436,6 +436,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     scheduleSync=transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save},undefined,35,false);}).then(()=>{lastScheduleSync=Date.now();}).finally(()=>{scheduleSync=null;});
     return scheduleSync;
   }
+  app.locals.rosterAudit=()=>transaction(c=>require('./roster-audit').inspect(c,{rows,payments}));
   app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));});
   return app;
 }
@@ -443,8 +444,10 @@ if (require.main === module) {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false, max: 10 });
   initDb(pool).then(()=>SPP.migrate(pool)).then(() => {
     const app = createApp({ pool });
+    let rosterAudited=false;
     const stopNotifications=N.startWorker(pool,async()=>{
       await app.locals.maintain();
+      if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
       const list=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran'")).rows;
       const counts=(await pool.query("SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' GROUP BY data->>'paketId'")).rows;
       return list.map(p=>B.packageView({...p.data,id:String(p.id)},Number(counts.find(c=>c.paket===String(p.id))?.jumlah||0)));
