@@ -21,7 +21,7 @@ async function inspect(db,{rows,payments}){
     if(own?.statusSesi==='Libur')continue;
     if(a.status==='Aktif'&&B.canonical(s.class_name)===B.canonical(a.kelompok)&&(!own||!own.atletIds?.map(String).includes(a.id))){
      const blocking=schedules.filter(j=>j.tanggal===date&&j.mulai<s.end_time&&j.selesai>s.start_time&&(String(j.coachId)===String(s.coach_id)||j.atletIds?.map(String).includes(a.id))).map(j=>({id:j.id,status:j.statusSesi,coachId:j.coachId,className:j.jenisKelas,location:j.lokasi,routine:j.sesiRutin,start:j.mulai,end:j.selesai,athleteIds:j.atletIds,weeklyKey:j.weeklyKey,manualReplacement:!!j.jadwalSebelumnya}));
-     reasons.push({code:'MISSING_SESSION_MEMBER',slot:s.id,date,blocking});
+     reasons.push({code:'MISSING_SESSION_MEMBER',slot:s.id,date,blocking,eligiblePackages:rawPacks.filter(p=>String(p.atletId)===a.id&&B.canonical(p.jenisKelas)===B.canonical(s.class_name)&&require('./roster-eligibility').paidCovers(p,date)).map(p=>({id:p.id,className:p.jenisKelas,status:p.status,start:p.tanggal,end:p.tanggalBerakhir,cycleStart:p.periodeMulai,cycleEnd:p.periodeSelesai})),relatedSessions:schedules.filter(j=>j.tanggal===date&&B.canonical(j.jenisKelas)===B.canonical(s.class_name)).map(j=>({id:j.id,location:j.lokasi,start:j.mulai,end:j.selesai,coachId:j.coachId,status:j.statusSesi,weeklyKey:j.weeklyKey,routine:j.sesiRutin,athleteIds:j.atletIds}))});
     }
    }
   }
