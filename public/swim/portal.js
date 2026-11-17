@@ -25,7 +25,7 @@ function portalEvaluations(d){return '<section class="panel evaluation"><h2>Eval
 
 
 const regularPortalDashboard=portalDashboard;
-portalDashboard=function(d){return regularPortalDashboard(d)+(/^Regular Class/.test(d.profil.kelompok)?'<section class="panel"><h3>Regular fleksibel</h3><p>Pilih sesi Pondok Selfie hari ini. Nama anak langsung muncul pada jadwal Coach Fauzan dan Coach Ilyas. Kuota berkurang setelah pelatih mencatat hadir.</p><button id="regularToday">Hadir hari ini</button><div id="regularTodaySlots" aria-live="polite"></div></section>':'');};
+portalDashboard=function(d){return (/^Regular Class/.test(d.profil.kelompok)?'<section class="panel regular-today"><h2>Latihan hari ini</h2><button id="regularToday" class="primary" style="width:100%;min-height:56px;font-size:1.1rem" aria-controls="regularTodaySlots">Hadir Hari Ini</button><p>Pilih sesi latihan Pondok Selfie hari ini. Kuota berkurang setelah pelatih mencatat hadir.</p><div id="regularTodaySlots" aria-live="polite"></div></section>':'')+regularPortalDashboard(d);};
 $('content').addEventListener('click',async e=>{
  const open=e.target.closest('#regularToday'),book=e.target.closest('[data-regular-start]'),cancel=e.target.closest('#regularCancel');if(!open&&!book&&!cancel)return;
  const b=open||book||cancel;b.disabled=true;try{
