@@ -43,8 +43,9 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
  const athletes=(await rows(db,'atlet')).filter(a=>!a.mergedInto),users=(await db.query('SELECT * FROM brtm_users WHERE active=TRUE')).rows;
  const adhi=users.find(u=>/adhi/i.test(u.nama)&&u.role==='coach')||users.find(u=>u.role==='prestasi');
  if(seedDefaults&&adhi&&!(await db.query("SELECT id FROM brtm_weekly_slots WHERE place='Prestasi' LIMIT 1")).rows.length){for(let day=1;day<=6;day++){for(const [start,end] of (day===1||day===3?[['05:00','06:30'],['15:00','17:00']]:[['15:00','17:00']]))await db.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES($1,'Prestasi',$2,$3,$4,'Prestasi Class') ON CONFLICT DO NOTHING",[adhi.id,day,start,end]);}}
- const slots=(await db.query('SELECT * FROM brtm_weekly_slots ORDER BY id')).rows;
+ const slots=(await db.query('SELECT * FROM brtm_weekly_slots ORDER BY id')).rows.filter(s=>!require('./regular').isRegular({jenisKelas:s.class_name}));
  const schedules=await rows(db,'jadwal'),attendance=await rows(db,'absensi');
+ for(const s of [...schedules])if(s.weeklyKey&&s.atletIds?.length&&s.tanggal>=B.today()&&require('./regular').isRegular(s)&&!s.regularFlex&&s.statusSesi!=='Libur'&&!attendance.some(r=>r.jadwalId===s.id)){await save(db,user,'jadwal',{...s,atletIds:[],regularFixedRetired:true},s);schedules.splice(schedules.indexOf(s),1);}
  const paidPacks=(await rows(db,'pembayaran')).filter(p=>p.status==='Lunas'&&p.statusManual!=='Kedaluwarsa');
  // Recover only recent dates supported by the Owner's recorded weekly assignment.
  // Paid late additions may restore roster membership under Owner authorization; no attendance is generated.
@@ -97,7 +98,7 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
   }
  }
 }
-function mount(app,h){require('./holidays').mount(app,h);require('./owner-finance').mount(app,h);require('./coach').mount(app,h);const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
+function mount(app,h){require('./billing-reminders').mount(app,h);require('./regular').mountOwner(app,h);require('./holidays').mount(app,h);require('./owner-finance').mount(app,h);require('./coach').mount(app,h);const {pool,wrap,owner,transaction,rows,record,save,audit,passwordHash,payments}=h;
  const tx=fn=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');return fn(c);});
  app.post('/api/session-entry',wrap(async(req,res)=>{
   const result=await tx(async c=>{

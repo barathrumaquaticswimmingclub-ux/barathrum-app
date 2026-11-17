@@ -31,20 +31,20 @@ function mount(app,h){const {pool,wrap,rows,record,transaction,audit}=h;
  app.get('/api/coach/profile/photo',wrap(async(req,res)=>{const p=(await pool.query('SELECT profile FROM brtm_users WHERE id=$1',[req.user.id])).rows[0]?.profile.photo;if(!p)throw fail(404,'Foto profil belum tersedia');res.type(p.mime).send(Buffer.from(p.base64,'base64'));}));
  app.get('/api/coach/noted',wrap(async(req,res)=>{
   if(!['owner','coach'].includes(req.user.role))throw fail(403,'Khusus Coach dan Owner');
-  const c=await context(pool,h),assigned=new Set(c.schedules.filter(s=>String(s.coachId)===String(req.user.id)).flatMap(s=>s.atletIds||[]).map(String)),athletes=(await rows(pool,'atlet')).filter(a=>a.status==='Aktif'&&(req.user.role==='owner'||assigned.has(a.id)));
+  const c=await context(pool,h),assigned=new Set(c.schedules.filter(s=>require('./regular').assigned(s,req.user.id)).flatMap(s=>s.atletIds||[]).map(String)),athletes=(await rows(pool,'atlet')).filter(a=>a.status==='Aktif'&&(req.user.role==='owner'||assigned.has(a.id)));
   const result=[];for(const a of athletes){const entries=c.attendance.filter(r=>String(r.atletId)===a.id&&r.tanggal<=B.today()&&r.status==='Hadir').sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||Number(b.id)-Number(a.id));result.push({atletId:a.id,...await status(pool,h,a,B.today(),entries[0],c)});}res.json(result);
  }));
  app.get('/api/coach/noted/:id',wrap(async(req,res)=>{
   if(req.user.role!=='coach')throw fail(403,'Khusus Coach');
   const a=await record(pool,'atlet',req.params.id),s=await record(pool,'jadwal',req.query.scheduleId);
-  if(String(s.coachId)!==String(req.user.id)||!s.atletIds?.map(String).includes(a.id))throw fail(403,'Sesi belum ditugaskan kepada Anda');
+  if(!require('./regular').assigned(s,req.user.id)||!s.atletIds?.map(String).includes(a.id))throw fail(403,'Sesi belum ditugaskan kepada Anda');
   const c=await context(pool,h),old=c.attendance.find(r=>r.atletId===a.id&&r.jadwalId===s.id),eligible=c.packs.filter(p=>String(p.atletId)===a.id&&['Lunas','Belum Lunas'].includes(p.status)&&(p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id)&&p.tanggal<=s.tanggal&&p.berlakuSampai>=s.tanggal&&(p.sisaPertemuan>0||old?.status==='Hadir'&&old.paketId===p.id)).sort((a,b)=>a.berlakuSampai.localeCompare(b.berlakuSampai));
   const current={atletId:a.id,jadwalId:s.id,tanggal:s.tanggal,status:'Hadir',paketId:eligible[0]?.id||null};c.attendance=c.attendance.filter(r=>r!==old);c.attendance.push(current);
   res.json(await status(pool,h,a,s.tanggal,current,c));
  }));
  app.delete('/api/coach/noted/:id',wrap(async(req,res)=>{
   if(req.user.role!=='coach')throw fail(403,'Khusus Coach');
-  await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const n=await record(db,'perkembangan',req.params.id,true),author=n.dibuatOlehId||n.coachId;if(author?String(author)!==String(req.user.id):n.dibuatOleh!==req.user.username)throw fail(403,'Hanya catatan Anda sendiri yang dapat dihapus');const assigned=(await rows(db,'jadwal')).some(s=>String(s.coachId)===String(req.user.id)&&s.atletIds?.map(String).includes(String(n.atletId)));if(!assigned)throw fail(403,'Atlet belum ditugaskan kepada Anda');await db.query("DELETE FROM data_klub WHERE jenis='perkembangan' AND id=$1",[n.id]);await audit(db,req.user,'hapus-noted-coach','perkembangan',n.id,n,null);});res.json({pesan:'Noted dihapus. Kewajiban noted dihitung ulang.'});
+  await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const n=await record(db,'perkembangan',req.params.id,true),author=n.dibuatOlehId||n.coachId;if(author?String(author)!==String(req.user.id):n.dibuatOleh!==req.user.username)throw fail(403,'Hanya catatan Anda sendiri yang dapat dihapus');const assigned=(await rows(db,'jadwal')).some(s=>require('./regular').assigned(s,req.user.id)&&s.atletIds?.map(String).includes(String(n.atletId)));if(!assigned)throw fail(403,'Atlet belum ditugaskan kepada Anda');await db.query("DELETE FROM data_klub WHERE jenis='perkembangan' AND id=$1",[n.id]);await audit(db,req.user,'hapus-noted-coach','perkembangan',n.id,n,null);});res.json({pesan:'Noted dihapus. Kewajiban noted dihitung ulang.'});
  }));
 }
 module.exports={policy,period,monthShift,status,enforce,mount,content};

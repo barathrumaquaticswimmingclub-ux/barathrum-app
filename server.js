@@ -221,7 +221,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   async function accessible(req, db = pool) {
     if (req.user.role === 'owner') return null;
     if (req.user.role === 'prestasi') return new Set((await rows(db, 'atlet')).filter(a => B.canonical(a.kelompok) === 'Prestasi Class').map(a => a.id));
-    const schedules = await rows(db, 'jadwal'); return new Set(schedules.filter(s => String(s.coachId) === String(req.user.id)).flatMap(s => s.atletIds || []).map(String));
+    const schedules = await rows(db, 'jadwal'); return new Set(schedules.filter(s => require('./regular').assigned(s,req.user.id)).flatMap(s => s.atletIds || []).map(String));
   }
   async function payments(db = pool, lock = false) {
     const list = await rows(db, 'pembayaran', lock);
@@ -273,9 +273,9 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (kind === 'atlet') return res.json(await athleteList(req)); if (kind === 'pembayaran') return res.json(await payments());
     const allowed = await accessible(req); let list = await rows(pool, kind);
     if (allowed) {
-      if (kind === 'jadwal') list = list.filter(s => req.user.role === 'coach' ? String(s.coachId) === String(req.user.id) : B.canonical(s.jenisKelas) === 'Prestasi Class');
+      if (kind === 'jadwal') list = list.filter(s => req.user.role === 'coach' ? require('./regular').assigned(s,req.user.id) : B.canonical(s.jenisKelas) === 'Prestasi Class');
       else if (kind === 'program') list = req.user.role === 'prestasi' ? list : list.filter(p => p.dibuatOleh === req.user.username || p.jenis === 'Program');
-      else list = list.filter(x => allowed.has(String(x.atletId)) && (req.user.role !== 'coach' || kind !== 'absensi' || x.coachId === String(req.user.id)));
+      else { const sharedSessionIds=new Set((await rows(pool,'jadwal')).filter(s=>s.regularFlex&&require('./regular').assigned(s,req.user.id)).map(s=>String(s.id))); list = list.filter(x => allowed.has(String(x.atletId)) && (req.user.role !== 'coach' || kind !== 'absensi' || x.coachId === String(req.user.id) || (sharedSessionIds.has(String(x.jadwalId))))); }
       if(kind==='jadwal')list=list.map(s=>({...s,atletIds:(s.atletIds||[]).filter(a=>allowed.has(String(a)))}));
     }
     if(kind==='jadwal')list=list.map(s=>({...s,absensiWindow:require('./attendance-time').windowFor(s,req.user.role)}));
@@ -376,7 +376,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if(schedule.statusSesi==='Libur')throw fail(400,'Sesi diliburkan; tidak ada pengurangan kuota');
       if (!schedule.atletIds?.map(String).includes(aid)) throw fail(400, 'Atlet tidak terdaftar pada sesi ini');
       if (schedule.tanggal !== out.tanggal) throw fail(400, 'Tanggal harus sesuai jadwal sesi');
-      if (!isOwner && String(schedule.coachId) !== String(user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
+      if (!isOwner && !require('./regular').assigned(schedule,user.id) && !(user.role === 'prestasi' && B.canonical(schedule.jenisKelas) === 'Prestasi Class')) throw fail(403, 'Sesi ini ditugaskan kepada pelatih lain');
       if(kind==='absensi')require('./attendance-time').enforce(schedule,user.role);
       if (old?.jadwalId && old.jadwalId !== out.jadwalId) throw fail(400, 'Sesi catatan tidak dapat diganti');
       out.jenisKelas=B.canonical(schedule.jenisKelas);

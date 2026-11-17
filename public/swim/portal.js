@@ -23,3 +23,13 @@ if(currentProfile&&!ownerMode)refresh().catch(()=>{});
 
 function portalEvaluations(d){return '<section class="panel evaluation"><h2>Evaluasi pelatih</h2><p>Catatan perkembangan anak dari setiap sesi latihan.</p>'+(d.evaluasi||[]).map(n=>'<article class="entry"><b>'+esc(portalDate(n.tanggal))+'</b><small>Pelatih: '+esc(n.pelatih||'BRTM')+'</small>'+(n.apresiasi?'<p class="evaluation-appreciation">'+esc(n.apresiasi)+'</p>':'')+[['Teknik',n.teknik],['Fisik',n.fisik],['Sikap',n.attitude],['Catatan',n.catatan]].filter(([,v])=>v).map(([k,v])=>'<p><b>'+esc(k)+':</b> '+esc(v)+'</p>').join('')+'</article>').join('')+((d.evaluasi||[]).length?'':'<p>Belum ada evaluasi yang dicatat pelatih.</p>')+'</section>';}
 
+
+const regularPortalDashboard=portalDashboard;
+portalDashboard=function(d){return regularPortalDashboard(d)+(/^Regular Class/.test(d.profil.kelompok)?'<section class="panel"><h3>Regular fleksibel</h3><p>Pilih sesi Pondok Selfie hari ini. Nama anak langsung muncul pada jadwal Coach Fauzan dan Coach Ilyas. Kuota berkurang setelah pelatih mencatat hadir.</p><button id="regularToday">Hadir hari ini</button><div id="regularTodaySlots" aria-live="polite"></div></section>':'');};
+$('content').addEventListener('click',async e=>{
+ const open=e.target.closest('#regularToday'),book=e.target.closest('[data-regular-start]'),cancel=e.target.closest('#regularCancel');if(!open&&!book&&!cancel)return;
+ const b=open||book||cancel;b.disabled=true;try{
+ if(open){const r=await request('regular/options');$('regularTodaySlots').innerHTML='<p>'+esc(date(r.tanggal))+' · Pondok Selfie</p>'+r.slots.map(s=>'<p><button data-regular-start="'+esc(s.mulai)+'" '+(!s.tersedia?'disabled':'')+'>'+esc(s.mulai+'–'+s.selesai)+(s.terdaftar?' · Sudah aktif':!s.tersedia?' · Selesai / penuh / libur':'')+'</button></p>').join('')+(r.slots.some(s=>s.terdaftar)?'<button id="regularCancel">Batalkan aktivasi hari ini</button>':'')+(r.slots.length?'':'<p>Tidak ada sesi Regular hari ini.</p>');}
+ else{const r=await request('regular',{mulai:book?.dataset.regularStart,batal:!!cancel});await refresh();$('statusMessage').textContent=r.pesan;}
+ }catch(err){$('statusMessage').textContent=err.message;}finally{b.disabled=false;}
+});
