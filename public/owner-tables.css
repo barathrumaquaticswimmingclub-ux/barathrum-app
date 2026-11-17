@@ -8,4 +8,22 @@
 
 #holidaySessions .holiday-choice{display:flex;align-items:center;gap:14px;min-height:64px;padding:14px;margin:10px 0;border:2px solid #bdcddd;border-radius:12px;background:#fff;cursor:pointer;touch-action:manipulation;box-sizing:border-box}#holidaySessions .holiday-choice input[type="checkbox"]{appearance:auto;-webkit-appearance:checkbox;width:24px;height:24px;min-height:24px;padding:0;margin:0;flex:0 0 24px;accent-color:#0757b8;cursor:pointer}#holidaySessions .holiday-choice span{min-width:0;overflow-wrap:anywhere}#holidaySessions .holiday-choice.is-selected{border-color:#0757b8;background:#eaf3ff}#holidaySessions .holiday-choice:focus-within{outline:3px solid #73bbef;outline-offset:2px}#holidaySessions .holiday-all{background:#edf4fa}#holidaySessions .holiday-locked{padding:14px;margin:12px 0;border:1px solid #cdd5de;border-radius:12px;background:#f3f5f7}#holidaySessions .holiday-locked p{margin:8px 0;color:#354c63}#holidaySessions .holiday-locked button{min-height:44px}
 
-.regular-schedule .ops-table{min-width:0;table-layout:fixed;width:100%}.regular-schedule .ops-table th:first-child{width:36px}.regular-schedule .ops-table th:nth-child(3){width:65px}.regular-schedule .ops-table th:last-child{width:115px}.regular-schedule .ops-table td{overflow-wrap:anywhere;padding:8px 5px}.regular-schedule .ops-table td button{white-space:normal;min-height:44px;margin:0;width:100%;font-size:12px;padding:7px 4px}.regular-schedule .ops-table th{white-space:normal;padding:8px 5px}.regular-schedule .ops-scroll{max-height:none}
+/* Compact Regular roster: scroll within the table; actions stay visible. */
+.regular-schedule{padding:14px}
+.regular-schedule>label{max-width:210px;font-size:12px}
+.regular-schedule input[type=date]{min-height:40px;padding:8px 10px;font-size:14px}
+.regular-schedule .ops-scroll{max-height:360px;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;scrollbar-width:thin;margin:10px 0 0}
+.regular-schedule .ops-table{width:680px;min-width:680px;table-layout:fixed;font-size:12px}
+.regular-schedule .ops-table th:first-child{width:40px}
+.regular-schedule .ops-table th:nth-child(2){width:430px}
+.regular-schedule .ops-table th:nth-child(3){width:80px}
+.regular-schedule .ops-table th:last-child{width:130px}
+.regular-schedule .ops-table td,.regular-schedule .ops-table th{padding:6px 8px;white-space:nowrap;vertical-align:middle;line-height:1.25}
+.regular-schedule .ops-table td:nth-child(2) small{display:inline;margin:0 0 0 5px;font-size:11px}
+.regular-schedule .ops-table td:last-child{position:sticky;right:0;background:#fff;box-shadow:-3px 0 5px #14395d18;z-index:1;text-align:center}
+.regular-schedule .ops-table tr:nth-child(even) td:last-child{background:#f0f5fb}
+.regular-schedule .ops-table th:last-child{position:sticky;right:0;z-index:3}
+.regular-schedule .ops-table td button[data-regular-id]{width:112px;min-height:44px;margin:0;padding:6px 8px;border-radius:8px;font-size:12px;font-weight:750;white-space:nowrap;box-shadow:none;opacity:1;color:#fff;-webkit-text-fill-color:#fff;background:#0757b8;border:1px solid #06438d;text-shadow:none}
+.regular-schedule .ops-table td button[data-cancel=true]{background:#fff2dc;color:#713900;-webkit-text-fill-color:#713900;border-color:#c88b30}
+.regular-schedule .ops-table td button[data-regular-id]:disabled{background:#e2e8ef;color:#34465b;-webkit-text-fill-color:#34465b;border-color:#b5c0ce;opacity:1;cursor:default}
+.regular-schedule .ops-table td:last-child small{margin:2px 0 0;font-size:10px;line-height:1.1}

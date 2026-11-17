@@ -206,7 +206,7 @@ renderSchedule=function(q){
  regularRenderSchedule(q);if(!isOwner()||S.section!=='jadwal')return;
  const panel=document.createElement('section');panel.className='panel regular-schedule';
  const athletes=(S.records.atlet||[]).filter(a=>/^Regular Class/.test(a.kelompok)&&a.status==='Aktif'&&byName(a,qName())).sort(activeFirst);
- panel.innerHTML='<h3>Jadwal Regular</h3><label>Tanggal<input id="regularDate" type="date" value="'+esc(regularOwnerDate||S.config.today)+'"></label><div id="regularRows"></div>';
+ panel.innerHTML='<h3>Jadwal Regular</h3><label>Tanggal<input id="regularDate" type="date" value="'+esc(regularOwnerDate||S.config.today)+'"></label><small class="muted">Geser tabel ke samping atau ke bawah. Tombol aktivasi tetap di kanan.</small><div id="regularRows"></div>';
  $('sectionSummary').prepend(panel);
  const draw=()=>{$('regularRows').innerHTML=grid(['No.','Nama','Seminggu','Aktivasi'],athletes.map((a,i)=>{
  const sessions=(S.records.jadwal||[]).filter(s=>/^Regular Class/.test(s.jenisKelas)&&s.tanggal===$('regularDate').value&&s.statusSesi!=='Libur'&&s.atletIds?.map(String).includes(String(a.id)));
