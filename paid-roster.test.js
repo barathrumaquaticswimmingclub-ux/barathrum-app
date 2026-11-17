@@ -47,16 +47,23 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  // A settled invoice from a previous class cannot imply historical Prestasi membership.
  const moved=await create('atlet',{nama:'Pindah kelas historis',kelompok:'Prestasi Class',status:'Aktif'});
  await pool.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1)",[JSON.stringify({atletId:moved.id,jenisKelas:'Regular Class (1x Seminggu)',status:'Lunas',tanggal:'2026-10-10',tanggalBerakhir:'2026-11-10',totalPertemuan:4,pemakaianAwal:0})]);
- await pool.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES(3,'Prestasi',2,'15:00','17:00','Prestasi Class')");
  await app.locals.maintain();const audit=await app.locals.rosterAudit();assert(!audit.issues.some(i=>i.id===moved.id&&i.reasons.some(r=>r.date==='2026-11-10')));
  // A legacy Juara session without a recurring flag must receive paid late members,
  // preserving its original coach/time instead of blocking the whole team roster.
  const originalTeam=await create('atlet',{nama:'Prestasi lama',kelompok:'Prestasi Class',status:'Aktif'}),lateTeam=await create('atlet',{nama:'Prestasi susulan',kelompok:'Prestasi Class',status:'Aktif'});
+ await pool.query("UPDATE brtm_weekly_slots SET coach_id=3 WHERE place='Prestasi' AND coach_id=4");
  const legacy=await create('jadwal',{nama:'Prestasi sesi lama',tanggal:'2026-11-10',mulai:'15:00',selesai:'16:00',lokasi:'Kolam Renang Pondok Selfie',coachId:'4',jenisKelas:'Prestasi Class',atletIds:[originalTeam.id]});
  for(const a of [originalTeam,lateTeam])await create('pembayaran',{atletId:a.id,jenisKelas:a.kelompok,tanggal:'2026-11-01',status:'Lunas'});
- await pool.query("DELETE FROM brtm_weekly_slots WHERE coach_id=3 AND place='Prestasi'");
+ 
  await pool.query("UPDATE brtm_spp_receipts SET paid_on='2026-11-01' WHERE athlete_id IN ($1,$2)",[originalTeam.id,lateTeam.id]);for(const a of [originalTeam,lateTeam])await require('./spp').reconcile(pool,a.id,{id:1,username:'owner'});
  await app.locals.maintain();const preserved=(await call(owner,'get','/api/jadwal')).find(s=>s.id===legacy.id);assert(preserved.atletIds.includes(lateTeam.id));assert.equal(preserved.coachId,'4');assert.equal(preserved.selesai,'16:00');
  assert(!(await app.locals.rosterAudit()).issues.some(i=>i.id===lateTeam.id));
+ // A legacy session in a different venue keeps its existing members, while the
+ // remaining paid members get their weekly session without duplicate bookings.
+ await pool.query("DELETE FROM data_klub WHERE jenis='jadwal' AND data->>'tanggal'='2026-11-12'");
+ const otherPool=await create('jadwal',{nama:'Prestasi tempat lama',tanggal:'2026-11-12',mulai:'15:00',selesai:'16:00',lokasi:'Hotel Grand Wahid Salatiga',coachId:'4',jenisKelas:'Prestasi Class',atletIds:[originalTeam.id]});
+ await app.locals.maintain();const groups=(await call(owner,'get','/api/jadwal')).filter(j=>j.tanggal==='2026-11-12');
+ const newGroup=groups.find(j=>j.weeklyKey);assert(newGroup);assert(newGroup.atletIds.includes(lateTeam.id));assert(!newGroup.atletIds.includes(originalTeam.id));assert.equal(newGroup.lokasi,'Kolam Renang Pondok Selfie');
+ assert.equal(groups.find(j=>j.id===otherPool.id).lokasi,'Hotel Grand Wahid Salatiga');assert(!(await app.locals.rosterAudit()).issues.some(i=>[lateTeam.id,originalTeam.id].includes(i.id)));
  await db.close();console.log('PASS paid roster: Gabriel late assignment, existing attendance preserved, payment activation, coach isolation, verified duplicate consolidation, alias login/session, quota/cash preservation and inactive canonical protection.');
 })().catch(e=>{console.error(e);process.exit(1);});
