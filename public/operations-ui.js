@@ -8,7 +8,7 @@ renderList=function(){
   $('records').className='ops-records';
   $('records').innerHTML=table(['No.','Nama','Kelas',isOwner()?'Pembayaran':'Absensi terbaru','Status'],list.sort((a,b)=>a.nama.localeCompare(b.nama,'id')).map((a,i)=>{
    const last=(S.records.absensi||[]).filter(r=>String(r.atletId)===a.id).sort((x,y)=>String(y.tanggal).localeCompare(String(x.tanggal))||Number(y.id)-Number(x.id))[0];
-   return `<tr><td>${i+1}</td><td><button data-child="${a.id}">${esc(a.nama)}</button></td><td>${esc(a.kelompok)}</td><td>${isOwner()?badge(a.statusSPP):last?badge(last.status==='Alpa'?'Tidak hadir':last.status)+'<small>'+esc(displayDate(last.tanggal))+'</small>':'Belum diabsen'}</td><td>${badge(a.status)}</td></tr>`;
+   return `<tr><td>${i+1}</td><td><button data-child="${a.id}">${esc(a.nama)}</button></td><td>${esc(a.kelompok)}</td><td>${isOwner()?badge(a.statusSPP==='Tidak Ada SPP Bulan Ini'?'Belum ada tagihan':a.statusSPP)+(a.statusSPPDetail?'<small>'+esc(a.statusSPPDetail)+'</small>':''):last?badge(last.status==='Alpa'?'Tidak hadir':last.status)+'<small>'+esc(displayDate(last.tanggal))+'</small>':'Belum diabsen'}</td><td>${badge(a.status)}</td></tr>`;
   }).join(''));
  }
  if(isOwner()&&['perkembangan','absensi','pembayaran'].includes(k)){

@@ -8,7 +8,7 @@ const B=require('./business'),status=require('./athlete-payment-status'),{initDb
  assert.equal(status.prestasi([p],first,true,false,today).statusSPP,'Belum Lunas');
  assert.equal(status.prestasi([p,{...p,status:'Belum Lunas',totalTagihan:250000}],first,false,false,today).statusSPP,'Belum Lunas');
  assert.equal(status.prestasi([p],first,false,true,today).statusSPP,'Menunggu Persetujuan Owner');
- assert.equal(status.prestasi([{...p,...B.prestasiCycle('2026-09',first),periode:'2026-09'}],first,false,false,today).statusSPP,'Tidak Ada SPP Bulan Ini');
+ const historical=status.prestasi([{...p,...B.prestasiCycle('2026-09',first),periode:'2026-09'}],first,false,false,today);assert.equal(historical.statusSPP,'Lunas');assert.equal(historical.sppPeriodeAktifLunas,false);assert.match(historical.statusSPPDetail,/Terakhir lunas/);
  assert.equal(status.prestasi([p],first,false,false,'2026-12-01').statusSPP,'Lunas');
  assert.equal(status.prestasi([{...p,sppTidakDitagih:true}],first,false,false,today).statusSPP,'Tidak Ada SPP Bulan Ini');
  let day=first;B.today=()=>day;B.time=()=> '23:59:00';
@@ -26,5 +26,25 @@ const B=require('./business'),status=require('./athlete-payment-status'),{initDb
  assert.equal(row.statusSPP,'Lunas');assert.match(row.statusSPPDetail,/November 2026 – Desember 2026/);assert.match(row.statusSPPDetail,/2026-11-28/);
  assert.deepEqual((await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' ORDER BY id")).rows,snapshot,'Status projection must not rewrite payments');
  assert.equal((await pool.query("SELECT id FROM data_klub WHERE jenis='absensi'")).rows.length,0);
+ await call('post','/api/orangtua/siapkan');const parent=supertest.agent(app);
+ let login=await parent.post('/swim/api/login').set('X-BRTM-Request','1').send({username:a.nama,password:'brtm'});assert.equal(login.status,200);
+ const prepaidParent=(await parent.get('/swim/api/dashboard')).body;
+ assert.equal(prepaidParent.pembayaran.status,'Lunas');assert.equal(prepaidParent.pembayaran.statusDetail,row.statusSPPDetail);assert.equal(prepaidParent.latihan.paketLunas,false);
+ day='2027-01-17';const historicalRow=(await call('get','/api/atlet')).find(x=>x.id===a.id),historicalParent=(await parent.get('/swim/api/dashboard')).body;
+ assert.equal(historicalRow.statusSPP,'Lunas');assert.match(historicalRow.statusSPPDetail,/Terakhir lunas/);assert.equal(historicalParent.pembayaran.statusDetail,historicalRow.statusSPPDetail);assert.equal(historicalParent.latihan.paketLunas,false);day=today;
+ const {JSDOM}=require('jsdom'),fs=require('node:fs'),vm=require('node:vm');
+ const dom=new JSDOM(fs.readFileSync('public/index.html','utf8'),{url:'https://brtm.test',runScripts:'outside-only',pretendToBeVisual:true});
+ dom.window.fetch=()=>new Promise(()=>{});dom.window.setInterval=()=>0;
+ const run=code=>vm.runInContext(code,dom.getInternalVMContext());
+ try{
+ for(const file of ['app','intake','prestasi-ui','operations-ui','community-ui','spp-ui','owner-tables','coach-ui'])run(fs.readFileSync('public/'+file+'.js','utf8'));
+ run(`S.user={id:'1',role:'owner'};S.config={today:'2026-11-17',classes:{}};S.section='atlet';S.records={atlet:${JSON.stringify([row])},absensi:[],pembayaran:[]};renderList();`);
+ const table=dom.window.document.getElementById('records').textContent;
+ assert(table.includes('Lunas'));assert(table.includes('Pembayaran di muka'));assert(table.includes('November 2026 – Desember 2026'));assert(!table.includes('Tidak Ada SPP Bulan Ini'));
+ run(`S.records.atlet[0].statusSPP='Tidak Ada SPP Bulan Ini';S.records.atlet[0].statusSPPDetail='Belum ada tagihan dan belum ada pembayaran tercatat untuk periode aktif.';renderList();`);
+ assert(dom.window.document.getElementById('records').textContent.includes('Belum ada tagihan'));
+ run(`S.records.atlet=${JSON.stringify([row])};S.section='pembayaran';renderList();`);
+ const paymentCell=dom.window.document.querySelector('#records tbody tr td:nth-child(4)');assert(paymentCell.textContent.includes('Lunas'));assert(paymentCell.textContent.includes('Pembayaran di muka'));
+ }finally{dom.window.close();}
  await db.close();console.log('PASS athlete SPP status: active paid, prepaid, no attendance, expired payments, real debt, pending corrections, period detail and cash preservation.');
 })().catch(e=>{console.error(e);process.exit(1);});
