@@ -19,6 +19,11 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(parent,'post','/swim/api/regular',{mulai:'10:00'},409);
  const result=await call(parent,'post','/swim/api/regular',{mulai:'15:00'}),sid=result.jadwalId;
  assert.equal((await call(parent,'post','/swim/api/regular',{mulai:'15:00'})).jadwalId,sid);
+ const dashboard=await call(parent,'get','/swim/api/dashboard');
+ const shared=dashboard.jadwal.find(s=>s.id===sid);assert.equal(shared.coaches.length,2);
+ for(const coach of shared.coaches){const profile=await call(parent,'get','/swim/api/coaches/'+coach.id);assert.equal(profile.nama,coach.nama);}
+ const other=(await pool.query("SELECT id FROM brtm_users WHERE username='panji'")).rows[0];
+ await call(parent,'get','/swim/api/coaches/'+other.id,undefined,404);
  for(const coach of [fauzan,ilyas]){const schedules=await call(coach,'get','/api/jadwal');assert(schedules.some(s=>s.id===sid&&s.atletIds.includes(a.id)));assert((await call(coach,'get','/api/atlet')).some(x=>x.id===a.id));}
  assert(!(await call(panji,'get','/api/jadwal')).some(s=>s.id===sid));
  assert.equal((await call(owner,'get','/api/pembayaran')).find(x=>x.id===p.id).sisaPertemuan,4);

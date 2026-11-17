@@ -200,4 +200,17 @@ const workflowLogin=showLogin;showLogin=function(){wfDialog.close();S.workspace=
 if(S.user&&S.config&&!S.user.mustChangePassword){renderNav();load().catch(e=>notice(e.message,true));}
 
 const regularRenderSchedule=renderSchedule;
-renderSchedule=function(q){regularRenderSchedule(q);if(!isOwner()||S.section!=='jadwal')return;const panel=document.createElement('section');panel.className='panel';panel.innerHTML='<h3>Regular fleksibel</h3><p>Bantu aktifkan atau koreksi sesi anak. Orang tua juga dapat memilih sendiri melalui tombol Hadir hari ini.</p><label>Nama anak<select id="regularAthlete">'+(S.records.atlet||[]).filter(a=>/^Regular Class/.test(a.kelompok)&&a.status==='Aktif'&&byName(a,qName())).map(a=>'<option value="'+esc(a.id)+'">'+esc(a.nama)+' · '+esc(a.kelompok)+'</option>').join('')+'</select></label><label>Tanggal<input id="regularDate" type="date" value="'+S.config.today+'"></label><button id="regularHelp">Pilih / koreksi sesi</button>';$('sectionSummary').prepend(panel);$('regularHelp').onclick=async()=>{try{const aid=$('regularAthlete').value,tanggal=$('regularDate').value;if(!aid)throw Error('Pilih anak Regular');const r=await request('/api/owner/regular/'+aid+'/options?date='+encodeURIComponent(tanggal));modal('Aktivasi Regular',field('mulai','Sesi latihan',r.slots.filter(s=>s.tersedia||tanggal<S.config.today).map(s=>s.mulai),r.slots.find(s=>s.terdaftar)?.mulai||'')+field('tindakan','Tindakan',['Aktifkan / pindahkan','Batalkan aktivasi'],'Aktifkan / pindahkan')+'<p class="full">Pondok Selfie · Coach Fauzan & Coach Ilyas. Aktivasi bukan absensi; pelatih tetap mencatat kehadiran.</p>',d=>request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal,mulai:d.mulai,batal:d.tindakan==='Batalkan aktivasi'})}));}catch(e){notice(e.message,true);}};};
+renderSchedule=function(q){
+ regularRenderSchedule(q);if(!isOwner()||S.section!=='jadwal')return;
+ const panel=document.createElement('section');panel.className='panel';
+ const athletes=(S.records.atlet||[]).filter(a=>/^Regular Class/.test(a.kelompok)&&a.status==='Aktif'&&byName(a,qName())).sort(activeFirst);
+ panel.innerHTML='<h3>Jadwal Regular</h3><label>Tanggal<input id="regularDate" type="date" value="'+esc(S.config.today)+'"></label><div id="regularRows"></div>';
+ $('sectionSummary').prepend(panel);
+ const draw=()=>{$('regularRows').innerHTML=grid(['Nomor','Nama','Frekuensi','Tindakan'],athletes.map((a,i)=>{const active=(S.records.jadwal||[]).some(s=>/^Regular Class/.test(s.jenisKelas)&&s.tanggal===$('regularDate').value&&s.statusSesi!=='Libur'&&s.atletIds?.map(String).includes(String(a.id)));return [i+1,esc(a.nama),/2x/i.test(a.kelompok)?'Seminggu 2x':'Seminggu 1x','<button type="button" data-regular-id="'+esc(a.id)+'" data-cancel="'+active+'" class="'+(active?'secondary':'primary')+'">'+(active?'Nonaktifkan':'Aktifkan')+'</button>'];}));};
+ $('regularDate').onchange=draw;draw();
+ panel.onclick=async e=>{const b=e.target.closest('[data-regular-id]');if(!b)return;const aid=b.dataset.regularId,tanggal=$('regularDate').value;try{
+ if(b.dataset.cancel==='true'){b.disabled=true;await request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal,batal:true})});await load();notice('Aktivasi sesi dibatalkan');return;}
+ const r=await request('/api/owner/regular/'+aid+'/options?date='+encodeURIComponent(tanggal));
+ modal('Aktifkan Jadwal Regular',field('mulai','Sesi latihan',r.slots.filter(s=>s.tersedia).map(s=>s.mulai),r.slots.find(s=>s.terdaftar)?.mulai||''),d=>request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal,mulai:d.mulai})}));
+ }catch(err){notice(err.message,true);}finally{b.disabled=false;}};
+};
