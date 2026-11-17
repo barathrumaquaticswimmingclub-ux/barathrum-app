@@ -20,7 +20,7 @@ async function inspect(db,{rows,payments}){
     const own=schedules.find(j=>j.tanggal===date&&j.weeklyKey==='weekly:'+s.id)||schedules.find(j=>j.tanggal===date&&String(j.coachId)===String(s.coach_id)&&B.canonical(j.jenisKelas)===B.canonical(s.class_name)&&j.mulai===s.start_time&&j.selesai===s.end_time&&j.atletIds?.map(String).includes(a.id))||schedules.find(j=>n<0&&!j.weeklyKey&&j.tanggal===date&&B.canonical(j.jenisKelas)==='Prestasi Class'&&B.canonical(s.class_name)==='Prestasi Class'&&j.atletIds?.map(String).includes(a.id));
     if(own?.statusSesi==='Libur')continue;
     if(a.status==='Aktif'&&B.canonical(s.class_name)===B.canonical(a.kelompok)&&(!own||!own.atletIds?.map(String).includes(a.id))){
-     const blocking=schedules.filter(j=>j.tanggal===date&&j.mulai<s.end_time&&j.selesai>s.start_time&&(String(j.coachId)===String(s.coach_id)||j.atletIds?.map(String).includes(a.id))).map(j=>({id:j.id,status:j.statusSesi,coachId:j.coachId,className:j.jenisKelas,start:j.mulai,end:j.selesai,athleteIds:j.atletIds,weeklyKey:j.weeklyKey,manualReplacement:!!j.jadwalSebelumnya}));
+     const blocking=schedules.filter(j=>j.tanggal===date&&j.mulai<s.end_time&&j.selesai>s.start_time&&(String(j.coachId)===String(s.coach_id)||j.atletIds?.map(String).includes(a.id))).map(j=>({id:j.id,status:j.statusSesi,coachId:j.coachId,className:j.jenisKelas,location:j.lokasi,routine:j.sesiRutin,start:j.mulai,end:j.selesai,athleteIds:j.atletIds,weeklyKey:j.weeklyKey,manualReplacement:!!j.jadwalSebelumnya}));
      reasons.push({code:'MISSING_SESSION_MEMBER',slot:s.id,date,blocking});
     }
    }
