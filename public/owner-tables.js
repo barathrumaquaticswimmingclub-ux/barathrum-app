@@ -119,7 +119,7 @@ function renderSchedule(q){const slots=S.workspace?.slots||[],staff=S.workspace?
  $('sectionSummary').innerHTML='<p class="muted">Pilih tempat, tambahkan pelatih, lalu tekan jam untuk memasukkan atlet aktif. Pengaturan ini khusus Owner.</p>';
  $('records').innerHTML=['Hotel Grand Wahid','Kolam Renang Pondok Selfie','Prestasi'].map(place=>{if(place==='Prestasi')return '<section class="panel"><h3>Prestasi Class • Coach Adhi</h3>'+grid(['Hari','Jam','Tempat','Peserta','Tindakan'],slots.filter(s=>s.place==='Prestasi').map(s=>[days[s.weekday],s.start_time+'–'+s.end_time,s.start_time<'12:00'?'Kolam Renang Kalitaman':'Kolam Renang Pondok Selfie','Semua atlet Prestasi aktif',btn('schedule-slot',s.id,'Edit')]))+'</section>';const selected=slots.filter(s=>s.place===place),coaches=[...new Set(selected.map(s=>s.coach_id))];return `<section class="panel"><div class="panel-head"><h3>${place}</h3>${btn('schedule-coach',place,'＋ Tambah pelatih')}</div>`+coaches.map(id=>{const u=staff.find(u=>Number(u.id)===id);return `<details class="coach-schedule" data-view-key="${esc(place+':'+id)}"><summary>${esc(u?.nama||'Pelatih')}</summary>`+grid(['Hari','Jam','Kelas','Atlet','Tindakan'],selected.filter(s=>s.coach_id===id).map(s=>{const names=s.athlete_ids.map(id=>(S.records.atlet||[]).find(a=>a.id===String(id))).filter(Boolean).map(a=>a.nama+(a.namaPanggilan?' ('+a.namaPanggilan+')':'')).join(', ');return [days[s.weekday],s.start_time+'–'+s.end_time,esc(s.class_name||'Kosong'),esc(names||'Belum diisi'),btn('schedule-slot',s.id,'Edit')];}))+ '</details>';}).join('')+'</section>';}).join('');
  const schedules=(S.records.jadwal||[]).filter(s=>inPeriod(s.tanggal,schedulePeriod)&&(s.atletIds||[]).some(id=>{const a=(S.records.atlet||[]).find(a=>a.id===String(id));return a?.status==='Aktif'&&byName(a,q);})).sort((a,b)=>(a.tanggal+a.mulai).localeCompare(b.tanggal+b.mulai));
- $('records').innerHTML+='<h3>Ringkasan jadwal latihan</h3>'+periodControl('schedulePeriod',schedulePeriod)+'<p>'+esc(displayDate(periodBounds(schedulePeriod)[0]))+' – '+esc(displayDate(periodBounds(schedulePeriod)[1]))+' · '+schedules.length+' sesi · WIB · Minggu dimulai Senin</p>'+grid(['Tanggal','Jam','Tempat','Pelatih','Kelas / atlet','Status sesi','Tindakan'],schedules.map(s=>[esc(displayDate(s.tanggal)),esc(s.jam),esc(s.lokasi),esc(s.pelatih),esc(s.jenisKelas)+'<small>'+esc(s.atletIds.map(id=>(S.records.atlet||[]).find(a=>a.id===String(id))?.nama||'').join(', '))+'</small>',badge(s.statusSesi==='Libur'?'Libur':'Terjadwal')+(s.alasanLibur?'<small>'+esc(s.alasanLibur)+'</small>':''),`<button data-edit="${s.id}">Edit sesi</button>`]));
+ $('records').innerHTML+='<h3>Ringkasan jadwal latihan</h3>'+periodControl('schedulePeriod',schedulePeriod)+'<p>'+esc(displayDate(periodBounds(schedulePeriod)[0]))+' – '+esc(displayDate(periodBounds(schedulePeriod)[1]))+' · '+schedules.length+' sesi · WIB · Minggu dimulai Senin</p>'+grid(['Tanggal','Jam','Tempat','Pelatih','Kelas / atlet','Status sesi','Tindakan'],schedules.map(s=>[esc(displayDate(s.tanggal)),esc(s.jam),esc(s.lokasi),esc(s.pelatih),esc(s.jenisKelas)+'<small>'+'<span '+(s.regularFlex?'data-regular-names="'+esc(s.id)+'"':'')+'>'+esc(regularScheduleNames(s))+'</span></small>',(s.regularFlex?'<span data-regular-status="'+esc(s.id)+'">':'')+badge(s.statusSesi==='Libur'?'Libur':s.regularFlex&&s.atletIds.length&&s.atletIds.every(id=>(S.records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===String(id)))?'Nonaktif · selesai':'Terjadwal')+(s.regularFlex?'</span>':'')+(s.alasanLibur?'<small>'+esc(s.alasanLibur)+'</small>':''),`<button data-edit="${s.id}">Edit sesi</button>`]));
  $('schedulePeriod').onchange=e=>{schedulePeriod=e.target.value;renderList();};
 }
 
@@ -199,18 +199,31 @@ const workflowLogin=showLogin;showLogin=function(){wfDialog.close();S.workspace=
 // Auth may resolve while this deferred module is still downloading.
 if(S.user&&S.config&&!S.user.mustChangePassword){renderNav();load().catch(e=>notice(e.message,true));}
 
+function regularScheduleNames(s,records=S.records){return (s.atletIds||[]).map(id=>{const a=(records.atlet||[]).find(a=>a.id===String(id));const name=a?a.nama+(a.namaPanggilan?' ('+a.namaPanggilan+')':''):'Atlet #'+id;if(!s.regularFlex)return name;const done=(records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===String(id));return name+' · '+(done?'Nonaktif · sudah diabsen':s.statusSesi==='Libur'?'Libur':'Aktif');}).join(', ');}
+let regularOwnerDate='';
 const regularRenderSchedule=renderSchedule;
 renderSchedule=function(q){
  regularRenderSchedule(q);if(!isOwner()||S.section!=='jadwal')return;
- const panel=document.createElement('section');panel.className='panel';
+ const panel=document.createElement('section');panel.className='panel regular-schedule';
  const athletes=(S.records.atlet||[]).filter(a=>/^Regular Class/.test(a.kelompok)&&a.status==='Aktif'&&byName(a,qName())).sort(activeFirst);
- panel.innerHTML='<h3>Jadwal Regular</h3><label>Tanggal<input id="regularDate" type="date" value="'+esc(S.config.today)+'"></label><div id="regularRows"></div>';
+ panel.innerHTML='<h3>Jadwal Regular</h3><label>Tanggal<input id="regularDate" type="date" value="'+esc(regularOwnerDate||S.config.today)+'"></label><div id="regularRows"></div>';
  $('sectionSummary').prepend(panel);
- const draw=()=>{$('regularRows').innerHTML=grid(['Nomor','Nama','Frekuensi','Tindakan'],athletes.map((a,i)=>{const active=(S.records.jadwal||[]).some(s=>/^Regular Class/.test(s.jenisKelas)&&s.tanggal===$('regularDate').value&&s.statusSesi!=='Libur'&&s.atletIds?.map(String).includes(String(a.id)));return [i+1,esc(a.nama),/2x/i.test(a.kelompok)?'Seminggu 2x':'Seminggu 1x','<button type="button" data-regular-id="'+esc(a.id)+'" data-cancel="'+active+'" class="'+(active?'secondary':'primary')+'">'+(active?'Nonaktifkan':'Aktifkan')+'</button>'];}));};
- $('regularDate').onchange=draw;draw();
+ const draw=()=>{$('regularRows').innerHTML=grid(['No.','Nama','Seminggu','Aktivasi'],athletes.map((a,i)=>{
+ const sessions=(S.records.jadwal||[]).filter(s=>/^Regular Class/.test(s.jenisKelas)&&s.tanggal===$('regularDate').value&&s.statusSesi!=='Libur'&&s.atletIds?.map(String).includes(String(a.id)));
+ const done=sessions.some(s=>(S.records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===String(a.id)));
+ const active=!done&&sessions.length>0;
+ return [i+1,esc(a.nama)+(a.namaPanggilan?'<small>('+esc(a.namaPanggilan)+')</small>':''),/2x/i.test(a.kelompok)?'2x':'1x','<button type="button" data-regular-id="'+esc(a.id)+'" data-cancel="'+active+'" class="'+(active?'secondary':'primary')+'" '+(done?'disabled':'')+'>'+(done?'Nonaktif':active?'Nonaktifkan':'Aktifkan')+'</button><small>'+(done?'Sudah diabsen':active?'Aktif':'Belum aktif')+'</small>'];}));};
+ $('regularDate').onchange=()=>{regularOwnerDate=$('regularDate').value;draw();};draw();
  panel.onclick=async e=>{const b=e.target.closest('[data-regular-id]');if(!b)return;const aid=b.dataset.regularId,tanggal=$('regularDate').value;try{
  if(b.dataset.cancel==='true'){b.disabled=true;await request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal,batal:true})});await load();notice('Aktivasi sesi dibatalkan');return;}
- const r=await request('/api/owner/regular/'+aid+'/options?date='+encodeURIComponent(tanggal));
- modal('Aktifkan Jadwal Regular',field('mulai','Sesi latihan',r.slots.filter(s=>s.tersedia).map(s=>s.mulai),r.slots.find(s=>s.terdaftar)?.mulai||''),d=>request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal,mulai:d.mulai})}));
+ b.disabled=true;const r=await request('/api/owner/regular/'+aid,{method:'POST',body:JSON.stringify({tanggal})});await load();notice(r.pesan);
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}};
 };
+
+function refreshRegularActivation(snapshot){
+ if(S.section!=='jadwal')return;
+ const records=snapshot.records||{},date=$('regularDate')?.value||snapshot.config.today;
+ document.querySelectorAll('[data-regular-id]').forEach(b=>{const aid=b.dataset.regularId,sessions=(records.jadwal||[]).filter(s=>/^Regular Class/.test(s.jenisKelas)&&s.tanggal===date&&s.statusSesi!=='Libur'&&s.atletIds?.map(String).includes(aid)),done=sessions.some(s=>(records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===aid)),active=!done&&sessions.length>0;b.dataset.cancel=String(active);b.disabled=done;b.textContent=done?'Nonaktif':active?'Nonaktifkan':'Aktifkan';b.className=active?'secondary':'primary';if(b.nextElementSibling)b.nextElementSibling.textContent=done?'Sudah diabsen':active?'Aktif':'Belum aktif';});
+ document.querySelectorAll('[data-regular-status]').forEach(el=>{const s=(records.jadwal||[]).find(s=>s.id===el.dataset.regularStatus);if(!s)return;const done=s.atletIds?.length&&s.atletIds.every(id=>(records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===String(id)));el.textContent=s.statusSesi==='Libur'?'Libur':done?'Nonaktif · selesai':'Terjadwal';});
+ document.querySelectorAll('[data-regular-names]').forEach(el=>{const s=(records.jadwal||[]).find(s=>s.id===el.dataset.regularNames);if(s)el.textContent=regularScheduleNames(s,records);});
+}

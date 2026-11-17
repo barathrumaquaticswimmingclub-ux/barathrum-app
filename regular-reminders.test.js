@@ -17,7 +17,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(owner,'post','/api/orangtua/siapkan');await call(parent,'post','/swim/api/login',{username:a.nama,password:'brtm'});
  await call(anon,'post','/swim/api/regular',{mulai:'15:00'},401);
  await call(parent,'post','/swim/api/regular',{mulai:'10:00'},409);
- const result=await call(parent,'post','/swim/api/regular',{mulai:'15:00'}),sid=result.jadwalId;
+ const result=await call(parent,'post','/swim/api/regular',{}),sid=result.jadwalId;
  assert.equal((await call(parent,'post','/swim/api/regular',{mulai:'15:00'})).jadwalId,sid);
  const dashboard=await call(parent,'get','/swim/api/dashboard');
  const shared=dashboard.jadwal.find(s=>s.id===sid);assert.equal(shared.coaches.length,2);
@@ -36,6 +36,9 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  clock='15:00:00';await call(ilyas,'post','/api/session-entry',{jadwalId:session.id,atletId:a.id,tanggal:day,status:'Hadir',noted:'Sudah berlatih baik.'});
  assert.equal((await call(fauzan,'get','/api/absensi')).filter(r=>r.atletId===a.id).length,1);
  assert.equal((await call(owner,'get','/api/pembayaran')).find(x=>x.id===p.id).sisaPertemuan,3);
+ const doneOptions=await call(parent,'get','/swim/api/regular/options');assert.equal(doneOptions.selesaiDiabsen,true);assert(doneOptions.slots.every(s=>!s.terdaftar&&!s.tersedia));
+ await call(parent,'post','/swim/api/regular',{},409);
+ await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day},409);
  await call(parent,'post','/swim/api/regular',{batal:true},409);
  await call(parent,'post','/api/owner/billing/'+unpaid.id+'/remind',{channel:'app'},401);
  await call(owner,'post','/api/owner/billing/'+p.id+'/remind',{channel:'app'},409);
@@ -43,6 +46,16 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  const notes=(await pool.query("SELECT * FROM brtm_billing_notices WHERE event_key LIKE 'manual-reminder:%'")).rows;assert.equal(notes.length,1);
  const wa=await call(owner,'post','/api/owner/billing/'+unpaid.id+'/remind',{channel:'wa'});assert.equal(wa.phone,'6281133334444');assert(wa.message.includes('Ayah/Bunda'));assert(wa.document.endsWith('/'+unpaid.id));
  const pdf=await owner.get(wa.document);assert.equal(pdf.status,200);assert.match(pdf.headers['content-type'],/application\/pdf/);
- day='2026-11-18';clock='14:00:00';await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day,mulai:'15:00'});await app.locals.maintain();assert((await call(ilyas,'get','/api/jadwal')).some(s=>s.tanggal===day&&s.regularFlex&&s.atletIds.includes(a.id)));
+ day='2026-11-18';clock='14:00:00';await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day});await app.locals.maintain();assert((await call(ilyas,'get','/api/jadwal')).some(s=>s.tanggal===day&&s.regularFlex&&s.atletIds.includes(a.id)));
+ const nextOptions=await call(parent,'get','/swim/api/regular/options');assert.equal(nextOptions.selesaiDiabsen,false);assert(nextOptions.slots.some(s=>s.terdaftar));
+ const fs=require('node:fs'),{JSDOM}=require('jsdom');
+ const dom=new JSDOM('<div id="sectionSummary"></div><input id="search">',{runScripts:'outside-only'}),w=dom.window;
+ w.eval(`var S={section:'jadwal',config:{today:'2026-11-17'},records:{atlet:[{id:'1',nama:'Sean Lengkap',namaPanggilan:'Sean',kelompok:'Regular Class (1x Seminggu)',status:'Aktif'}],jadwal:[],absensi:[]}};var $=id=>document.getElementById(id),isOwner=()=>true,qName=()=>'',byName=()=>true,activeFirst=()=>0,esc=v=>String(v??'');var grid=(hs,rs)=>'<table><thead><tr>'+hs.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rs.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';var renderSchedule=()=>{$('sectionSummary').innerHTML='';};var calls=[];var request=async(u,o)=>{calls.push({u,body:JSON.parse(o.body)});return {pesan:'OK'};},load=async()=>{},notice=()=>{};`);
+ w.eval(fs.readFileSync('public/owner-tables.js','utf8').slice(fs.readFileSync('public/owner-tables.js','utf8').indexOf('function regularScheduleNames')));
+ w.eval('renderSchedule()');assert(w.document.querySelector('#regularRows').textContent.includes('Sean Lengkap(Sean)'));assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Aktifkan');
+ w.document.querySelector('[data-regular-id]').click();await new Promise(r=>setTimeout(r,0));assert.equal(w.eval('calls.length'),1);assert.equal(w.eval('calls[0].body.tanggal'),'2026-11-17');
+ w.eval(`S.records.jadwal=[{id:'s',regularFlex:true,jenisKelas:'Regular Class (1x Seminggu)',tanggal:'2026-11-17',atletIds:['1']}];renderSchedule()`);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Nonaktifkan');
+ const sameButton=w.document.querySelector('[data-regular-id]');w.eval(`S.records.absensi=[{jadwalId:'s',atletId:'1',status:'Hadir'}];refreshRegularActivation({records:S.records,config:S.config})`);assert.equal(w.document.querySelector('[data-regular-id]'),sameButton);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Nonaktif');assert(w.document.querySelector('[data-regular-id]').disabled);assert(w.eval('regularScheduleNames(S.records.jadwal[0])').includes('Sean Lengkap (Sean) · Nonaktif'));
+ w.eval(`S.config.today='2026-11-18';renderSchedule()`);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Aktifkan');dom.window.close();
  await db.close();console.log('PASS Regular flexible activation, reschedule/cancel, shared coach access, quota, time gates, owner help, unpaid protection, invoice reminders and PDF.');
 })().catch(e=>{console.error(e);process.exit(1);});

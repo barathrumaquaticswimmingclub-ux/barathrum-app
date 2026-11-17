@@ -78,6 +78,7 @@ async function load(options = {}) {
     const snapshot={...dataSnapshot(),config,records:Object.fromEntries(results),...Object.fromEntries(extras)};
     // Timers never replace a live page, even if the user started scrolling or opened a form during the request.
     if(options.background){
+      if(typeof refreshRegularActivation==='function')refreshRegularActivation(snapshot);
       const changed=JSON.stringify(snapshot)!==JSON.stringify(dataSnapshot());
       S.pendingSnapshot=changed?snapshot:null;setDataAvailable(changed);return;
     }

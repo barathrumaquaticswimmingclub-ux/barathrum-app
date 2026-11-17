@@ -10,14 +10,15 @@ async function options(db,h,aid,date){
  if(coaches.length!==2)throw fail(409,'Pelatih Regular Pondok Selfie belum tersedia');
  const day=new Date(date+'T12:00:00Z').getUTCDay();
  const hours=day===0?[]:day===6?[8,9,15,16]:[15,16];
- const schedules=await h.rows(db,'jadwal');
+ const schedules=await h.rows(db,'jadwal'),attendance=await h.rows(db,'absensi');
+ const completed=schedules.some(s=>s.tanggal===date&&s.atletIds?.map(String).includes(String(aid))&&attendance.some(r=>r.jadwalId===s.id&&String(r.atletId)===String(aid)));
  const slots=hours.map(hour=>{const mulai=String(hour).padStart(2,'0')+':00',selesai=String(hour+1).padStart(2,'0')+':00';
  const overlapping=schedules.filter(s=>s.tanggal===date&&s.mulai<selesai&&s.selesai>mulai);
  const busy=overlapping.some(s=>s.statusSesi!=='Libur'&&!isRegular(s)&&s.atletIds?.length&&coaches.some(c=>assigned(s,c.id)));
  const blocked=busy||overlapping.some(s=>s.statusSesi==='Libur'&&(s.lokasi||'').includes('Pondok Selfie')&&(isRegular(s)||coaches.some(c=>assigned(s,c.id))));
  const ids=new Set(overlapping.filter(s=>s.regularFlex&&s.statusSesi!=='Libur').flatMap(s=>s.atletIds||[]).map(String));
- return {mulai,selesai,tersedia:!blocked&&(date<B.today()||date>B.today()||date===B.today()&&B.time()<selesai+':00')&&(ids.has(String(aid))||ids.size<coaches.length*16),terdaftar:overlapping.some(s=>s.regularFlex&&s.atletIds?.map(String).includes(String(aid))),pelatih:coaches.map(c=>c.nama).join(' & ')};});
- return {tanggal:date,slots};
+ return {mulai,selesai,selesaiDiabsen:completed,tersedia:!completed&&!blocked&&(date<B.today()||date>B.today()||date===B.today()&&B.time()<selesai+':00')&&(ids.has(String(aid))||ids.size<coaches.length*16),terdaftar:!completed&&overlapping.some(s=>s.regularFlex&&s.atletIds?.map(String).includes(String(aid))),pelatih:coaches.map(c=>c.nama).join(' & ')};});
+ return {tanggal:date,selesaiDiabsen:completed,slots};
 }
 async function book(db,h,user,aid,date,start,cancel=false){
  await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
@@ -28,6 +29,7 @@ async function book(db,h,user,aid,date,start,cancel=false){
  if(allOwn.some(s=>!isRegular(s)&&s.statusSesi!=='Libur'))throw fail(409,'Anak sudah memiliki sesi kelas lain pada tanggal ini. Hubungi Owner untuk koreksi.');
  const own=allOwn.filter(isRegular);
  if(own.some(s=>attendance.some(r=>r.jadwalId===s.id&&String(r.atletId)===String(aid))))throw fail(409,'Absensi sudah diisi. Koreksi absensi dahulu sebelum mengubah sesi.');
+ if(!cancel&&!start){const opt=await options(db,h,aid,date);start=opt.slots.find(s=>s.terdaftar&&s.tersedia)?.mulai||opt.slots.find(s=>s.tersedia)?.mulai;if(!start)throw fail(409,'Tidak ada sesi Regular yang tersedia pada tanggal ini.');}
  const previous=own.find(s=>s.regularFlex&&s.mulai===start);
  if(previous&&previous.statusSesi!=='Libur'&&!cancel)return {pesan:'Sesi sudah diaktifkan',jadwalId:previous.id};
  if(!cancel){

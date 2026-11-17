@@ -25,11 +25,11 @@ function portalEvaluations(d){return '<section class="panel evaluation"><h2>Eval
 
 
 const regularPortalDashboard=portalDashboard;
-portalDashboard=function(d){return (/^Regular Class/.test(d.profil.kelompok)?'<section class="panel regular-today"><h2>Latihan hari ini</h2><button id="regularToday" class="primary" style="width:100%;min-height:56px;font-size:1.1rem" aria-controls="regularTodaySlots">Hadir Hari Ini</button><p>Pilih sesi latihan Pondok Selfie hari ini. Kuota berkurang setelah pelatih mencatat hadir.</p><div id="regularTodaySlots" aria-live="polite"></div></section>':'')+regularPortalDashboard(d);};
+portalDashboard=function(d){const todaySessions=(d.jadwal||[]).filter(s=>s.tanggal===d.today&&s.statusSesi!=='Libur'),done=todaySessions.some(s=>s.absensi),active=!done&&todaySessions.length>0;return (/^Regular Class/.test(d.profil.kelompok)?'<section class="panel regular-today"><h2>Latihan hari ini</h2><button id="regularToday" '+(done||active?'disabled':'')+' class="primary" style="width:100%;min-height:56px;font-size:1.1rem" aria-controls="regularTodaySlots">' +(done?'Nonaktif · sudah diabsen':active?'Aktif · menunggu absensi':'Hadir Hari Ini')+'</button><p>Aktivasi berlaku untuk satu sesi hari ini. Kuota berkurang setelah pelatih mencatat hadir.</p>'+(active?'<button id="regularCancel" class="secondary">Batalkan aktivasi hari ini</button>':'')+'<div id="regularTodaySlots" aria-live="polite"></div></section>':'')+regularPortalDashboard(d);};
 $('content').addEventListener('click',async e=>{
  const open=e.target.closest('#regularToday'),book=e.target.closest('[data-regular-start]'),cancel=e.target.closest('#regularCancel');if(!open&&!book&&!cancel)return;
  const b=open||book||cancel;b.disabled=true;try{
- if(open){const r=await request('regular/options');$('regularTodaySlots').innerHTML='<p>'+esc(date(r.tanggal))+' · Pondok Selfie</p>'+r.slots.map(s=>'<p><button data-regular-start="'+esc(s.mulai)+'" '+(!s.tersedia?'disabled':'')+'>'+esc(s.mulai+'–'+s.selesai)+(s.terdaftar?' · Sudah aktif':!s.tersedia?' · Selesai / penuh / libur':'')+'</button></p>').join('')+(r.slots.some(s=>s.terdaftar)?'<button id="regularCancel">Batalkan aktivasi hari ini</button>':'')+(r.slots.length?'':'<p>Tidak ada sesi Regular hari ini.</p>');}
+ if(open){const r=await request('regular',{});await refresh();$('statusMessage').textContent=r.pesan;}
  else{const r=await request('regular',{mulai:book?.dataset.regularStart,batal:!!cancel});await refresh();$('statusMessage').textContent=r.pesan;}
  }catch(err){$('statusMessage').textContent=err.message;}finally{b.disabled=false;}
 });
