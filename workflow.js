@@ -60,7 +60,7 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
    // Owner-authorized late-entry repair: a paid package and a weekly assignment
    // jointly support roster membership, never attendance, within the last 7 days.
    const sourceIds=s.place==='Prestasi'?athletes.filter(a=>a.status==='Aktif'&&B.canonical(a.kelompok)==='Prestasi Class').map(a=>String(a.id)):(s.athlete_ids||[]).map(String);
-   const paidIds=sourceIds.filter(id=>paidPacks.some(p=>String(p.atletId)===id&&B.canonical(p.jenisKelas)===B.canonical(s.class_name)&&p.tanggal<=tanggal&&(p.pengecualian?.berlakuSampai||p.tanggalBerakhir||B.addMonth(p.tanggal))>=tanggal));
+   const paidIds=sourceIds.filter(id=>paidPacks.some(p=>String(p.atletId)===id&&B.canonical(p.jenisKelas)===B.canonical(s.class_name)&&require('./roster-eligibility').paidCovers(p,tanggal)));
    if(s.place==='Prestasi'){const session=schedules.find(j=>j.weeklyKey==='weekly:'+s.id&&j.tanggal===tanggal);return session||paidIds.length?[{...s,athlete_ids:[...new Set([...(session?.atletIds||[]).map(String),...paidIds])],historicalPrestasi:true}]:[];}
    if(!historical)return paidIds.length?[{...s,athlete_ids:paidIds}]:[];
    const same=['coach_id','place','weekday','start_time','end_time','class_name'].every(k=>String(historical[k])===String(s[k]));

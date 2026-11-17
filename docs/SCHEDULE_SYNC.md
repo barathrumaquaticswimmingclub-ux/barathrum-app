@@ -22,3 +22,5 @@ Duplikat tanpa transaksi, penugasan, catatan latihan, feedback atau roster progr
 Formulir berikutnya menahan calon duplikat yang hampir cocok untuk pencocokan Owner alih-alih membuat atlet baru atau mengubah identitas lama secara otomatis. Ejaan alias yang sudah disahkan dapat dikenali pada pengiriman berikutnya.
 
 Pemeriksaan startup membaca semua atlet, pembayaran dan jadwal melalui jalur server yang sama dengan akun pelatih. Ringkasan dan kendala tersedia di log privat; nomor kontak, tanggal lahir, foto, kredensial dan nominal pembayaran tidak dicetak. `paid-roster.test.js` menguji skenario Gabriel, penggabungan yang terverifikasi, login alias, isolasi akses, serta tidak berubahnya kuota dan transaksi.
+
+Batas periode Prestasi memakai `periodeMulai` sampai sebelum `periodeSelesai`, bukan tanggal awal tagihan kalender. Inspeksi dan pemulihan roster menggunakan fungsi kelayakan tanggal yang sama pada data pembayaran asli. Sesi Prestasi manual yang sudah berisi atlet dipertahankan sebagai riwayat sah; tidak dianggap hilang hanya karena tidak mempunyai kunci jadwal mingguan.

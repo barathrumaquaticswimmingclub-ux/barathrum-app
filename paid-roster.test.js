@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),supertest=require('supertest');
 const B=require('./business'),{initDb,createApp,passwordHash}=require('./server');
 (async()=>{
+ const covers=require('./roster-eligibility').paidCovers;const cycle={status:'Lunas',jenisKelas:'Prestasi Class',tanggal:'2026-11-01',periodeMulai:'2026-11-16',periodeSelesai:'2026-12-16'};assert(!covers(cycle,'2026-11-10'));assert(covers(cycle,'2026-11-16'));assert(!covers(cycle,'2026-12-16'));
  let day='2026-11-16';B.today=()=>day;B.time=()=> '17:00:00';
  const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
  await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
