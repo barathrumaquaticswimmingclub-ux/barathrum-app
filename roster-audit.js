@@ -16,7 +16,7 @@ async function inspect(db,{rows,payments}){
    if(!users.some(u=>String(u.id)===String(s.coach_id)&&u.active))reasons.push('INACTIVE_COACH:'+s.id);
    if(B.canonical(s.class_name)!==B.canonical(a.kelompok))reasons.push('CLASS_MISMATCH:'+s.id);
    for(let n=-7;n<7;n++){
-    const date=B.addDays(today,n);if(n<0&&!rawPacks.some(p=>String(p.atletId)===a.id&&require('./roster-eligibility').paidCovers(p,date)))continue;if(new Date(date+'T12:00:00Z').getUTCDay()!==Number(s.weekday))continue;
+    const date=B.addDays(today,n);if(n<0&&!rawPacks.some(p=>String(p.atletId)===a.id&&B.canonical(p.jenisKelas)===B.canonical(s.class_name)&&require('./roster-eligibility').paidCovers(p,date)))continue;if(new Date(date+'T12:00:00Z').getUTCDay()!==Number(s.weekday))continue;
     const own=schedules.find(j=>j.tanggal===date&&j.weeklyKey==='weekly:'+s.id)||schedules.find(j=>j.tanggal===date&&String(j.coachId)===String(s.coach_id)&&B.canonical(j.jenisKelas)===B.canonical(s.class_name)&&j.mulai===s.start_time&&j.selesai===s.end_time&&j.atletIds?.map(String).includes(a.id))||schedules.find(j=>n<0&&!j.weeklyKey&&j.tanggal===date&&B.canonical(j.jenisKelas)==='Prestasi Class'&&B.canonical(s.class_name)==='Prestasi Class'&&j.atletIds?.map(String).includes(a.id));
     if(own?.statusSesi==='Libur')continue;
     if(a.status==='Aktif'&&B.canonical(s.class_name)===B.canonical(a.kelompok)&&(!own||!own.atletIds?.map(String).includes(a.id))){

@@ -44,5 +44,10 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await pool.query('UPDATE brtm_parents SET active=FALSE WHERE athlete_id=$1',[lula.id]);await call(aliasParent,'get','/swim/api/dashboard',undefined,401);
  await pool.query('UPDATE brtm_parents SET active=TRUE WHERE athlete_id=$1',[lula.id]);
  await call(owner,'put','/api/owner/athlete/'+lula.id+'/status',{status:'Nonaktif'});await call(aliasParent,'get','/swim/api/dashboard',undefined,401);
+ // A settled invoice from a previous class cannot imply historical Prestasi membership.
+ const moved=await create('atlet',{nama:'Pindah kelas historis',kelompok:'Prestasi Class',status:'Aktif'});
+ await pool.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1)",[JSON.stringify({atletId:moved.id,jenisKelas:'Regular Class (1x Seminggu)',status:'Lunas',tanggal:'2026-10-10',tanggalBerakhir:'2026-11-10',totalPertemuan:4,pemakaianAwal:0})]);
+ await pool.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES(3,'Prestasi',2,'15:00','17:00','Prestasi Class')");
+ await app.locals.maintain();const audit=await app.locals.rosterAudit();assert(!audit.issues.some(i=>i.id===moved.id&&i.reasons.some(r=>r.date==='2026-11-10')));
  await db.close();console.log('PASS paid roster: Gabriel late assignment, existing attendance preserved, payment activation, coach isolation, verified duplicate consolidation, alias login/session, quota/cash preservation and inactive canonical protection.');
 })().catch(e=>{console.error(e);process.exit(1);});
