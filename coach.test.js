@@ -16,9 +16,10 @@ const C=require('./coach'),B=require('./business'),{initDb,createApp,passwordHas
  const app=createApp({pool,secureCookies:false}),owner=request.agent(app),coach=request.agent(app),other=request.agent(app);let n=0;
  async function call(a,m,url,body,code=200){const r=await a[m](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,code,url+' '+JSON.stringify(r.body));n++;return r;}
  for(const [agent,username] of [[owner,'owner'],[coach,'coach'],[other,'other']])await call(agent,'post','/auth/login',{username,password:'coach-rules-test'});
- const athlete=(await call(owner,'post','/api/atlet',{nama:'Anak Regular',kelompok:'Regular Class (1x Seminggu)',status:'Aktif'},201)).body.data;
+ const athlete=(await call(owner,'post','/api/atlet',{nama:'Anak Regular',namaPanggilan:'Regi',kelompok:'Regular Class (1x Seminggu)',status:'Aktif'},201)).body.data;
  await call(owner,'post','/api/pembayaran',{atletId:athlete.id,tanggal:'2026-11-01',status:'Belum Lunas'},201);
  const slots=[];for(const day of [2,9,16,23])slots.push((await call(owner,'post','/api/jadwal',{nama:'Latihan '+day,tanggal:'2026-11-'+String(day).padStart(2,'0'),jenisKelas:athlete.kelompok,mulai:'15:00',selesai:'16:00',lokasi:'Pondok Selfie',coachId:'2',atletIds:[athlete.id]},201)).body.data);
+ assert.equal((await call(coach,'get','/api/atlet')).body.find(a=>a.id===athlete.id).namaPanggilan,'Regi');
  const entry=s=>({jadwalId:s.id,atletId:athlete.id,tanggal:s.tanggal,status:'Hadir'});
  for(const s of slots.slice(0,3))await call(coach,'post','/api/session-entry',entry(s));
  let policy=(await call(coach,'get','/api/coach/noted/'+athlete.id+'?scheduleId='+slots[3].id)).body;assert(policy.required);assert.equal(policy.meeting,4);

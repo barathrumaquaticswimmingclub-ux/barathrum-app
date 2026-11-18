@@ -10,8 +10,9 @@ async function main(){
  const send=(a,m,p,d)=>a[m](p).set('X-BRTM-Request','1').send(d);
  for(const [a,u] of [[owner,'owner'],[team,'prestasi'],[coach,'coach']])assert.equal((await send(a,'post','/auth/login',{username:u,password:'operations-test'})).status,200);
  B.today=()=> '2026-11-09';
- const create=async(n,status='Aktif',kelompok='Prestasi Class')=>(await send(owner,'post','/api/atlet',{nama:n,status,kelompok})).body.data;
+ const create=async(n,status='Aktif',kelompok='Prestasi Class')=>(await send(owner,'post','/api/atlet',{nama:n,namaPanggilan:n==='Satu'?'Panggilan Satu':'',status,kelompok})).body.data;
  const a=await create('Satu'),b=await create('Dua');await create('Nonaktif','Nonaktif');const other=await create('Pemula','Aktif','Private Class');
+ const teamRoster=(await team.get('/api/atlet')).body;assert.equal(teamRoster.find(x=>x.id===a.id).namaPanggilan,'Panggilan Satu');assert.equal(teamRoster.find(x=>x.id===b.id).namaPanggilan,'');
  let r=await send(team,'post','/api/perkembangan',{atletId:a.id,catatan:'noted asli',tanggal:'2099-01-01'});assert.equal(r.status,201,JSON.stringify(r.body));assert.equal(r.body.data.tanggal,'2026-11-09');assert(!r.body.data.jadwalId);
  assert.equal((await send(team,'post','/api/perkembangan',{atletId:other.id,catatan:'tidak boleh'})).status,403);
  assert.equal((await send(team,'post','/api/prestasi/attendance',{batchId:'attendance-test-001',entries:[{atletId:a.id,status:'Hadir'}]})).status,409);

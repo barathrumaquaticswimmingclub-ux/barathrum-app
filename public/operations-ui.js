@@ -8,7 +8,7 @@ renderList=function(){
   $('records').className='ops-records';
   $('records').innerHTML=table(['No.','Nama','Kelas',isOwner()?'Pembayaran':'Absensi terbaru','Status'],list.sort((a,b)=>a.nama.localeCompare(b.nama,'id')).map((a,i)=>{
    const last=(S.records.absensi||[]).filter(r=>String(r.atletId)===a.id).sort((x,y)=>String(y.tanggal).localeCompare(String(x.tanggal))||Number(y.id)-Number(x.id))[0];
-   return `<tr><td>${i+1}</td><td><button data-child="${a.id}">${esc(a.nama)}</button></td><td>${esc(a.kelompok)}</td><td>${isOwner()?badge(a.statusSPP==='Tidak Ada SPP Bulan Ini'?'Belum ada tagihan':a.statusSPP)+(a.statusSPPDetail?'<small>'+esc(a.statusSPPDetail)+'</small>':''):last?badge(last.status==='Alpa'?'Tidak hadir':last.status)+'<small>'+esc(displayDate(last.tanggal))+'</small>':'Belum diabsen'}</td><td>${badge(a.status)}</td></tr>`;
+   return `<tr><td>${i+1}</td><td><button data-child="${a.id}">${esc(athleteLabel(a))}</button></td><td>${esc(a.kelompok)}</td><td>${isOwner()?badge(a.statusSPP==='Tidak Ada SPP Bulan Ini'?'Belum ada tagihan':a.statusSPP)+(a.statusSPPDetail?'<small>'+esc(a.statusSPPDetail)+'</small>':''):last?badge(last.status==='Alpa'?'Tidak hadir':last.status)+'<small>'+esc(displayDate(last.tanggal))+'</small>':'Belum diabsen'}</td><td>${badge(a.status)}</td></tr>`;
   }).join(''));
  }
  if(isOwner()&&['perkembangan','absensi','pembayaran'].includes(k)){
@@ -51,9 +51,9 @@ async function openTeamEntry(kind){
  $('teamTitle').textContent=title[kind];$('teamError').textContent='';
  const today=(await request('/api/config')).today;S.config.today=today;
  let body=`<p>Tanggal server: ${esc(displayDate(today))} · ${kind==='catatanwaktu'?'Kolam 25 m. Kosongkan nomor yang tidak dites.':'Data tersimpan saat menekan Simpan.'}</p>`;
- if(kind==='absensi')body+=table(['No.','Nama','Kehadiran','Keterangan'],teamAthletes.map((a,i)=>`<tr><td>${i+1}</td><th>${esc(a.nama)}</th><td><select required name="status_${i}" aria-label="Kehadiran ${esc(a.nama)}"><option value="">Pilih…</option><option>Hadir</option><option>Izin</option><option value="Alpa">Tidak hadir</option></select></td><td><input name="note_${i}" maxlength="2000" aria-label="Keterangan ${esc(a.nama)}" placeholder="Wajib jika izin / tidak hadir"></td></tr>`).join(''));
+ if(kind==='absensi')body+=table(['No.','Nama','Kehadiran','Keterangan'],teamAthletes.map((a,i)=>`<tr><td>${i+1}</td><th>${esc(athleteLabel(a))}</th><td><select required name="status_${i}" aria-label="Kehadiran ${esc(athleteLabel(a))}"><option value="">Pilih…</option><option>Hadir</option><option>Izin</option><option value="Alpa">Tidak hadir</option></select></td><td><input name="note_${i}" maxlength="2000" aria-label="Keterangan ${esc(athleteLabel(a))}" placeholder="Wajib jika izin / tidak hadir"></td></tr>`).join(''));
  if(kind==='perkembangan')body+=field('teamAthlete','Pilih atlet',teamAthletes.map(a=>[a.id,a.nama]),'',{full:true})+field('teamNote','Noted','textarea','',{full:true,max:2000});
- if(kind==='catatanwaktu')body+=table(['No.','Nama',...BRTMTime.events.map(e=>e.gaya+' '+e.jarak+' m')],teamAthletes.map((a,i)=>`<tr><td>${i+1}</td><th>${esc(a.nama)}</th>${BRTMTime.events.map((r,j)=>`<td><input name="time_${i}_${j}" aria-label="${esc(a.nama)} ${esc(r.label)}" inputmode="decimal" placeholder="0:35.00"></td>`).join('')}</tr>`).join(''));
+ if(kind==='catatanwaktu')body+=table(['No.','Nama',...BRTMTime.events.map(e=>e.gaya+' '+e.jarak+' m')],teamAthletes.map((a,i)=>`<tr><td>${i+1}</td><th>${esc(athleteLabel(a))}</th>${BRTMTime.events.map((r,j)=>`<td><input name="time_${i}_${j}" aria-label="${esc(a.nama)} ${esc(r.label)}" inputmode="decimal" placeholder="0:35.00"></td>`).join('')}</tr>`).join(''));
  $('teamBody').innerHTML=body;
  if(kind==='absensi')$('teamBody').querySelectorAll('select').forEach((s,i)=>s.onchange=()=>{$('teamForm').elements['note_'+i].required=s.value!=='Hadir';});
  teamDialog.showModal();
