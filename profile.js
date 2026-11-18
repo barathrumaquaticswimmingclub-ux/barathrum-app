@@ -1,5 +1,6 @@
 'use strict';
 const B = require('./business');
+const revision = a => require('crypto').createHash('sha256').update(JSON.stringify([a.id,a.diperbaruiPada,...FIELDS.map(k=>a[k]||'')])).digest('hex');
 const FIELDS = ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat','tujuan','riwayatRenang','jadwalPilihan'];
 function cleanProfile(input, previous = {}) {
   const out = { ...previous };
@@ -21,4 +22,4 @@ function photo(value) {
   if (!actual || actual!==value.mime || !bytes.length || bytes.length>5*1024*1024) throw Object.assign(Error('Gunakan foto JPG, PNG, GIF, atau WebP maksimal 5 MB'),{status:400});
   return {mime:actual,base64:bytes.toString('base64')};
 }
-module.exports={FIELDS,cleanProfile,photo};
+module.exports={FIELDS,cleanProfile,photo,revision};

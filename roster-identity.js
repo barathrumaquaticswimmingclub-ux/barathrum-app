@@ -4,6 +4,22 @@ const norm=v=>String(v||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N
 const phone=v=>String(v||'').replace(/\D/g,'').replace(/^0/,'62');
 function closeName(a,b){a=norm(a);b=norm(b);if(!a||!b||Math.abs(a.length-b.length)>2)return false;let row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const next=[i];for(let j=1;j<=b.length;j++)next[j]=Math.min(next[j-1]+1,row[j]+1,row[j-1]+(a[i-1]===b[j-1]?0:1));row=next;}return row[b.length]<=Math.min(2,Math.floor(Math.min(a.length,b.length)*.15));}
 function strongMatch(a,b){return !a.mergedInto&&!b.mergedInto&&a.tanggalLahir&&a.tanggalLahir===b.tanggalLahir&&phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(b.noHpOrtu)&&norm(a.namaOrtu)&&norm(a.namaOrtu)===norm(b.namaOrtu)&&norm(a.namaPanggilan)&&norm(a.namaPanggilan)===norm(b.namaPanggilan)&&B.canonical(a.kelompok)===B.canonical(b.kelompok)&&norm(String(a.nama||'').trim().split(/\s+/)[0])===norm(String(b.nama||'').trim().split(/\s+/)[0])&&closeName(a.nama,b.nama);}
+// Suspected duplicates are reviewed, never merged on fuzzy identity alone.
+function candidates(athletes,input){
+ const names=a=>[a.nama,...(a.nameAliases||[])].map(norm).filter(Boolean);
+ const near=(a,b)=>names(a).some(x=>names(b).some(y=>closeName(x,y)));
+ return athletes.filter(a=>!a.mergedInto&&String(a.id)!==String(input.id)&&(
+  names(a).some(n=>names(input).includes(n))||
+  (a.tanggalLahir&&a.tanggalLahir===input.tanggalLahir&&(
+   near(a,input)||phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(input.noHpOrtu)&&norm(a.namaPanggilan)&&norm(a.namaPanggilan)===norm(input.namaPanggilan)
+  ))||phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(input.noHpOrtu)&&near(a,input)
+ ));
+}
+function registrationMatch(athletes,input){
+ const possible=candidates(athletes,input);
+ const exact=possible.filter(a=>[a.nama,...(a.nameAliases||[])].some(n=>norm(n)===norm(input.nama))&&a.tanggalLahir&&a.tanggalLahir===input.tanggalLahir&&phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(input.noHpOrtu)&&B.canonical(a.kelompok)===input.kelompok&&a.status!=='Nonaktif');
+ return {possible,target:possible.length===1&&exact.length===1?exact[0]:null};
+}
 async function consolidate(db,{rows,save},user={id:null,username:'sistem-sinkronisasi'}){
  const athletes=await rows(db,'atlet'),packs=await rows(db,'pembayaran'),schedules=await rows(db,'jadwal');
  const slots=(await db.query('SELECT * FROM brtm_weekly_slots')).rows;
@@ -25,4 +41,4 @@ async function consolidate(db,{rows,save},user={id:null,username:'sistem-sinkron
  }
  return merged;
 }
-module.exports={strongMatch,consolidate};
+module.exports={strongMatch,consolidate,candidates,registrationMatch};

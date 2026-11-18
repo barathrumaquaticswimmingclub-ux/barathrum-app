@@ -108,7 +108,7 @@ function mount(app, h) {
     const paymentSummary=prestasi?require('./athlete-payment-status').prestasi(packs,firstPayment,hasMonthlyAttendance,sppState.sppMenungguOwner,today):null;
     const nextPayment = prestasi?B.prestasiNextDue(packs,firstPayment,today):unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
+    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?paymentSummary.sppPeriodeAktifLunas===true:pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: prestasi?unpaid.some(p=>p.jatuhTempo<today):unpaid.length > 0, statusDetail:paymentSummary?.statusSPPDetail||'',status: prestasi?(paymentSummary.statusSPP==='Lunas'&&paymentSummary.sppPeriodeAktifLunas?'Lunas periode ini':paymentSummary.statusSPP):sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':unpaid.length ? 'Belum Lunas' : pack?.status === 'Lunas' ? pack.statusMasaBerlaku === 'Aktif' ? 'Lunas' : 'Perlu perpanjangan' : 'Belum ada pembayaran' },
       catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
@@ -145,6 +145,24 @@ function mount(app, h) {
     res.json({role:'owner',today:B.today(),updatedAt:new Date().toISOString(),counts:{prestasi:active.filter(a=>B.canonical(a.kelompok)==='Prestasi Class').length,pemula:active.filter(a=>B.canonical(a.kelompok)!=='Prestasi Class').length},atlet:athletes.map(a=>{const p=accounts.find(p=>String(p.athlete_id)===a.id);return {id:a.id,nama:a.nama,namaPanggilan:a.namaPanggilan||'',kelompok:B.canonical(a.kelompok),status:a.status||'Aktif',username:p?.username||'',active:p?.active||false,deleted:p?.deleted||false};})});
   }));
   app.get('/swim/api/owner/atlet/:id',parentAuth,swimOwner,wrap(async(req,res)=>dashboard(req,res,req.params.id)));
+  app.put('/swim/api/profile',parentAuth,wrap(async(req,res)=>{
+    if(!req.parent||req.swimOwner)throw fail(403,'Khusus profil anak pada akun orang tua');
+    const allowed=[...P.FIELDS.filter(k=>k!=='jadwalPilihan'),'foto','revision'];
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||Object.keys(req.body).some(k=>!allowed.includes(k)))throw fail(400,'Hanya biodata dan foto anak yang dapat diubah di sini');
+    if(Object.hasOwn(req.body,'namaPanggilan')&&!String(req.body.namaPanggilan||'').trim())throw fail(400,'Nama panggilan wajib diisi');
+    const photo=req.body.foto?await require('./images').staff(req.body.foto):null;
+    await transaction(async c=>{
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      const old=await record(c,'atlet',String(req.parent.athlete_id),true);
+      if(req.body.revision!==P.revision(old))throw fail(409,'Biodata sudah berubah. Tutup editor, muat ulang data, lalu periksa kembali sebelum menyimpan.');
+      const data=P.cleanProfile(req.body,old),actor={id:null,username:'orangtua:'+req.parent.id};
+      const conflicts=require('./roster-identity').candidates(await rows(c,'atlet'),data).filter(a=>a.tanggalLahir&&a.tanggalLahir===data.tanggalLahir&&norm(a.nama)===norm(data.nama));
+      if(conflicts.length)throw fail(409,'Identitas ini sudah tercatat pada atlet lain. Hubungi Owner untuk mencocokkan data.');
+      await save(c,actor,'atlet',data,old);
+      if(photo){await putPhoto(c,old.id,photo);await audit(c,actor,'ubah-foto-swim','atlet',old.id);}
+      await audit(c,actor,'ubah-profil-orangtua','atlet',old.id,{revision:P.revision(old)},{fields:P.FIELDS.filter(k=>old[k]!==data[k]),foto:!!photo});
+    });res.json({pesan:'Profil dan foto tersimpan serta tersinkron ke BRTM. ID login tetap sama.'});
+  }));
   app.put('/swim/api/owner/atlet/:id',parentAuth,swimOwner,wrap(async(req,res)=>{
     await transaction(async c=>{
       const old=await record(c,'atlet',req.params.id,true),data=P.cleanProfile(req.body,old);
@@ -275,6 +293,7 @@ function mount(app, h) {
     catch (e) { if (target === 'new') throw e; p = {}; }
     let a;
     if (target === 'new') {
+      if(require('./roster-identity').candidates(await rows(db,'atlet'),p).length)throw fail(409,'Identitas mungkin sudah terdaftar. Hubungkan ke atlet lama setelah mencocokkan data; atlet baru tidak dibuat.');
       const profile={...p};delete profile.foto;
       a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: source }, null);
     } else {
@@ -320,13 +339,12 @@ function mount(app, h) {
         await c.query('UPDATE brtm_form_keys SET last_received_at=NOW() WHERE kind=$1', [kind]);
         return { status: 'Perlu diperiksa' };
       }
-      const sameName = (await rows(c, 'atlet')).filter(a => norm(a.nama) === norm(data.nama));
-      const exact = sameName.filter(a => a.tanggalLahir === data.tanggalLahir && phone(a.noHpOrtu) === phone(data.noHpOrtu) && B.canonical(a.kelompok) === data.kelompok && a.status !== 'Nonaktif');
-      if (!sameName.length) await applyRegistration(c, r, 'new');
-      else if (sameName.length === 1 && exact.length === 1) await applyRegistration(c, r, exact[0].id);
-      else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2', ['Nama sudah ada. Owner perlu mencocokkan identitas/kelas sebelum menghubungkan.', r.id]);
+      const match=require('./roster-identity').registrationMatch(await rows(c,'atlet'),data);
+      if (!match.possible.length) await applyRegistration(c, r, 'new');
+      else if (match.target) await applyRegistration(c, r, match.target.id);
+      else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2', ['Identitas mungkin sudah terdaftar. Owner perlu mencocokkan data; atlet baru tidak dibuat.', r.id]);
       await c.query('UPDATE brtm_form_keys SET last_received_at=NOW() WHERE kind=$1', [kind]);
-      return { status: !sameName.length || sameName.length === 1 && exact.length === 1 ? 'Tersambung' : 'Perlu diperiksa' };
+      return { status: !match.possible.length || match.target ? 'Tersambung' : 'Perlu diperiksa' };
     }); res.json({ ok: true, ...result });
   }));
   app.post('/api/pendaftaran/:id/hubungkan', ...admin, wrap(async (req, res) => {

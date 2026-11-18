@@ -118,7 +118,7 @@ function navigate(kind) {
 }
 function configureFilter() {
   const k=S.section; let values=[];
-  if(k==='atlet')values=['Aktif','Nonaktif',...Object.keys(S.config.classes)];
+  if(k==='atlet')values=[...(isOwner()?['Lunas','Belum ada pembayaran','Perlu perpanjangan','Belum Lunas']:['Aktif','Nonaktif']),...Object.keys(S.config.classes)];
   if(k==='jadwal')values=['Hari ini','Mendatang','Sudah lewat'];
   if(k==='absensi')values=['Hadir','Izin','Sakit','Alpa'];
   if(k==='pembayaran')values=['Lunas','Belum Lunas','Aktif','Kedaluwarsa','Habis'];
@@ -144,6 +144,7 @@ function filteredRows() {
     if(m&&['absensi','pembayaran','program'].includes(k)&&x.tanggal?.slice(0,7)!==m)return false;
     if(!f)return true;
     if(k==='jadwal')return f==='Hari ini'?x.tanggal===S.config.today:f==='Mendatang'?x.tanggal>=S.config.today:x.tanggal<S.config.today;
+    if(k==='atlet'&&isOwner()&&['Lunas','Belum ada pembayaran','Perlu perpanjangan','Belum Lunas'].includes(f))return (x.statusSPP==='Tidak Ada SPP Bulan Ini'?'Belum ada pembayaran':x.statusSPP)===f;
     return [x.status,x.kelompok,x.statusMasaBerlaku,x.gaya,x.jenis].includes(f);
   });
 }

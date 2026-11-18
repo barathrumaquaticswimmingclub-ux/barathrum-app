@@ -3,8 +3,6 @@ const crypto=require('crypto'),B=require('./business');
 const rules=require('./public/rules/parent/data.json');
 const CONSENT='Saya sudah membaca dan memahami seluruh peraturan BARATHRUM AQUATIC SWIMMING CLUB serta menyetujui ketentuan tersebut.';
 const fail=(status,message)=>Object.assign(Error(message),{status});
-const norm=v=>String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
-const phone=v=>String(v||'').replace(/\D/g,'').replace(/^0/,'62');
 const days=['','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
 const fields=['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','alamat','namaOrtu','noHpOrtu','sekolah','kelasSekolah','tujuan','kelompok'];
 async function options(db){
@@ -62,12 +60,10 @@ function mount(app,{pool,wrap,transaction,rows,limit,cleanPayload,applyRegistrat
    const data={...clean,jadwalPilihan,schedules:schedules.map(s=>s.value),submissionHash,sumber:'Formulir BRTM',jadwalStatus:'Menunggu konfirmasi admin'};
    const r=(await c.query("INSERT INTO brtm_registrations(kind,response_id,payload,status) VALUES('nonprestasi',$1,$2,'Perlu diperiksa') RETURNING *",[responseId,JSON.stringify(data)])).rows[0];
    const athletes=(await rows(c,'atlet')).filter(a=>!a.mergedInto);
-   const same=athletes.filter(a=>(norm(a.nama)===norm(data.nama)||(a.nameAliases||[]).some(n=>norm(n)===norm(data.nama))));
-   const similar=athletes.filter(a=>require('./roster-identity').strongMatch(a,data));
-   const exact=same.filter(a=>a.tanggalLahir===data.tanggalLahir&&phone(a.noHpOrtu)===phone(data.noHpOrtu)&&B.canonical(a.kelompok)===data.kelompok&&a.status!=='Nonaktif');
-   if(!same.length&&!similar.length)await applyRegistration(c,r,'new','Formulir BRTM');
-   else if(same.length===1&&exact.length===1)await applyRegistration(c,r,exact[0].id,'Formulir BRTM');
-   else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2',['Pendaftaran web: Owner perlu mencocokkan identitas/kelas. Jadwal menunggu konfirmasi admin.',r.id]);
+   const match=require('./roster-identity').registrationMatch(athletes,data);
+   if(!match.possible.length)await applyRegistration(c,r,'new','Formulir BRTM');
+   else if(match.target)await applyRegistration(c,r,match.target.id,'Formulir BRTM');
+   else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2',['Identitas mungkin sudah terdaftar. Owner perlu mencocokkan data; atlet baru tidak dibuat. Jadwal menunggu konfirmasi admin.',r.id]);
   });
   // No existing-name, account or athlete identifiers are disclosed on the public route.
   res.status(201).json({ok:true,installUrl:'/swim/install/'});

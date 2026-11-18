@@ -61,6 +61,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/registration/api/submit',express.json({limit:'30mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
   app.use('/swim/api/owner',express.json({limit:'8mb'}));
+  app.use('/swim/api/profile',express.json({limit:'30mb'}));
   app.use('/api/prestasi/time-table',express.json({limit:'1mb'}));
   app.use('/api/prestasi/times',express.json({limit:'1mb'}));
   app.use('/api/prestasi/attendance',express.json({limit:'1mb'}));
@@ -119,11 +120,16 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   async function save(db, user, kind, data, previous) {
     if(kind==='program')data=await require('./images').program({...data,grupProgram:data.grupProgram?.map(g=>({...g}))},previous);
+    if(kind==='atlet'&&previous&&previous.nama!==data.nama)data={...data,nameAliases:[...new Set([...(previous.nameAliases||[]),...(data.nameAliases||[]),previous.nama])]};
     const payload = { ...data, diperbaruiPada: new Date().toISOString(), diperbaruiOleh: user.username }; delete payload.id; delete payload.memberId;
     if (!previous) { payload.dibuatOleh = user.username; payload.dibuatOlehId = String(user.id); payload.dibuatPada = new Date().toISOString(); }
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
     await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out);
+    if(kind==='atlet'&&previous&&previous.nama!==out.nama){
+      const renamed=await db.query("UPDATE data_klub SET data=jsonb_set(data,'{namaAtlet}',to_jsonb($1::text)) WHERE jenis<>'atlet' AND data->>'atletId'=$2 RETURNING id",[out.nama,out.id]);
+      await audit(db,user,'sinkron-nama-atlet','atlet',out.id,{nama:previous.nama},{nama:out.nama,linkedRecords:renamed.rows.length});
+    }
     await SPP.afterSave(db,user,kind,out,previous);
     if(kind==='pembayaran'&&B.canonical(out.jenisKelas)!=='Prestasi Class'&&out.status==='Lunas'&&previous?.status!=='Lunas'){
       const athlete=await record(db,'atlet',out.atletId,true);

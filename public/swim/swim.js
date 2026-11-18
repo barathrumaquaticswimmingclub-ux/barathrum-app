@@ -4,12 +4,12 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const date = v => v ? new Intl.DateTimeFormat('id-ID', {day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jakarta'}).format(new Date(v+'T12:00:00+07:00')) : 'Belum tercatat';
 let swimViewVersion=0,swimRefreshSequence=0,renderedSnapshot=null,pendingSwim=null;
 let loading = false, ownerMode=false, selectedId=null, ownerData=null;
-const profileLabels={nama:'Nama lengkap',namaPanggilan:'Nama panggilan',tanggalLahir:'Tanggal lahir',jk:'Jenis kelamin',namaOrtu:'Nama orang tua / wali',noHpOrtu:'Nomor WhatsApp',sekolah:'Nama sekolah',kelasSekolah:'Kelas sekolah',alamat:'Alamat rumah',tujuan:'Tujuan latihan',riwayatRenang:'Riwayat latihan renang',jadwalPilihan:'Pilihan jadwal pendaftaran'};
+const profileLabels={nama:'Nama lengkap',namaPanggilan:'Nama panggilan',tanggalLahir:'Tanggal lahir',jk:'Jenis kelamin',tempatLahir:'Tempat lahir',namaOrtu:'Nama orang tua / wali',noHpOrtu:'Nomor WhatsApp',sekolah:'Nama sekolah',kelasSekolah:'Kelas sekolah',alamat:'Alamat rumah',tujuan:'Tujuan latihan',riwayatRenang:'Riwayat latihan renang',jadwalPilihan:'Pilihan jadwal pendaftaran'};
 async function request(url, body, method) {
   const r = await fetch('/swim/api/'+url, { credentials:'same-origin', ...(body ? {method:method||'POST',headers:{'Content-Type':'application/json','X-BRTM-Request':'1'},body:JSON.stringify(body)} : {}), cache:'no-store' });
   const d = await r.json(); if(!r.ok){const e=Error(d.pesan||'Data belum bisa dimuat.');e.status=r.status;throw e;} return d;
 }
-function showLogin(){swimViewVersion++;swimRefreshSequence++;loading=false;renderedSnapshot=null;pendingSwim=null;setSwimDataAvailable(false); ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
+function showLogin(){if($('profileDialog').open)$('profileDialog').close();$('profileFields').replaceChildren();delete $('profileDialog').dataset.revision;swimViewVersion++;swimRefreshSequence++;loading=false;renderedSnapshot=null;pendingSwim=null;setSwimDataAvailable(false); ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
 const portalIcon = key => {
  const paths={home:'M3 11 12 3l9 8M5 10v11h5v-6h4v6h5V10',card:'M3 8h18M3 12h18M6 17h5M5 5h14a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2',calendar:'M5 5h14a2 2 0 0 1 2 2v14H3V7a2 2 0 0 1 2-2M7 3v5M17 3v5M3 11h18M7 15h2M13 15h2M7 18h2',chart:'M5 20V13h3v7M11 20V8h3v12M17 20V3h3v17',bell:'M5 17h14l-2-4V9a5 5 0 0 0-10 0v4l-2 4M10 21h4',clock:'M12 8v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',swim:'M3 17c3-3 5 3 9 0s6 3 9 0M3 21c3-3 5 3 9 0s6 3 9 0M4 12l5-4 5 4 4-1M14 5a2 2 0 1 0 4 0 2 2 0 0 0-4 0',layers:'m12 3 10 5-10 5L2 8l10-5M2 13l10 5 10-5M2 18l10 5 10-5',check:'m7 12 3 3 7-7M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'};
  return '<svg class="portal-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="'+(paths[key]||paths.calendar)+'"/></svg>';
@@ -97,14 +97,14 @@ $('content').onclick=async e=>{
 $('cancelRemove').onclick=()=>$('removeDialog').close();
 $('removeConfirm').onclick=async()=>{const b=$('removeConfirm');b.disabled=true;try{await request('owner/akun/'+b.dataset.id,{},'DELETE');$('removeDialog').close();await refresh();}catch(e){$('statusMessage').textContent=e.message;}finally{b.disabled=false;}};
 function openProfileEditor(a){
- $('profileFields').innerHTML=Object.entries(profileLabels).map(([k,l])=>`<label>${esc(l)}${k==='jk'?`<select name="jk"><option value="">Pilih</option>${['Laki-laki','Perempuan'].map(v=>`<option${a[k]===v?' selected':''}>${v}</option>`).join('')}</select>`:['alamat','tujuan','riwayatRenang'].includes(k)?`<textarea name="${k}" maxlength="1000">${esc(a[k])}</textarea>`:`<input name="${k}" type="${k==='tanggalLahir'?'date':'text'}" value="${esc(a[k])}" maxlength="${k==='nama'?150:1000}"${k==='nama'?' required':''}>`}</label>`).join('')+'<label>Ganti foto anak (opsional)<input name="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>';
- $('profileMessage').textContent='';$('profileDialog').showModal();
+ $('profileFields').innerHTML=Object.entries(profileLabels).filter(([k])=>ownerMode||k!=='jadwalPilihan').map(([k,l])=>`<label>${esc(l)}${k==='jk'?`<select name="jk"><option value="">Pilih</option>${['Laki-laki','Perempuan'].map(v=>`<option${a[k]===v?' selected':''}>${v}</option>`).join('')}</select>`:['alamat','tujuan','riwayatRenang'].includes(k)?`<textarea name="${k}" maxlength="1000">${esc(a[k])}</textarea>`:`<input name="${k}" type="${k==='tanggalLahir'?'date':'text'}" value="${esc(a[k])}" maxlength="${k==='nama'?150:1000}"${['nama','namaPanggilan'].includes(k)?' required':''}>`}</label>`).join('')+'<label>Ganti foto anak (opsional)<input name="foto" type="file" accept="image/*,.heic,.heif,.avif,.tiff,.bmp"></label>';
+ $('profileMessage').textContent=ownerMode?'':'Perubahan tersinkron ke BRTM. ID login tetap: '+(a.loginName||'sesuai akun saat ini')+'.';$('profileDialog').dataset.revision=a.revision||'';$('profileDialog').showModal();
 }
 $('cancelProfile').onclick=()=>$('profileDialog').close();
 $('profileForm').onsubmit=async e=>{e.preventDefault();const b=$('saveProfile');b.disabled=true;try{
- const form=new FormData(e.target),body={};for(const k of Object.keys(profileLabels))body[k]=String(form.get(k)||'');
- const file=form.get('foto');if(file?.size){if(file.size>5*1024*1024)throw Error('Foto maksimal 5 MB.');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});body.foto={mime:file.type,base64:data.split(',')[1]};}
- await request('owner/atlet/'+selectedId,body,'PUT');$('profileDialog').close();await refresh();
+ const form=new FormData(e.target),body={};for(const k of Object.keys(profileLabels))if(form.has(k))body[k]=String(form.get(k)||'');if(!ownerMode)body.revision=$('profileDialog').dataset.revision;
+ const file=form.get('foto');if(file?.size){if(file.size>(ownerMode?5:20)*1024*1024)throw Error('Foto maksimal '+(ownerMode?5:20)+' MB.');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});body.foto={mime:file.type,base64:data.split(',')[1]};}
+ const result=await request(ownerMode?'owner/atlet/'+selectedId:'profile',body,'PUT');$('profileDialog').close();await refresh();$('statusMessage').textContent=result.pesan;
  }catch(err){$('profileMessage').textContent=err.message;}finally{b.disabled=false;}};
 
 let parentTab='dashboard',reportPool=25;
