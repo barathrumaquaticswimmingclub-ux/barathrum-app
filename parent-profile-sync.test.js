@@ -18,6 +18,8 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(owner,'post','/api/perkembangan',{jadwalId:s.id,atletId:a.id,tanggal:B.today(),catatan:'Catatan tetap'},201);
  await call(owner,'post','/api/orangtua/siapkan');
  for(const [agent,name] of [[parent,info.nama],[other,'Anak Lain Dua']])await call(agent,'post','/swim/api/login',{username:name,password:'brtm'});
+ // A legacy payment attached by its unique name must survive a parent rename.
+ await pool.query("UPDATE data_klub SET data=data-'atletId' WHERE id=$1",[payment.id]);
  let d=await call(parent,'get','/swim/api/dashboard');const stale=d.profil.revision;
  await call(anon,'put','/swim/api/profile',{nama:'Tidak sah'},401);
  await call(parent,'put','/swim/api/profile',{revision:stale,atletId:b.id,nama:'Tidak sah'},400);

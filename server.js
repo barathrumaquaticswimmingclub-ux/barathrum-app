@@ -128,7 +128,12 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out);
     if(kind==='atlet'&&previous&&previous.nama!==out.nama){
       const renamed=await db.query("UPDATE data_klub SET data=jsonb_set(data,'{namaAtlet}',to_jsonb($1::text)) WHERE jenis<>'atlet' AND data->>'atletId'=$2 RETURNING id",[out.nama,out.id]);
-      await audit(db,user,'sinkron-nama-atlet','atlet',out.id,{nama:previous.nama},{nama:out.nama,linkedRecords:renamed.rows.length});
+      // Legacy rows without athlete IDs may follow a name only when that name is unambiguous.
+      const oldName=String(previous.nama||'').trim().toLowerCase();
+      const otherNames=(await rows(db,'atlet')).filter(a=>a.id!==out.id&&!a.mergedInto).some(a=>[a.nama,...(a.nameAliases||[])].some(n=>String(n||'').trim().toLowerCase()===oldName));
+      let legacyCount=0;
+      if(oldName&&!otherNames){const legacy=await db.query("UPDATE data_klub SET data=jsonb_set(jsonb_set(data,'{namaAtlet}',to_jsonb($1::text)),'{atletId}',to_jsonb($2::text)) WHERE jenis<>'atlet' AND COALESCE(data->>'atletId','')='' AND lower(trim(data->>'namaAtlet'))=$3 RETURNING id",[out.nama,out.id,oldName]);legacyCount=legacy.rows.length;}
+      await audit(db,user,'sinkron-nama-atlet','atlet',out.id,{nama:previous.nama},{nama:out.nama,linkedRecords:renamed.rows.length,legacyRecords:legacyCount});
     }
     await SPP.afterSave(db,user,kind,out,previous);
     if(kind==='pembayaran'&&B.canonical(out.jenisKelas)!=='Prestasi Class'&&out.status==='Lunas'&&previous?.status!=='Lunas'){
