@@ -41,6 +41,7 @@ async function initDb(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS brtm_data_kind ON data_klub (jenis)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS brtm_sessions_expiry ON brtm_sessions (expires_at)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_attendance_unique ON data_klub ((data->>'jadwalId'), (data->>'atletId')) WHERE jenis='absensi' AND data->>'jadwalId' IS NOT NULL AND data->>'atletId' IS NOT NULL`);
+  await require('./race-results').initDb(pool);
   await require('./swim').initDb(pool);
   await require('./operations').initDb(pool);
   await N.initDb(pool);
@@ -195,6 +196,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.get('/api', (req, res) => res.json({ nama: 'BARATHRUM AQUATIC SWIMMING CLUB', version: APP_VERSION, role: req.user.role }));
   app.get('/api/config', (req, res) => res.json({ classes: B.CLASSES, today: B.today(), timezone: 'Asia/Jakarta', schools: ['DBS','ABA 5','Ebenhaezer','TEC'] }));
 
+  require('./race-results').mount(app,{pool,wrap,owner,transaction,record,save,audit});
   SPP.mount(app,{pool,wrap,owner,transaction});
   require('./community').mount(app,{pool,wrap,owner,transaction,rows,audit,limit});
   require('./tester-reset').mount(app,{pool,wrap,owner,transaction,audit});
