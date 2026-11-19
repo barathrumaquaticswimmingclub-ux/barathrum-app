@@ -237,8 +237,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const schedules = await rows(db, 'jadwal'); return new Set(schedules.filter(s => require('./regular').assigned(s,req.user.id)).flatMap(s => s.atletIds || []).map(String));
   }
   async function payments(db = pool, lock = false) {
-    const list = await rows(db, 'pembayaran', lock);
-    const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' AND data->>'paketId' IS NOT NULL GROUP BY data->>'paketId'`)).rows;
+    const list = (await rows(db, 'pembayaran', lock)).filter(p=>!p.dibatalkan);
+    const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status' IN ('Hadir','Alpa') AND data->>'paketId' IS NOT NULL GROUP BY data->>'paketId'`)).rows;
     const used = Object.fromEntries(counts.map(x => [x.paket, Number(x.jumlah)])),first=await SPP.firstPayments(db);return list.map(x => B.packageView(x.jenisKelas==='Prestasi Class'?B.prestasiView(x,first[x.atletId]):x,used[x.id]||0));
   }
   function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }
@@ -294,6 +294,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }));
   async function validate(req, db, kind, input, old) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Isi formulir tidak valid');
+    if(old?.dibatalkan)throw fail(409,'Paket telah dibatalkan. Buat paket baru.');
     const user = req.user, isOwner = user.role === 'owner';
     if (!isOwner) {
       const writeKinds = user.role === 'coach' ? ['absensi','perkembangan'] : ['absensi','perkembangan','catatanwaktu','program'];
@@ -355,13 +356,13 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       const packs = await payments(db), previous = old && packs.find(p => p.id === old.id);
       if (previous?.terpakai > 0 && (out.atletId !== old.atletId || out.jenisKelas !== B.canonical(old.jenisKelas))) throw fail(400, 'Identitas dan kelas paket yang telah dipakai tidak boleh diganti');
       if(previous?.terpakai>0&&out.jenisKelas!=='Prestasi Class'){
-        const dates=(await rows(db,'absensi')).filter(r=>r.paketId===old.id&&r.status==='Hadir').map(r=>r.tanggal);
+        const dates=(await rows(db,'absensi')).filter(r=>r.paketId===old.id&&['Hadir','Alpa'].includes(r.status)).map(r=>r.tanggal);
         const end=old.pengecualian?.berlakuSampai>out.tanggalBerakhir?old.pengecualian.berlakuSampai:out.tanggalBerakhir;
         if(dates.some(d=>d<out.tanggal||d>end))throw fail(400,'Tanggal paket harus tetap mencakup seluruh latihan yang sudah digunakan');
       }
       if(previous && out.totalPertemuan!==null && out.totalPertemuan<previous.terpakai)throw fail(400,'Kuota tidak boleh lebih kecil dari pertemuan terpakai');
       out.pemakaianAwal = previous?.pemakaianAwal || 0; delete out.sisaPertemuan; if (old) out.pengecualian = old.pengecualian || null;
-      const duplicate = packs.find(p => p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
+      const duplicate = packs.find(p => !p.dibatalkan && p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
       if (duplicate) throw fail(409, 'Tagihan atlet untuk tanggal/periode ini sudah ada. Edit tagihan tersebut.');
       out.catatan = text(input.catatan, 'Catatan pembayaran', false, 1000);out.dibayarWaktu=out.status==='Lunas'?(old?.status==='Lunas'?old.dibayarWaktu||null:new Date().toISOString()):null; out.dibayarPada = out.status === 'Lunas' ? old?.status === 'Lunas' ? old.dibayarPada || old.tanggal : B.today() : null; return out;
     }
@@ -394,8 +395,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.coachId = String(schedule.coachId); out.pelatih = B.canonical(schedule.jenisKelas)==='Prestasi Class'?'Coach Adhi':schedule.pelatih; out.catatan = text(input.catatan, 'Catatan', false, 2000);
       if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000);if(user.role==='coach'&&!require('./coach').content(out))throw fail(400,'Noted untuk orang tua tidak boleh kosong');return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
-      if (out.status === 'Hadir' && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
-        const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && ['Lunas','Belum Lunas'].includes(p.status) && (p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id) && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (old?.status === 'Hadir' && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
+      if (['Hadir','Alpa'].includes(out.status) && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
+        const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && ['Lunas','Belum Lunas'].includes(p.status) && (p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id) && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (['Hadir','Alpa'].includes(old?.status) && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
         if (!packs.length) throw fail(400, 'Tidak ada paket dengan sisa pertemuan pada tanggal sesi. Hubungi Owner untuk mencatat paket berikutnya.'); out.paketId = packs[0].id;
       } return out;
     }
@@ -406,6 +407,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,validate,audit,passwordHash,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
+  require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
@@ -468,7 +470,7 @@ if (require.main === module) {
       await app.locals.maintain();
       if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
       const list=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran'")).rows;
-      const counts=(await pool.query("SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status'='Hadir' GROUP BY data->>'paketId'")).rows;
+      const counts=(await pool.query("SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status' IN ('Hadir','Alpa') GROUP BY data->>'paketId'")).rows;
       return list.map(p=>B.packageView({...p.data,id:String(p.id)},Number(counts.find(c=>c.paket===String(p.id))?.jumlah||0)));
     });
     const server = app.listen(process.env.PORT || 3000, '0.0.0.0', () => console.log('BRTM v' + APP_VERSION + ' ready'));

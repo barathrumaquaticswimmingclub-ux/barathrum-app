@@ -18,7 +18,7 @@ async function initDb(db){
  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS brtm_spp_invoice_one ON data_klub((data->>'atletId'),(data->>'periode')) WHERE jenis='pembayaran' AND data->>'sppDikelola'='true'`);
 }
 async function audit(db,user,action,id,before,after){await db.query('INSERT INTO brtm_audit(user_id,username,action,jenis,record_id,before_data,after_data) VALUES($1,$2,$3,$4,$5,$6,$7)',[user?.id||null,user?.username||'sistem-spp',action,'spp',String(id),before?JSON.stringify(before):null,JSON.stringify(after)]);}
-async function invoices(db,aid){return (await db.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' AND data->>'atletId'=$1 AND data->>'jenisKelas'='Prestasi Class' ORDER BY data->>'periode',id",[String(aid)])).rows.map(r=>({...r.data,id:String(r.id)}));}
+async function invoices(db,aid){return (await db.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' AND data->>'atletId'=$1 AND data->>'jenisKelas'='Prestasi Class' AND COALESCE(data->>'dibatalkan','false')<>'true' ORDER BY data->>'periode',id",[String(aid)])).rows.map(r=>({...r.data,id:String(r.id)}));}
 async function persist(db,user,next,old){
  const comparable={...next};delete comparable.id;
  if(old&&Object.keys(comparable).every(k=>JSON.stringify(comparable[k])===JSON.stringify(old[k])))return old;
@@ -59,7 +59,7 @@ async function reconcile(db,aid,user={username:'sistem-spp'},force=false){
  for(const [month,p] of bills)if(committed.has(p.id))allocate(month,p,sources.filter(r=>String(r.invoice_id)===p.id));
  for(const [month,p] of bills)if(counts[month]>0||committed.has(p.id))allocate(month,p,sources);
  for(const [month,p] of bills){
-  const ownReceipts=receipts.filter(r=>String(r.invoice_id)===p.id),receipt=ownReceipts.at(-1),registrationCash=ownReceipts.reduce((n,r)=>n+r.registration_fee,0),cash=ownReceipts.reduce((n,r)=>n+r.amount+r.registration_fee,0),cashMonths={};for(const r of ownReceipts){const month=r.paid_on.slice(0,7);cashMonths[month]=(cashMonths[month]||0)+r.amount+r.registration_fee;}
+  const ownReceipts=receipts.filter(r=>String(r.invoice_id)===p.id),cashReceipts=ownReceipts,receipt=cashReceipts.at(-1),registrationCash=ownReceipts.reduce((n,r)=>n+r.registration_fee,0),cash=cashReceipts.reduce((n,r)=>n+r.amount+r.registration_fee,0),cashMonths={};for(const r of cashReceipts){const month=r.paid_on.slice(0,7);cashMonths[month]=(cashMonths[month]||0)+r.amount+r.registration_fee;}
   const billable=counts[month]>0||committed.has(p.id),allocation=allocations.find(a=>a.targetId===p.id),due=(billable?charge(p):0)+Number(p.biayaPendaftaran||0),registrationPaid=registrationCash>=Number(p.biayaPendaftaran||0);
   const allocated=allocations.filter(a=>a.targetId===p.id).reduce((n,a)=>n+a.amount,0);
   const status=!billable&&due===0?'Tidak Ditagih':allocated>=charge(p)&&registrationPaid?'Lunas':'Belum Lunas';
@@ -79,7 +79,7 @@ async function afterSave(db,user,kind,value,old){
  if(value.status==='Lunas'&&(!old||old.status!=='Lunas')){
   if(own.length&&!requestKey)throw fail(400,'Muat ulang formulir pembayaran sebelum menerima pembayaran berikutnya.');
   const registrationFee=Math.max(0,Number(value.biayaPendaftaran||0)-own.reduce((n,r)=>n+r.registration_fee,0));
-  cashAdded=(await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id',[value.id,value.atletId,charge(value),registrationFee,value.dibayarPada||B.today(),'payment:'+value.id+':'+(requestKey||value.diperbaruiPada)])).rows.length>0;
+  cashAdded=(await db.query('INSERT INTO brtm_spp_receipts(invoice_id,athlete_id,amount,registration_fee,paid_on,event_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id',[value.id,value.atletId,charge(value),registrationFee,value.activationOnly?value.tanggal:value.dibayarPada||B.today(),(value.activationOnly?'activation:':'payment:')+value.id+':'+(requestKey||value.diperbaruiPada)])).rows.length>0;
  }
  if(old?.status==='Lunas'&&value.status==='Belum Lunas'){
   if(!value.catatan||value.catatan.trim().length<8)throw fail(400,'Isi alasan koreksi pembayaran minimal 8 karakter');
@@ -98,7 +98,7 @@ async function afterSave(db,user,kind,value,old){
   }
  }
  await reconcile(db,value.atletId,user);
- if(cashAdded)await N.enqueue(db,value.atletId,'penerimaan-spp:'+value.id+':'+value.diperbaruiPada,'Pembayaran SPP diterima','Pembayaran SPP Prestasi Rp'+charge(value).toLocaleString('id-ID')+' diterima untuk periode ' + B.prestasiCycle(value.periode,(await firstPayments(db))[value.atletId]).periodeLabel + '. Atlet aktif meskipun belum ada kehadiran.');
+ if(cashAdded&&!value.activationOnly)await N.enqueue(db,value.atletId,'penerimaan-spp:'+value.id+':'+value.diperbaruiPada,'Pembayaran SPP diterima','Pembayaran SPP Prestasi Rp'+charge(value).toLocaleString('id-ID')+' diterima untuk periode ' + B.prestasiCycle(value.periode,(await firstPayments(db))[value.atletId]).periodeLabel + '. Atlet aktif meskipun belum ada kehadiran.');
 }
 async function firstPayments(db){return Object.fromEntries((await db.query('SELECT athlete_id,MIN(paid_on) AS first_payment FROM brtm_spp_receipts WHERE active=TRUE GROUP BY athlete_id')).rows.map(r=>[String(r.athlete_id),r.first_payment]));}
 async function summaries(db){const states=(await db.query('SELECT athlete_id,state FROM brtm_spp_accounts')).rows,pending=(await db.query("SELECT athlete_id FROM brtm_spp_pending WHERE status='Pending'")).rows;return Object.fromEntries(states.map(r=>[String(r.athlete_id),{saldoKredit:r.state.available||0,sppMenungguOwner:pending.some(p=>p.athlete_id===r.athlete_id)}]));}

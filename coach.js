@@ -38,7 +38,7 @@ function mount(app,h){const {pool,wrap,rows,record,transaction,audit}=h;
   if(req.user.role!=='coach')throw fail(403,'Khusus Coach');
   const a=await record(pool,'atlet',req.params.id),s=await record(pool,'jadwal',req.query.scheduleId);
   if(!require('./regular').assigned(s,req.user.id)||!s.atletIds?.map(String).includes(a.id))throw fail(403,'Sesi belum ditugaskan kepada Anda');
-  const c=await context(pool,h),old=c.attendance.find(r=>r.atletId===a.id&&r.jadwalId===s.id),eligible=c.packs.filter(p=>String(p.atletId)===a.id&&['Lunas','Belum Lunas'].includes(p.status)&&(p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id)&&p.tanggal<=s.tanggal&&p.berlakuSampai>=s.tanggal&&(p.sisaPertemuan>0||old?.status==='Hadir'&&old.paketId===p.id)).sort((a,b)=>a.berlakuSampai.localeCompare(b.berlakuSampai));
+  const c=await context(pool,h),old=c.attendance.find(r=>r.atletId===a.id&&r.jadwalId===s.id),eligible=c.packs.filter(p=>String(p.atletId)===a.id&&['Lunas','Belum Lunas'].includes(p.status)&&(p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id)&&p.tanggal<=s.tanggal&&p.berlakuSampai>=s.tanggal&&(p.sisaPertemuan>0||['Hadir','Alpa'].includes(old?.status)&&old.paketId===p.id)).sort((a,b)=>a.berlakuSampai.localeCompare(b.berlakuSampai));
   const current={atletId:a.id,jadwalId:s.id,tanggal:s.tanggal,status:'Hadir',paketId:eligible[0]?.id||null};c.attendance=c.attendance.filter(r=>r!==old);c.attendance.push(current);
   res.json(await status(pool,h,a,s.tanggal,current,c));
  }));

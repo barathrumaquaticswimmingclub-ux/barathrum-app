@@ -90,7 +90,7 @@ function packageView(item, attendanceCount = 0) {
   const statusMasaBerlaku = !end ? 'Perlu diperiksa' : end < today() ? 'Kedaluwarsa' : item.tanggal > today() ? 'Belum mulai' : sisa === 0 ? 'Habis' : 'Aktif';
   return { ...item, jenisKelas, totalPertemuan: total, pemakaianAwal, terpakai: used, sisaPertemuan: sisa, berlakuSampai: end, statusMasaBerlaku: jenisKelas!=='Prestasi Class'&&item.statusManual&&['Aktif','Kedaluwarsa'].includes(item.statusManual)?item.statusManual:statusMasaBerlaku, totalTagihan: Number(item.totalTagihan ?? item.jumlah ?? 0) };
 }
-function cashReceived(p,month=''){if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
+function cashReceived(p,month=''){if(p.dibatalkan)return 0;if(month){if(p.penerimaanPerBulan)return Number(p.penerimaanPerBulan[month]||0);if(!(p.dibayarPada||p.tanggal)?.startsWith(month))return 0;}return Number(p.penerimaanTunai??(p.status==='Lunas'?p.totalTagihan??p.jumlah??0:0));}
 // A period uses the first payment day; payment tolerance ends on the last day of its start month.
 function prestasiStart(month,first){const base=month+'-01';if(!validDate(base))return null;return month+'-'+String(validDate(first)?Math.min(Number(first.slice(8,10)),Number(monthEnd(base).slice(8,10))):1).padStart(2,'0');}
 function prestasiPeriod(date,first){
@@ -109,7 +109,7 @@ function prestasiCycle(month,first){
 function prestasiDue(month){return validDate(month+'-01')?monthEnd(month+'-01'):null;}
 function prestasiView(item,first,now=module.exports.today()){
  const cycle=prestasiCycle(item.periode||item.tanggal?.slice(0,7),first);
- return {...item,...cycle,tanggalPembayaranPertama:first||null,jatuhTempo:cycle.invoicePada,tanggalBerakhir:cycle.periodeSelesai,invoiceTersedia:item.status==='Lunas'||Number(item.totalTagihan)>0&&!!cycle.invoicePada&&now>=cycle.invoicePada};
+ return {...item,...cycle,tanggalPembayaranPertama:first||null,jatuhTempo:cycle.invoicePada,tanggalBerakhir:item.aktivasiBerlakuSampai||cycle.periodeSelesai,invoiceTersedia:item.status==='Lunas'||Number(item.totalTagihan)>0&&!!cycle.invoicePada&&now>=cycle.invoicePada};
 }
 function prestasiNextDue(packs,first,now=module.exports.today()){
  const unpaid=packs.filter(p=>p.jenisKelas==='Prestasi Class'&&p.status==='Belum Lunas'&&p.totalTagihan>0).map(p=>prestasiDue(p.periode||p.tanggal.slice(0,7),first)).filter(Boolean).sort();if(unpaid.length)return unpaid[0];if(!validDate(first))return null;

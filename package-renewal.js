@@ -21,7 +21,7 @@ function mount(app,{owner,wrap,transaction,record,rows,validate,save,payments}){
    if(!B.validDate(end)||end<old.tanggal||end>view.berlakuSampai)throw fail(400,'Batas paket lama harus di dalam masa berlaku paket.');
    if(!B.validDate(req.body.tanggal)||req.body.tanggal!==B.addDays(end,1))throw fail(400,'Paket baru dimulai sehari setelah paket lama berakhir.');
    const attendance=await rows(db,'absensi');
-   if(attendance.some(a=>a.paketId===old.id&&a.status==='Hadir'&&a.tanggal>end))throw fail(409,'Batas paket lama tidak boleh melewati latihan yang telah dipakai.');
+   if(attendance.some(a=>a.paketId===old.id&&['Hadir','Alpa'].includes(a.status)&&a.tanggal>end))throw fail(409,'Batas paket lama tidak boleh melewati latihan yang telah dipakai.');
    const prepared=await validate(req,db,'pembayaran',{...req.body,atletId:old.atletId,jenisKelas:old.jenisKelas,rincianOwner:true,paketKhusus:true,biayaPendaftaran:0,alasanKhusus:'Perpanjangan paket oleh Owner'},null);
    if(end!==view.berlakuSampai)await save(db,req.user,'pembayaran',{...old,tanggalBerakhir:end,pengecualian:null,statusManual:'Otomatis'},old);
    const p=await save(db,req.user,'pembayaran',{...prepared,renewalFrom:old.id,renewalRequestId:req.body.requestId},null);

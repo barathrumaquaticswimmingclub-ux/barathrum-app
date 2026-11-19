@@ -19,7 +19,7 @@ async function afterSave(db, kind, value, old) {
     if(value.status==='Hadir') await enqueue(db,value.atletId,`hadir:${value.id}:${value.diperbaruiPada}`,'Kehadiran latihan tercatat',`Adik ${value.namaAtlet} tercatat hadir pada latihan tanggal ${value.tanggal}.`);
     else if(old?.status==='Hadir') await enqueue(db,value.atletId,`koreksi-hadir:${value.id}:${value.diperbaruiPada}`,'Koreksi kehadiran',`Kehadiran Adik ${value.namaAtlet} tanggal ${value.tanggal} diperbarui menjadi ${value.status}.`);
   }
-  if(kind==='pembayaran' && value.status==='Lunas' && old?.status!=='Lunas') await enqueue(db,value.atletId,`lunas:${value.id}:${value.diperbaruiPada}`,'Pembayaran diterima',`Terima kasih, pembayaran ${value.jenisKelas} untuk Adik ${value.namaAtlet} sebesar Rp${value.totalTagihan.toLocaleString('id-ID')} telah tercatat lunas.`);
+  if(kind==='pembayaran' && !value.activationOnly && value.status==='Lunas' && old?.status!=='Lunas') await enqueue(db,value.atletId,`lunas:${value.id}:${value.diperbaruiPada}`,'Pembayaran diterima',`Terima kasih, pembayaran ${value.jenisKelas} untuk Adik ${value.namaAtlet} sebesar Rp${value.totalTagihan.toLocaleString('id-ID')} telah tercatat lunas.`);
   if(kind==='jadwal' && value.statusSesi==='Libur' && old?.statusSesi!=='Libur') for(const aid of value.atletIds) await enqueue(db,aid,`libur:${value.id}`,'Informasi libur latihan',`Latihan tanggal ${value.tanggal} pukul ${value.mulai}–${value.selesai} diliburkan. ${value.alasanLibur}`);
 }
 async function reminders(pool, packs) {

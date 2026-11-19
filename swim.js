@@ -119,6 +119,7 @@ function mount(app, h) {
       absensi: attendance.map(x => ({ tanggal: x.tanggal, status: x.status })),
       evaluasi: evaluations.map(x => parentEvaluation(x,a,allSchedules.find(s=>s.id===x.jadwalId))) });
   }
+  app.get('/api/owner/athlete/:id/dashboard',auth,changed,owner,wrap(async(req,res)=>{req.swimOwner=req.user;return dashboard(req,res,req.params.id);}));
   app.get('/swim/api/regular/options',parentAuth,wrap(async(req,res)=>{if(req.swimOwner)throw fail(403,'Gunakan menu bantuan Regular pada aplikasi staf');res.json(await require('./regular').options(pool,h,req.parent.athlete_id,B.today()));}));
   app.post('/swim/api/regular',parentAuth,wrap(async(req,res)=>{if(req.swimOwner)throw fail(403,'Gunakan menu bantuan Regular pada aplikasi staf');res.json(await transaction(db=>require('./regular').book(db,h,{id:null,username:'orangtua:'+req.parent.id},req.parent.athlete_id,B.today(),req.body.mulai,req.body.batal===true)));}));
   app.post('/swim/api/viewed',parentAuth,wrap(async(req,res)=>{
