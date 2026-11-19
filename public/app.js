@@ -65,7 +65,7 @@ async function load(options = {}) {
   const sequence=++loadSequence;loadingData=true;
   if(!options.background)$('loading').classList.remove('hidden');
   const owner=isOwner(),role=S.user.role;
-  const kinds=owner?['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua']:['atlet','jadwal','absensi','perkembangan','program',...(role==='prestasi'?['catatanwaktu']:[])];
+  const kinds=owner?['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua','pendaftaran']:['atlet','jadwal','absensi','perkembangan','program',...(role==='prestasi'?['catatanwaktu']:[])];
   try{
     const config=await request('/api/config');
     if(S.user?.id!==uid||sequence!==loadSequence)return;
@@ -190,7 +190,7 @@ function card(row) {
 function formatTime(v) {const n=Number(v);return n>=60?Math.floor(n/60)+':'+(n%60).toFixed(2).padStart(5,'0'):n.toFixed(2)+' detik';}
 function renderList() {
   const k=S.section;
-  if(['orangtua'].includes(k)){renderIntake();return;}
+  if(['orangtua','pendaftaran'].includes(k)){renderIntake();return;}
   if(k==='laporan'){renderReports();return;}
   const list=filteredRows();
   const banners={jadwal:'Jadwal dibuat per tanggal. Coach pengganti ditentukan Owner melalui Edit. Memindah jadwal tidak menambah kuota paket.',absensi:'Hadir dan Alfa mengurangi kuota. Izin, Sakit, dan Libur tidak mengurangi kuota. Paket nonprestasi harus tercatat, belum habis, dan berlaku pada tanggal sesi. Tagihan Belum Lunas tetap dapat digunakan; status pembayaran tidak berubah. Prestasi menggunakan SPP bulanan.',pembayaran:'Tarif dan diskon dihitung server. Tidak ada DP/cicilan. Status Belum Lunas berarti tagihan belum dibayar. Masa paket satu bulan; sisa hangus setelah berakhir.',akun:'Coach 1–7 dapat bergantian mengajar atlet yang sama sesuai penugasan jadwal. Ubah nama akun lalu buat kata sandi awal untuk diberikan kepada pelatih.',pelatih:'Data kontak dari aplikasi lama. Penugasan jadwal memakai akun individual pada menu Akun tim.',catatanwaktu:'Personal best dibandingkan untuk atlet, gaya, jarak, dan panjang kolam yang sama.',audit:'Menampilkan 200 aktivitas terbaru. Riwayat lengkap ikut dalam unduhan cadangan.'};
