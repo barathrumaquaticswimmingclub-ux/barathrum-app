@@ -1,0 +1,25 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),supertest=require('supertest');
+const B=require('./business'),{initDb,createApp,passwordHash}=require('./server');
+(async()=>{
+ B.today=()=> '2026-11-19';
+ const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
+ await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
+ await pool.query("INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES('owner','Owner','owner',$1,FALSE)",[await passwordHash('renew-test')]);
+ const app=createApp({pool,secureCookies:false}),o=supertest.agent(app),anon=supertest(app);
+ const call=async(agent,method,path,body,status=200)=>{const r=await agent[method](path).set('X-BRTM-Request','1').send(body||{});assert.equal(r.status,status,JSON.stringify(r.body));return r.body;};
+ await call(o,'post','/auth/login',{username:'owner',password:'renew-test'});
+ const a=(await call(o,'post','/api/atlet',{nama:'Renew Child',kelompok:'Semi Private Class',status:'Aktif'},201)).data;
+ const p=(await call(o,'post','/api/pembayaran',{atletId:a.id,tanggal:'2026-10-20',status:'Lunas'},201)).data;
+ const path='/api/owner/package/'+p.id+'/renew',input={requestId:'renewal-test-123',oldEnd:'2026-11-19',tanggal:'2026-11-20',status:'Lunas',kuotaKhusus:4,biayaKhusus:200000,potonganDiskon:0};
+ await call(anon,'post',path,input,401);
+ await call(o,'post',path,{...input,tanggal:'2026-11-19'},400);
+ const renewed=(await call(o,'post',path,input)).data;
+ assert.notEqual(renewed.id,p.id);assert.equal(renewed.totalPertemuan,4);
+ assert.equal((await call(o,'post',path,input)).data.id,renewed.id);
+ await call(o,'post',path,{...input,requestId:'another-request-123'},409);
+ const packs=await call(o,'get','/api/pembayaran');assert.equal(packs.length,2);assert.equal(packs.find(x=>x.id===p.id).berlakuSampai,'2026-11-19');assert.equal(packs.find(x=>x.id===renewed.id).berlakuSampai,'2026-12-20');
+ await call(o,'post','/api/owner/package/'+renewed.id+'/notify');await call(o,'post','/api/owner/package/'+renewed.id+'/notify');
+ const notes=(await pool.query("SELECT * FROM brtm_notifications WHERE event_key=$1",['package-renewal:'+renewed.id])).rows;assert.equal(notes.length,1);assert.equal(String(notes[0].athlete_id),a.id);assert.match(notes[0].body,/2026-11-19/);assert.match(notes[0].body,/4 pertemuan/);
+ await db.close();console.log('PASS renewal authorization, history preservation, dates, quota, retry, duplicate protection and private notification deduplication');
+})().catch(e=>{console.error(e);process.exit(1);});
