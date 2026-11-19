@@ -11,6 +11,13 @@ const B=require('./business'),status=require('./athlete-payment-status'),{initDb
  const historical=status.prestasi([{...p,...B.prestasiCycle('2026-09',first),periode:'2026-09'}],first,false,false,today);assert.equal(historical.statusSPP,'Lunas');assert.equal(historical.sppPeriodeAktifLunas,false);assert.match(historical.statusSPPDetail,/Terakhir lunas/);
  assert.equal(status.prestasi([p],first,false,false,'2026-12-01').statusSPP,'Lunas');
  assert.equal(status.prestasi([{...p,sppTidakDitagih:true}],first,false,false,today).statusSPP,'Tidak Ada SPP Bulan Ini');
+ const expiredDebt={id:'old',tanggal:'2026-10-01',berlakuSampai:'2026-11-01',status:'Belum Lunas',statusMasaBerlaku:'Kedaluwarsa'};
+ const prepaidRegular={id:'new',tanggal:'2026-12-22',berlakuSampai:'2027-01-22',status:'Lunas',statusMasaBerlaku:'Belum Mulai'};
+ assert.equal(status.nonprestasi([expiredDebt,prepaidRegular],today).statusSPP,'Lunas');
+ assert.match(status.nonprestasi([expiredDebt,prepaidRegular],today).statusSPPDetail,/tagihan lain belum lunas/);
+ assert.equal(status.nonprestasi([{...expiredDebt,statusMasaBerlaku:'Aktif'},prepaidRegular],today).statusSPP,'Belum Lunas');
+ assert.equal(status.nonprestasi([{...expiredDebt,statusMasaBerlaku:'Aktif',status:'Lunas'},expiredDebt],today).statusSPP,'Lunas');
+ assert.equal(status.nonprestasi([expiredDebt,{...prepaidRegular,dibatalkan:true}],today).statusSPP,'Belum Lunas');
  let day=first;B.today=()=>day;B.time=()=> '23:59:00';
  const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
  await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
@@ -32,6 +39,13 @@ const B=require('./business'),status=require('./athlete-payment-status'),{initDb
  assert.equal(prepaidParent.pembayaran.status,'Lunas');assert.equal(prepaidParent.pembayaran.statusDetail,row.statusSPPDetail);assert.equal(prepaidParent.latihan.paketLunas,false);
  day='2027-01-17';const historicalRow=(await call('get','/api/atlet')).find(x=>x.id===a.id),historicalParent=(await parent.get('/swim/api/dashboard')).body;
  assert.equal(historicalRow.statusSPP,'Lunas');assert.match(historicalRow.statusSPPDetail,/Terakhir lunas/);assert.equal(historicalParent.pembayaran.statusDetail,historicalRow.statusSPPDetail);assert.equal(historicalParent.latihan.paketLunas,false);day=today;
+ const regular=(await call('post','/api/atlet',{nama:'Regular activation with old debt',kelompok:'Regular Class (1x Seminggu)',status:'Aktif'},201)).data;
+ await call('post','/api/pembayaran',{atletId:regular.id,tanggal:'2026-10-01',status:'Belum Lunas'},201);
+ await call('post','/api/owner/activation',{atletId:regular.id,requestId:'prepaid-old-debt-activation',tanggal:'2026-12-22',berakhir:'2027-01-22',kuota:4,sisa:4,harga:150000,potonganDiskon:0,status:'Lunas',catatan:'Pembayaran paket awal'});
+ const beforeRegular=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' ORDER BY id")).rows;
+ const regularRow=(await call('get','/api/atlet')).find(r=>r.id===regular.id);assert.equal(regularRow.statusSPP,'Lunas');assert.match(regularRow.statusSPPDetail,/tagihan lain/);
+ const regularDashboard=await call('get','/api/owner/athlete/'+regular.id+'/dashboard');assert.equal(regularDashboard.pembayaran.status,'Lunas');assert.equal(regularDashboard.pembayaran.adaTunggakan,true);
+ assert.deepEqual((await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' ORDER BY id")).rows,beforeRegular);
  const {JSDOM}=require('jsdom'),fs=require('node:fs'),vm=require('node:vm');
  const dom=new JSDOM(fs.readFileSync('public/index.html','utf8'),{url:'https://brtm.test',runScripts:'outside-only',pretendToBeVisual:true});
  dom.window.fetch=()=>new Promise(()=>{});dom.window.setInterval=()=>0;

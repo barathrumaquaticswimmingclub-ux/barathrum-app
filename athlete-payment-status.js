@@ -16,4 +16,14 @@ function prestasi(packs,first,hasAttendance=false,pending=false,today=B.today())
  if(latest)return {statusSPP:'Lunas',statusSPPDetail:'Terakhir lunas: '+detail(latest)+'. Periode aktif belum memiliki tagihan; pembayaran lama tidak memperpanjang masa berlaku.',sppPeriodeAktifLunas:false};
  return {statusSPP:'Tidak Ada SPP Bulan Ini',statusSPPDetail:'Belum ada tagihan dan belum ada pembayaran tercatat untuk periode aktif.',sppPeriodeAktifLunas:false};
 }
-module.exports={prestasi};
+function nonprestasi(packs,today=B.today()){
+ const bills=packs.filter(p=>!p.dibatalkan).slice().sort((a,b)=>String(b.tanggal).localeCompare(String(a.tanggal))||Number(b.id)-Number(a.id));
+ const active=bills.find(p=>p.statusMasaBerlaku==='Aktif');
+ const prepaid=bills.find(p=>p.status==='Lunas'&&p.tanggal>today&&p.berlakuSampai>=p.tanggal);
+ const selected=active||prepaid;
+ const unpaid=bills.filter(p=>p.status==='Belum Lunas');
+ const statusSPP=selected?selected.status:unpaid.length?'Belum Lunas':bills.length?'Perlu perpanjangan':'Belum ada pembayaran';
+ const statusSPPDetail=selected?(prepaid===selected?'Pembayaran di muka':'Paket berjalan')+': '+selected.tanggal+' – '+selected.berlakuSampai+(unpaid.some(p=>p.id!==selected.id)?' · Ada tagihan lain belum lunas; lihat riwayat pembayaran.':''):unpaid.length?'Ada tagihan belum lunas.':'';
+ return {statusSPP,statusSPPDetail};
+}
+module.exports={prestasi,nonprestasi};
