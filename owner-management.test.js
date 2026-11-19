@@ -20,6 +20,13 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  assert.equal((await call(o,'post','/api/owner/activation',initial)).data.id,p.id);
  let packs=await call(o,'get','/api/pembayaran');assert.equal(packs[0].sisaPertemuan,2);assert.equal(packs[0].berlakuSampai,'2026-12-05');assert.equal(B.cashReceived(packs[0]),200000);
  assert.equal((await call(o,'get','/api/owner/receipts')).receipts.length,1);assert.equal((await call(o,'get','/api/atlet')).find(x=>x.id===a.id).status,'Aktif');
+ const classFix=await create('atlet',{nama:'Paid Activation Class Correction',kelompok:'Group Class',status:'Nonaktif'});
+ const classPack=(await call(o,'post','/api/owner/activation',{...initial,atletId:classFix.id,requestId:'class-correction-active-123',harga:150000})).data;
+ const classBefore=(await call(o,'get','/api/pembayaran')).find(p=>p.id===classPack.id);assert.equal(classBefore.statusMasaBerlaku,'Aktif');
+ const classEdited=(await call(o,'put','/api/atlet/'+classFix.id,{...classFix,status:'Aktif',kelompok:'Semi Private Class'})).data;assert.equal(classEdited.kelompok,'Semi Private Class');
+ const classAfter=(await call(o,'get','/api/pembayaran')).find(p=>p.id===classPack.id);assert.equal(classAfter.jenisKelas,classBefore.jenisKelas);assert.equal(classAfter.totalTagihan,classBefore.totalTagihan);assert.equal(classAfter.sisaPertemuan,classBefore.sisaPertemuan);
+ await call(coach,'put','/api/atlet/'+classFix.id,{...classEdited,kelompok:'Group Class'},403);
+ await call(o,'post','/api/owner/package/'+classPack.id+'/cancel',{reason:'Selesai uji koreksi kelas aktivasi'});
  const staff=(await call(o,'get','/api/akun')).find(x=>x.username==='coach');
  const schedule=await create('jadwal',{nama:'Sesi uji kuota',tanggal:B.today(),jenisKelas:a.kelompok,coachId:staff.id,mulai:'15:00',selesai:'16:00',lokasi:'Hotel Grand Wahid',atletIds:[a.id]});
  const entry=await create('absensi',{atletId:a.id,jadwalId:schedule.id,tanggal:B.today(),status:'Alpa'});

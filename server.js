@@ -312,7 +312,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (out.tanggalLahir > B.today()) throw fail(400, 'Tanggal lahir tidak boleh di masa depan');
       B.validateAge(out);
       if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nomor WhatsApp orang tua tidak valid');
-      if (old && out.kelompok !== B.canonical(old.kelompok) && (await payments(db)).some(p => athleteLink(p, old) && p.statusMasaBerlaku === 'Aktif' && p.status === 'Lunas')) throw fail(400, 'Kelas baru dapat diganti setelah paket aktif selesai');
+      // Owner may correct registration classes before completing activation, even with a paid package.
+      // Existing package transactions retain their recorded class, price and quota.
       return out;
     }
     if (kind === 'pelatih') { for (const [k,label] of [['nama','Nama pelatih'],['noHp','Nomor HP'],['spesialisasi','Spesialisasi']]) out[k] = text(input[k], label, k === 'nama', 200); return out; }
