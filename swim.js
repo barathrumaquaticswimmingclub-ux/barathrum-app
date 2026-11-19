@@ -289,13 +289,13 @@ function mount(app, h) {
     out.foto=P.photo(input.foto);
     return out;
   }
-  async function applyRegistration(db, registration, target, source='Google Form') {
+  async function applyRegistration(db, registration, target, source='Google Form', distinctReason='') {
     let p;
     try { p = cleanPayload(registration.payload, registration.kind); }
     catch (e) { if (target === 'new') throw e; p = {}; }
     let a;
     if (target === 'new') {
-      if(require('./roster-identity').candidates(await rows(db,'atlet'),p).length)throw fail(409,'Identitas mungkin sudah terdaftar. Hubungkan ke atlet lama setelah mencocokkan data; atlet baru tidak dibuat.');
+      if(!distinctReason&&require('./roster-identity').candidates(await rows(db,'atlet'),p).length)throw fail(409,'Identitas mungkin sudah terdaftar. Hubungkan ke atlet lama setelah mencocokkan data; atlet baru tidak dibuat.');
       const profile={...p};delete profile.foto;
       a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: source }, null);
     } else {
@@ -355,8 +355,10 @@ function mount(app, h) {
       const r = (await c.query('SELECT * FROM brtm_registrations WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
       if (!r) throw fail(404, 'Pendaftaran tidak ditemukan'); if (r.status !== 'Perlu diperiksa') throw fail(409, 'Pendaftaran sudah diproses');
       if (req.body.atletId !== 'new' && !/^[1-9]\d{0,14}$/.test(String(req.body.atletId))) throw fail(400, 'Pilih atlet tujuan');
-      const a = await applyRegistration(c, r, req.body.atletId);
-      await audit(c, req.user, 'hubungkan-pendaftaran', 'atlet', a.id, null, { registrationId: r.id });
+      const distinctReason=String(req.body.distinctReason||'').trim();
+      if(req.body.atletId==='new'&&distinctReason&&(distinctReason.length<8||distinctReason.length>500))throw fail(400,'Isi alasan pembeda identitas 8–500 karakter');
+      const a = await applyRegistration(c, r, req.body.atletId, 'Pemeriksaan Owner', req.body.atletId==='new'?distinctReason:'');
+      await audit(c, req.user, 'hubungkan-pendaftaran', 'atlet', a.id, null, { registrationId: r.id, distinctReason:distinctReason||null });
     }); res.json({ pesan: 'Data formulir berhasil dihubungkan' });
   }));
 }
