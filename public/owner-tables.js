@@ -235,3 +235,5 @@ function refreshRegularActivation(snapshot){
  document.querySelectorAll('[data-regular-status]').forEach(el=>{const s=(records.jadwal||[]).find(s=>s.id===el.dataset.regularStatus);if(!s)return;const done=s.atletIds?.length&&s.atletIds.every(id=>(records.absensi||[]).some(r=>r.jadwalId===s.id&&String(r.atletId)===String(id)));el.textContent=s.statusSesi==='Libur'?'Libur':done?'Nonaktif · selesai':'Terjadwal';});
  document.querySelectorAll('[data-regular-names]').forEach(el=>{const s=(records.jadwal||[]).find(s=>s.id===el.dataset.regularNames);if(s)el.textContent=regularScheduleNames(s,records);});
 }
+// Resolve the current renderer when filters change, rather than retaining the legacy card renderer.
+for(const [id,event] of [['search','oninput'],['filter','onchange'],['monthFilter','onchange']])if($(id))$(id)[event]=()=>renderList();
