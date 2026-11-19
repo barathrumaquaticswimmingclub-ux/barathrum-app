@@ -18,7 +18,10 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(owner,'post',endpoint,{...body,atletId:c.id},400);
  await call(owner,'post',endpoint,{...body,tanggal:'2026-11-19'},400);await call(owner,'post',endpoint,{...body,kolam:22},400);await call(owner,'post',endpoint,{...body,entries:[{gaya:'Bebas',jarak:50,detik:0}]},400);await call(owner,'post',endpoint,{...body,entries:[body.entries[0],body.entries[0]]},400);
  await call(owner,'post',endpoint,{...body,entries:[{...body.entries[0],gaya:'Tidak ada'}]},400);await call(owner,'post',endpoint,{...body,lokasi:''},400);
- await call(owner,'post',endpoint,body,201);await call(owner,'post',endpoint,body,201);assert.equal((await get()).records.length,3);
+ // Ranking validation and source medals, including a tied podium.
+ body.entries[0]={...body.entries[0],peringkat:2,jumlahAtlet:18,medali:'Perak',kelompokLomba:'GROUP C Putri'};
+ for(const entry of [{peringkat:19,jumlahAtlet:18},{peringkat:2},{peringkat:1.5,jumlahAtlet:18},{peringkat:0,jumlahAtlet:18},{statusHasil:'DQ',detik:null,peringkat:2,jumlahAtlet:18},{peringkat:2,jumlahAtlet:18,medali:'Palsu'}])await call(owner,'post',endpoint,{...body,requestId:crypto.randomUUID(),entries:[{gaya:'Bebas',jarak:25,detik:20,...entry}]},400);
+ await call(owner,'post',endpoint,body,201);await call(owner,'post',endpoint,body,201);assert.equal((await get()).records.length,3);assert.equal((await get()).records[0].peringkat,2);assert.equal((await get()).records[0].jumlahAtlet,18);assert.equal((await get()).records[0].medali,'Perak');
  await call(owner,'post',endpoint,{...body,entries:[{...body.entries[0],detik:19}]},409);
  await call(owner,'post',endpoint,{...body,requestId:crypto.randomUUID()},409);
  const second={...body,requestId:crypto.randomUUID(),event:'Event Dua <aman>',tanggal:'2026-11-01',entries:[{gaya:'Bebas',jarak:50,detik:37},{gaya:'Bebas',jarak:25,detik:20},{gaya:'Kupu-kupu',jarak:100,detik:90}]};await call(owner,'post',endpoint,second,201);
@@ -38,7 +41,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  assert(!M.table(equipmentRecords,50,false,'normal').includes('50m free fins'));
  assert(M.table(equipmentRecords,50,false,'kick').includes('50m kick breast'));
  assert.equal(M.parse('1.27.43'),87.43);assert.equal(M.parse('1:27.43'),87.43);assert.equal(M.parse('38,32'),38.32);assert.equal(M.parse('1:60.00'),null);assert.equal(M.parse('-1'),null);assert.equal(M.format(87.43),'1:27.43');
- const original=ownerData.records.find(r=>r.event==='Event Satu'),eventId=original.eventId,originalRevision=original.revision;
+ assert(M.rankingTable(ownerData.records,25,'all','all').includes('Peringkat 2 dari 18 atlet'));assert(M.rankingTable(ownerData.records,25,'all','all').includes('🥈'));assert.equal(M.medalIcon({peringkat:1}), '');assert.equal(M.rankText({statusHasil:'DQ',jumlahAtlet:18}),'DQ · Tidak berperingkat'); const original=ownerData.records.find(r=>r.event==='Event Satu'),eventId=original.eventId,originalRevision=original.revision;
  for(const agent of [coach,team]){await call(agent,'put',endpoint+'/'+eventId,{...body,requestId:crypto.randomUUID(),revision:originalRevision},403);await call(agent,'delete',endpoint+'/'+eventId,{requestId:crypto.randomUUID(),revision:originalRevision},403);}
  await call(owner,'put',endpoint+'/'+eventId,{...body,requestId:crypto.randomUUID(),revision:'stale'},409);
  const edit={...body,requestId:crypto.randomUUID(),event:'Event Satu Koreksi',revision:originalRevision,entries:[{gaya:'Bebas',jarak:50,detik:36.5}]};await call(owner,'put',endpoint+'/'+eventId,edit);await call(owner,'put',endpoint+'/'+eventId,edit);assert.equal((await get()).records.filter(r=>r.eventId===eventId).length,1);assert.equal((await get()).records.find(r=>r.eventId===eventId).id,body.entries?ownerData.records.find(r=>r.eventId===eventId&&r.jarak===50).id:null);

@@ -9,11 +9,11 @@ assert.equal(M.meetings(rows).length,1);
 assert(M.meetingOptions(rows).includes('12–14 November 2026'));
 for(const owner of [false,true]){
  const dom=new JSDOM(M.table(rows,50,owner,'all',M.meetingKey(rows[0]))),doc=dom.window.document;
- assert.equal(doc.querySelectorAll('thead th').length,3,'One result column for the whole meet');
+ assert.equal(doc.querySelector('table').querySelectorAll('thead th').length,3,'One result column for the whole meet');
  assert.equal(doc.querySelectorAll('[data-race-result]').length,5,'All five times remain visible');
  assert.equal(doc.querySelectorAll('[data-race-edit]').length,owner?3:0,'Keep each original result sheet editable');
  assert(doc.querySelector('thead').textContent.includes('12–14 November 2026'));
- for(const tr of doc.querySelectorAll('tbody tr'))assert.equal(tr.children.length,3);
+ for(const tr of doc.querySelector('table').querySelectorAll('tbody tr'))assert.equal(tr.children.length,3);
  dom.window.close();
 }
 assert.equal(JSON.stringify(rows),before,'Source dates and records remain unchanged');
