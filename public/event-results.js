@@ -1,16 +1,18 @@
 (function(root){
 'use strict';
-const strokes=['Kupu-kupu','Punggung','Dada','Bebas'],events=[];
-for(const gaya of strokes)for(const jarak of [25,50,100,200])events.push({gaya,jarak,label:jarak+' m '+gaya});
-for(const jarak of [100,200,400])events.push({gaya:'Ganti',jarak,label:jarak+' m Ganti perorangan (IM)'});
-for(const jarak of [400,800,1500,2000])events.push({gaya:'Bebas',jarak,label:jarak+' m Bebas'});
-const categories=[['all','Semua nomor'],['normal','Tanpa alat'],['fins','Fins'],['kick','Kaki / Board'],['kick-fins','Kaki / Board + Fins']];
-for(const e of events)e.category='normal';
-// Separate event identities keep assisted times out of ordinary stroke comparisons.
-for(const [category,prefix,suffix] of [['fins','',' Fins'],['kick','Kaki ',''],['kick-fins','Kaki ',' Fins']])
- for(const stroke of strokes)for(const jarak of [25,50,100,200]){
-  const gaya=prefix+stroke+suffix;events.push({gaya,jarak,label:jarak+' m '+gaya,category});
- }
+// Shared by Owner input, parent tables and API validation. Keep stored stroke identities.
+const events=[];
+function add(gaya,jarak,label,category='normal'){events.push({gaya,jarak,label:jarak+'m '+label,category});}
+for(const [gaya,label] of [['Kupu-kupu','fly'],['Punggung','back']]){
+ for(const jarak of [25,50,100]){add(gaya,jarak,label);add(gaya+' Fins',jarak,label+' fins','fins');}
+ add(gaya,200,label);
+}
+for(const jarak of [25,50,100,200])add('Dada',jarak,'breast');
+for(const jarak of [25,50])add('Kaki Dada',jarak,'kick breast','kick');
+for(const jarak of [25,50,100]){add('Bebas',jarak,'free');add('Bebas Fins',jarak,'free fins','fins');}
+for(const jarak of [200,400,800,1200,1500])add('Bebas',jarak,'free');
+for(const jarak of [25,50])add('Kaki Bebas',jarak,'kick free','kick');
+const categories=[['all','Semua nomor'],['normal','Tanpa alat'],['fins','Fins'],['kick','Kaki / Board']];
 const categoryOptions=(selected='all')=>categories.map(([value,label])=>'<option value="'+value+'"'+(selected===value?' selected':'')+'>'+label+'</option>').join('');
 const rounds=['Hasil','Seri','Semifinal','Final','Swim-off'];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
