@@ -13,12 +13,12 @@ function activeOwnerPack(a){const ps=(S.records.pembayaran||[]).filter(p=>p.atle
 const managementList=renderList;renderList=function(){if(!isOwner())return managementList();const k=S.section,q=qName(),f=$('filter').value;
  if(k==='atlet'){
   const list=filteredRows().sort(activeFirst);$('records').className='ops-records';$('sectionSummary').innerHTML='';
-  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua'),'<button data-edit="'+esc(a.id)+'">Edit</button>'+btn('activation-open',a.id,'Aktivasi')]));return;
+  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')]));return;
  }
  if(['aktivasi','pembayaran'].includes(k)){
   const list=(S.records.atlet||[]).filter(a=>byName(a,q)&&(!f||(k==='aktivasi'?(f==='Belum ada paket'?!latestOwnerPack(a):a.status===f):[a.statusSPP,latestOwnerPack(a)?.status,latestOwnerPack(a)?.statusMasaBerlaku].includes(f)))).sort(activeFirst);
   $('records').className='ops-records';$('sectionSummary').innerHTML='<p class="muted">'+(k==='aktivasi'?'Masukkan paket awal yang sudah berjalan atau ubah masa berlaku, sisa, kuota dan harga. Aktivasi awal berstatus Lunas dihitung sebagai pendapatan.':'Gunakan Paket baru untuk pembayaran berikutnya. Konfirmasi tagihan yang sudah ada melalui Riwayat / edit. Harga dan jumlah pertemuan dapat diubah Owner.')+'</p>'+btn('spp-review','','Tinjau koreksi SPP');
-  $('records').innerHTML=grid(['No.','Nama / panggilan','Kelas','Status atlet','Paket berjalan','Masa berlaku','Sisa','Tindakan'],list.map((a,i)=>{const p=activeOwnerPack(a);return [i+1,esc(athleteLabel(a)),esc(a.kelompok),badge(a.status),p?badge(p.status)+(p.activationOnly?'<small>Aktivasi awal</small>':''):'Belum ada paket',p?esc(displayDate(p.tanggal))+' – '+esc(displayDate(p.berlakuSampai)):'—',a.kelompok==='Prestasi Class'?'Bulanan':p?p.sisaPertemuan+' / '+p.totalPertemuan:'—',k==='aktivasi'?btn('activation-open',a.id,p?'Edit aktivasi / paket':'Aktifkan')+btn('manage-history',a.id,'Riwayat / hapus')+btn('package-status',a.id,'Status atlet'):btn('payment-open',a.id,'Paket baru')+btn('manage-history',a.id,'Riwayat / edit / hapus')+btn('parent-info',a.id,'Info orang tua')];}));return;
+  $('records').innerHTML=grid(['No.','Nama / panggilan','Kelas','Status atlet','Paket berjalan','Masa berlaku','Sisa','Tindakan'],list.map((a,i)=>{const p=activeOwnerPack(a);return [i+1,esc(athleteLabel(a)),esc(a.kelompok),badge(a.status),p?badge(p.status)+(p.activationOnly?'<small>Aktivasi awal</small>':''):'Belum ada paket',p?esc(displayDate(p.tanggal))+' – '+esc(displayDate(p.berlakuSampai)):'—',a.kelompok==='Prestasi Class'?'Bulanan':p?p.sisaPertemuan+' / '+p.totalPertemuan:'—',k==='aktivasi'?btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,p?'Edit aktivasi / paket':'Aktifkan')+btn('manage-history',a.id,'Riwayat / hapus')+btn('package-status',a.id,'Status atlet'):btn('payment-open',a.id,'Paket baru')+btn('manage-history',a.id,'Riwayat / edit / hapus')+btn('parent-info',a.id,'Info orang tua')];}));return;
  }
  managementList();
  if(k==='perkembangan'){
@@ -51,6 +51,7 @@ function ownerParentInfo(a){const packs=(S.records.pembayaran||[]).filter(p=>p.a
  }catch(e){$('infoResult').textContent=e.message;}finally{if(app.isConnected)app.disabled=wa.disabled=false;}};$('infoApp').onclick=()=>send('app');$('infoWa').onclick=()=>send('wa');
 }
 async function ownerManagementAction(e){const b=e.target.closest('[data-wf]');if(!b||!isOwner())return;const id=b.dataset.id,action=b.dataset.wf,a=(S.records.atlet||[]).find(a=>a.id===id);try{
+ if(action==='athlete-edit')openForm('atlet',a);
  if(action==='activation-open')ownerPackageForm(a,activeOwnerPack(a),true);
  if(action==='payment-open')ownerPackageForm(a,null,false);
  if(action==='manage-history')ownerHistory(a);
