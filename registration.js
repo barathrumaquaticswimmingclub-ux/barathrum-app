@@ -61,9 +61,8 @@ function mount(app,{pool,wrap,transaction,rows,limit,cleanPayload,applyRegistrat
    const r=(await c.query("INSERT INTO brtm_registrations(kind,response_id,payload,status) VALUES('nonprestasi',$1,$2,'Perlu diperiksa') RETURNING *",[responseId,JSON.stringify(data)])).rows[0];
    const athletes=(await rows(c,'atlet')).filter(a=>!a.mergedInto);
    const match=require('./roster-identity').registrationMatch(athletes,data);
-   if(!match.possible.length)await applyRegistration(c,r,'new','Formulir BRTM');
-   else if(match.target)await applyRegistration(c,r,match.target.id,'Formulir BRTM');
-   else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2',['Identitas mungkin sudah terdaftar. Owner perlu mencocokkan data; atlet baru tidak dibuat. Jadwal menunggu konfirmasi admin.',r.id]);
+   if(match.possible.length)throw fail(409,'Data anak sama persis dengan data yang sudah terdaftar. Pendaftaran duplikat ditolak; hubungi admin untuk aktivasi.');
+   await applyRegistration(c,r,'new','Formulir BRTM');
   });
   // No existing-name, account or athlete identifiers are disclosed on the public route.
   res.status(201).json({ok:true,installUrl:'/swim/install/'});

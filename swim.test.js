@@ -57,11 +57,11 @@ async function main(){
   assert.equal((await body(send('nonprestasi',{responseId:'invalid',data:{...payload,kelompok:'Prestasi Class'}}))).status,'Perlu diperiksa');checks++;
   let r=await body(send('nonprestasi',{responseId:'test-1',data:payload}));assert.equal(r.status,'Tersambung');checks++;
   r=await body(send('nonprestasi',{responseId:'test-1',data:payload}));assert.equal(r.duplicate,true);checks++;
-  r=await body(send('nonprestasi',{responseId:'test-2',data:payload}));assert.equal(r.status,'Tersambung');checks++;
+  r=await body(send('nonprestasi',{responseId:'test-2',data:payload}));assert.equal(r.status,'Ditolak duplikat');checks++;
   let athletes=await body(owner.get('/api/atlet'));assert.equal(athletes.filter(x=>x.nama===payload.nama).length,1);checks++;
-  r=await body(send('nonprestasi',{responseId:'ambiguous',data:{...payload,nama:a.nama,tanggalLahir:a.tanggalLahir,noHpOrtu:a.noHpOrtu,kelompok:'Private Class'}}));assert.equal(r.status,'Perlu diperiksa');checks++;
+  r=await body(send('nonprestasi',{responseId:'ambiguous',data:{...payload,nama:a.nama,tanggalLahir:a.tanggalLahir,noHpOrtu:a.noHpOrtu,kelompok:'Private Class'}}));assert.equal(r.status,'Tersambung');checks++;
   let registrations=await body(owner.get('/api/pendaftaran'));const pending=registrations.find(x=>x.response_id==='ambiguous');
-  await body(write(owner,'post','/api/pendaftaran/'+pending.id+'/hubungkan',{atletId:a.id}));
+  await body(write(owner,'post','/api/pendaftaran/'+pending.id+'/hubungkan',{atletId:a.id}),409);
   await body(write(owner,'post','/api/pendaftaran/'+pending.id+'/hubungkan',{atletId:a.id}),409);
   assert.equal((await body(owner.get('/api/pembayaran'))).find(x=>x.id===payment.id).sisaPertemuan,4);checks++;
   await body(send('prestasi',{responseId:'test-p',data:{...payload,nama:'Prestasi Baru'}}));

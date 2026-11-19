@@ -40,28 +40,28 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  const pic=await parent.get(d.profil.foto);assert.equal(pic.headers['cache-control'],'no-store');const meta=await sharp(pic.body).metadata();assert(meta.width<=1000);assert.equal(meta.format,'webp');
  assert((await call(owner,'get','/api/audit')).some(x=>x.action==='ubah-profil-orangtua'&&x.username.startsWith('orangtua:')));
  const relog=request.agent(app);await call(relog,'post','/swim/api/login',{username:info.nama,password:'brtm'});
- // Forms use aliases and cautious identity matching across classes and inactive records.
+ // Registration changes remain distinct; existing aliases and profile history stay intact.
  const token=crypto.randomBytes(32).toString('hex');await pool.query("INSERT INTO brtm_form_keys(kind,token_hash) VALUES('prestasi',$1)",[crypto.createHash('sha256').update(token).digest('hex')]);
  const foto={mime:'image/png',base64:fs.readFileSync('public/icons/brtm-brand-512.png').toString('base64')};
  const payload={...info,persetujuan:'Saya telah membaca dan menyetujui ketentuan BRTM.',foto};
  async function form(responseId,data){const r=await anon.post('/integrations/google-forms/prestasi').set('Authorization','Bearer '+token).send({responseId,data});assert.equal(r.status,200,JSON.stringify(r.body));return r.body;}
  assert.equal((await form('profile-old-name',payload)).status,'Tersambung');
- assert.equal((await form('profile-typo',{...payload,nama:'Anak Sinkron SatUu'})).status,'Perlu diperiksa');
- assert.equal((await call(owner,'get','/api/atlet')).length,2);
+ assert.equal((await form('profile-typo',{...payload,nama:'Anak Sinkron SatUu'})).status,'Tersambung');
+ assert.equal((await call(owner,'get','/api/atlet')).length,4);
  const pending=(await pool.query("SELECT id FROM brtm_registrations WHERE response_id='profile-typo'")).rows[0];await call(owner,'post','/api/pendaftaran/'+pending.id+'/hubungkan',{atletId:'new'},409);
- // Confirmed twins with near-identical names require an explicit Owner review reason.
+ // Twins with near-identical names are accepted automatically as separate athletes.
  const twinBase={...payload,nama:'Leona Ansana Aji Nismara',namaPanggilan:'Ona',tanggalLahir:'2021-01-07',kelompok:'Private Couple Class'};
  assert.equal((await form('twin-ona',twinBase)).status,'Tersambung');
  const ona=(await call(owner,'get','/api/atlet')).find(x=>x.nama===twinBase.nama);
- assert.equal((await form('twin-oni',{...twinBase,nama:'Leony Ansana Aji Nismara',namaPanggilan:'Oni'})).status,'Perlu diperiksa');
+ assert.equal((await form('twin-oni',{...twinBase,nama:'Leony Ansana Aji Nismara',namaPanggilan:'Oni'})).status,'Tersambung');
  const oniForm=(await pool.query("SELECT id FROM brtm_registrations WHERE response_id='twin-oni'")).rows[0];
  await call(owner,'post','/api/pendaftaran/'+oniForm.id+'/hubungkan',{atletId:'new'},409);
  await call(coach,'post','/api/pendaftaran/'+oniForm.id+'/hubungkan',{atletId:'new',distinctReason:'Saudara kembar Ona sesuai konfirmasi Owner'},403);
- await call(owner,'post','/api/pendaftaran/'+oniForm.id+'/hubungkan',{atletId:'new',distinctReason:'Saudara kembar Ona sesuai konfirmasi Owner'});
+ await call(owner,'post','/api/pendaftaran/'+oniForm.id+'/hubungkan',{atletId:'new',distinctReason:'Saudara kembar Ona sesuai konfirmasi Owner'},409);
  const twins=(await call(owner,'get','/api/atlet')).filter(x=>[twinBase.nama,'Leony Ansana Aji Nismara'].includes(x.nama));assert.equal(twins.length,2);assert.notEqual(twins[0].id,twins[1].id);assert.equal(twins.find(x=>x.id===ona.id).namaPanggilan,'Ona');
  await call(owner,'post','/api/pendaftaran/'+oniForm.id+'/hubungkan',{atletId:'new',distinctReason:'Saudara kembar Ona sesuai konfirmasi Owner'},409);
  // Genuine sibling with distinct name/nickname remains a separate child.
- assert.equal((await form('profile-sibling',{...payload,nama:'Kirana Putri',namaPanggilan:'Kirana'})).status,'Tersambung');assert.equal((await call(owner,'get','/api/atlet')).length,5);
+ assert.equal((await form('profile-sibling',{...payload,nama:'Kirana Putri',namaPanggilan:'Kirana'})).status,'Tersambung');assert.equal((await call(owner,'get','/api/atlet')).length,7);
  d=await call(parent,'get','/swim/api/dashboard');
  // Parent UI exposes a dedicated editor, freezes revision and submits only editable fields.
  const dom=new JSDOM(fs.readFileSync('public/swim/index.html','utf8'),{url:'https://brtm.test/swim/',runScripts:'outside-only'}),w=dom.window;

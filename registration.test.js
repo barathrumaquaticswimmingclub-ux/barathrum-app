@@ -25,13 +25,18 @@ const {initDb,createApp,passwordHash}=require('./server'),{CONSENT}=require('./r
  assert.equal((await pool.query("SELECT count(*)::int n FROM data_klub WHERE jenis='pembayaran'")).rows[0].n,0);
  const p=(await pool.query('SELECT * FROM brtm_photos WHERE athlete_id=$1',[a.id])).rows[0];const photo=await sharp(Buffer.from(p.base64,'base64')).metadata();assert.equal(photo.format,'webp');assert(photo.width<=1000);assert(photo.height<=1000);assert(!photo.exif);assert(Buffer.from(p.base64,'base64').length<image.length);
  const stored=(await pool.query('SELECT payload FROM brtm_registrations')).rows[0].payload;assert.equal(stored.foto.mime,'image/webp');assert.equal(stored.jadwalStatus,'Menunggu konfirmasi admin');assert.equal(stored.persetujuan,CONSENT);
- // A second request for the same identity links to its history; a mismatch goes to Owner review without disclosure.
- await call(anon,'post','/registration/api/submit',{...input,schedules:[first,config.classes[input.kelompok].schedules[2].value],requestId:'registration-request-two-002'},201);const linked=(await call(owner,'get','/api/atlet')).body;assert.equal(linked.length,1);assert(linked[0].jadwalPilihan.includes('Sabtu'));
- await call(anon,'post','/registration/api/submit',{...input,noHpOrtu:'089999999999',requestId:'registration-request-three-003'},201);assert.equal((await call(owner,'get','/api/atlet')).body.length,1);assert.equal((await pool.query("SELECT count(*)::int n FROM brtm_registrations WHERE status='Perlu diperiksa'")).rows[0].n,1);
- // A spelling variation with the same verified identity is held for review, not duplicated.
+ // Exact biodata is rejected; any changed biodata creates a separate athlete for Owner activation.
+ await call(anon,'post','/registration/api/submit',{...input,requestId:'registration-exact-duplicate-001'},409);
+ await call(anon,'post','/registration/api/submit',{...input,schedules:[first,config.classes[input.kelompok].schedules[2].value],requestId:'registration-request-two-002'},201);const linked=(await call(owner,'get','/api/atlet')).body;assert.equal(linked.length,2);assert(linked.some(x=>x.jadwalPilihan.includes('Sabtu')));
+ await call(anon,'post','/registration/api/submit',{...input,noHpOrtu:'089999999999',requestId:'registration-request-three-003'},201);assert.equal((await call(owner,'get','/api/atlet')).body.length,3);assert.equal((await pool.query("SELECT count(*)::int n FROM brtm_registrations WHERE status='Perlu diperiksa'")).rows[0].n,0);
+ // A spelling variation is accepted immediately as a distinct athlete.
  const near=(await call(anon,'post','/registration/api/submit',{...input,nama:'Anggota Form Sato',requestId:'registration-name-variation-001'},201)).body;
- assert.deepEqual(near,{ok:true,installUrl:'/swim/install/'});assert.equal((await call(owner,'get','/api/atlet')).body.length,1);
- assert.equal((await pool.query("SELECT status FROM brtm_registrations WHERE response_id='web-registration-name-variation-001'")).rows[0].status,'Perlu diperiksa');
+ assert.deepEqual(near,{ok:true,installUrl:'/swim/install/'});assert.equal((await call(owner,'get','/api/atlet')).body.length,4);
+ assert.equal((await pool.query("SELECT status FROM brtm_registrations WHERE response_id='web-registration-name-variation-001'")).rows[0].status,'Tersambung');
+ const identity=require('./roster-identity');const biodata=Object.fromEntries(identity.REGISTRATION_FIELDS.map(k=>[k,'A1']));
+ assert.equal(identity.registrationMatch([biodata],{...biodata}).possible.length,1);
+ for(const key of identity.REGISTRATION_FIELDS){assert.equal(identity.registrationMatch([biodata],{...biodata,[key]:'A2'}).possible.length,0,key);}
+ assert.equal(identity.registrationMatch([biodata],{...biodata,nama:'a1'}).possible.length,0);
  const parent=request.agent(app);await call(parent,'post','/swim/api/login',{username:input.nama,password:'brtm'});assert.equal((await call(parent,'get','/swim/api/dashboard')).body.profil.nama,input.nama);
  // Full slots, inactive coaches and unrelated locations cannot be offered or forged.
  const full=[];for(let i=0;i<16;i++)full.push(String((await pool.query("INSERT INTO data_klub(jenis,data) VALUES('atlet',$1) RETURNING id",[{nama:'Regular '+i,status:'Aktif',kelompok:input.kelompok}])).rows[0].id));

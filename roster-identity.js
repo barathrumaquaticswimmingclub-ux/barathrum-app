@@ -15,11 +15,11 @@ function candidates(athletes,input){
   ))||phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(input.noHpOrtu)&&near(a,input)
  ));
 }
-function registrationMatch(athletes,input){
- const possible=candidates(athletes,input);
- const exact=possible.filter(a=>[a.nama,...(a.nameAliases||[])].some(n=>norm(n)===norm(input.nama))&&a.tanggalLahir&&a.tanggalLahir===input.tanggalLahir&&phone(a.noHpOrtu)&&phone(a.noHpOrtu)===phone(input.noHpOrtu)&&B.canonical(a.kelompok)===input.kelompok&&a.status!=='Nonaktif');
- return {possible,target:possible.length===1&&exact.length===1?exact[0]:null};
-}
+// Compare submitted biodata literally after the form's standard validation/trim.
+// Photos, consent versions and internal status are not child biodata.
+const REGISTRATION_FIELDS=['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','kelompok','jadwalPilihan'];
+function exactRegistration(a,b){return !a.mergedInto&&REGISTRATION_FIELDS.every(k=>String(a[k]||'')===String(b[k]||''));}
+function registrationMatch(athletes,input){return {possible:athletes.filter(a=>exactRegistration(a,input)),target:null};}
 async function consolidate(db,{rows,save},user={id:null,username:'sistem-sinkronisasi'}){
  const athletes=await rows(db,'atlet'),packs=await rows(db,'pembayaran'),schedules=await rows(db,'jadwal');
  const slots=(await db.query('SELECT * FROM brtm_weekly_slots')).rows;
@@ -41,4 +41,4 @@ async function consolidate(db,{rows,save},user={id:null,username:'sistem-sinkron
  }
  return merged;
 }
-module.exports={strongMatch,consolidate,candidates,registrationMatch};
+module.exports={strongMatch,consolidate,candidates,registrationMatch,exactRegistration,REGISTRATION_FIELDS};

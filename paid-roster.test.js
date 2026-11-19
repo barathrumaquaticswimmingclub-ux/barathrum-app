@@ -35,15 +35,15 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(aliasParent,'post','/swim/api/login',{username:duplicate.nama,password:'brtm'});
  const billsBefore=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' ORDER BY id")).rows;
  await app.locals.maintain();await app.locals.maintain();
- const all=await call(owner,'get','/api/atlet');assert(!all.some(a=>a.id===duplicate.id));assert(all.some(a=>a.id===different.id));assert(all.some(a=>a.id===lula.id));
- const shadow=(await pool.query("SELECT data FROM data_klub WHERE id=$1",[duplicate.id])).rows[0].data;assert.equal(shadow.mergedInto,lula.id);assert.equal(shadow.status,'Nonaktif');
+ const all=await call(owner,'get','/api/atlet');assert(all.some(a=>a.id===duplicate.id));assert(all.some(a=>a.id===different.id));assert(all.some(a=>a.id===lula.id));
+ const shadow=(await pool.query("SELECT data FROM data_klub WHERE id=$1",[duplicate.id])).rows[0].data;assert.equal(shadow.mergedInto,undefined);assert.equal(shadow.status,'Aktif');
  assert.deepEqual((await pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' ORDER BY id")).rows,billsBefore);
- const dash=await call(aliasParent,'get','/swim/api/dashboard');assert.equal(dash.profil.id,lula.id);assert.equal(dash.latihan.sisaPertemuan,0);
+ const dash=await call(aliasParent,'get','/swim/api/dashboard');assert.equal(dash.profil.id,duplicate.id);assert.equal(dash.latihan.sisaPertemuan,null);
  assert((await call(owner,'get','/api/pembayaran')).some(p=>p.id===lulaPack.id&&p.totalPertemuan===1&&p.sisaPertemuan===0));
- await call(aliasParent,'post','/swim/api/logout');await call(aliasParent,'post','/swim/api/login',{username:duplicate.nama,password:'brtm'});assert.equal((await call(aliasParent,'get','/swim/api/dashboard')).profil.id,lula.id);
- await pool.query('UPDATE brtm_parents SET active=FALSE WHERE athlete_id=$1',[lula.id]);await call(aliasParent,'get','/swim/api/dashboard',undefined,401);
+ await call(aliasParent,'post','/swim/api/logout');await call(aliasParent,'post','/swim/api/login',{username:duplicate.nama,password:'brtm'});assert.equal((await call(aliasParent,'get','/swim/api/dashboard')).profil.id,duplicate.id);
+ await pool.query('UPDATE brtm_parents SET active=FALSE WHERE athlete_id=$1',[lula.id]);assert.equal((await call(aliasParent,'get','/swim/api/dashboard')).profil.id,duplicate.id);
  await pool.query('UPDATE brtm_parents SET active=TRUE WHERE athlete_id=$1',[lula.id]);
- await call(owner,'put','/api/owner/athlete/'+lula.id+'/status',{status:'Nonaktif'});await call(aliasParent,'get','/swim/api/dashboard',undefined,401);
+ await call(owner,'put','/api/owner/athlete/'+lula.id+'/status',{status:'Nonaktif'});assert.equal((await call(aliasParent,'get','/swim/api/dashboard')).profil.id,duplicate.id);
  // A settled invoice from a previous class cannot imply historical Prestasi membership.
  const moved=await create('atlet',{nama:'Pindah kelas historis',kelompok:'Prestasi Class',status:'Aktif'});
  await pool.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1)",[JSON.stringify({atletId:moved.id,jenisKelas:'Regular Class (1x Seminggu)',status:'Lunas',tanggal:'2026-10-10',tanggalBerakhir:'2026-11-10',totalPertemuan:4,pemakaianAwal:0})]);
@@ -65,5 +65,5 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await app.locals.maintain();const groups=(await call(owner,'get','/api/jadwal')).filter(j=>j.tanggal==='2026-11-12');
  const newGroup=groups.find(j=>j.weeklyKey);assert(newGroup);assert(newGroup.atletIds.includes(lateTeam.id));assert(!newGroup.atletIds.includes(originalTeam.id));assert.equal(newGroup.lokasi,'Kolam Renang Pondok Selfie');
  assert.equal(groups.find(j=>j.id===otherPool.id).lokasi,'Hotel Grand Wahid Salatiga');assert(!(await app.locals.rosterAudit()).issues.some(i=>[lateTeam.id,originalTeam.id].includes(i.id)));
- await db.close();console.log('PASS paid roster: Gabriel late assignment, existing attendance preserved, payment activation, coach isolation, verified duplicate consolidation, alias login/session, quota/cash preservation and inactive canonical protection.');
+ await db.close();console.log('PASS paid roster: Gabriel late assignment, existing attendance preserved, payment activation, coach isolation, distinct similar-name preservation, separate login/session, quota/cash preservation and inactive canonical protection.');
 })().catch(e=>{console.error(e);process.exit(1);});

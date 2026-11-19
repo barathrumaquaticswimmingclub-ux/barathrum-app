@@ -39,7 +39,7 @@ async function retireEarlyNotices(db){
  }
 }
 async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'},days=35,seedDefaults=true){
- await require('./roster-identity').consolidate(db,{rows,save},user);
+ // Owner reviews distinct registrations in Aktivasi; never merge similar biodata automatically.
  const athletes=(await rows(db,'atlet')).filter(a=>!a.mergedInto),users=(await db.query('SELECT * FROM brtm_users WHERE active=TRUE')).rows;
  const adhi=users.find(u=>/adhi/i.test(u.nama)&&u.role==='coach')||users.find(u=>u.role==='prestasi');
  if(seedDefaults&&adhi&&!(await db.query("SELECT id FROM brtm_weekly_slots WHERE place='Prestasi' LIMIT 1")).rows.length){for(let day=1;day<=6;day++){for(const [start,end] of (day===1||day===3?[['05:00','06:30'],['15:00','17:00']]:[['15:00','17:00']]))await db.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name) VALUES($1,'Prestasi',$2,$3,$4,'Prestasi Class') ON CONFLICT DO NOTHING",[adhi.id,day,start,end]);}}

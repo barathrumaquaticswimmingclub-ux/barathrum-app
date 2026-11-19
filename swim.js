@@ -295,7 +295,7 @@ function mount(app, h) {
     catch (e) { if (target === 'new') throw e; p = {}; }
     let a;
     if (target === 'new') {
-      if(!distinctReason&&require('./roster-identity').candidates(await rows(db,'atlet'),p).length)throw fail(409,'Identitas mungkin sudah terdaftar. Hubungkan ke atlet lama setelah mencocokkan data; atlet baru tidak dibuat.');
+      if(require('./roster-identity').registrationMatch(await rows(db,'atlet'),p).possible.length)throw fail(409,'Data anak sama persis dengan data yang sudah terdaftar. Pendaftaran duplikat ditolak.');
       const profile={...p};delete profile.foto;
       a = await save(db, system, 'atlet', { ...profile, status: 'Aktif', sumber: source }, null);
     } else {
@@ -342,11 +342,11 @@ function mount(app, h) {
         return { status: 'Perlu diperiksa' };
       }
       const match=require('./roster-identity').registrationMatch(await rows(c,'atlet'),data);
-      if (!match.possible.length) await applyRegistration(c, r, 'new');
-      else if (match.target) await applyRegistration(c, r, match.target.id);
-      else await c.query('UPDATE brtm_registrations SET note=$1 WHERE id=$2', ['Identitas mungkin sudah terdaftar. Owner perlu mencocokkan data; atlet baru tidak dibuat.', r.id]);
+      if(match.possible.length){
+        await c.query('UPDATE brtm_registrations SET status=$1,note=$2 WHERE id=$3',['Ditolak duplikat','Seluruh biodata anak sama persis dengan data yang sudah terdaftar; tidak membuat atlet baru.',r.id]);
+      }else await applyRegistration(c,r,'new');
       await c.query('UPDATE brtm_form_keys SET last_received_at=NOW() WHERE kind=$1', [kind]);
-      return { status: !match.possible.length || match.target ? 'Tersambung' : 'Perlu diperiksa' };
+      return {status:match.possible.length?'Ditolak duplikat':'Tersambung',duplicateData:match.possible.length>0};
     }); res.json({ ok: true, ...result });
   }));
   app.post('/api/pendaftaran/:id/hubungkan', ...admin, wrap(async (req, res) => {
