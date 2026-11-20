@@ -75,6 +75,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   const attempts = new Map();
   function limit(req, key, max = 8, count = true) {
     const now = Date.now();
+    // Owner-authorized parent login relief; automatically expires at 21:00 WIB on 20 Nov 2026.
+    if (req.path === '/swim/api/login' && key.startsWith('swim') && now < Date.parse('2026-11-20T21:00:00+07:00')) return req.ip + ':' + key;
     for (const [k, v] of attempts) if (v.until < now) attempts.delete(k);
     if (attempts.size > 10000) attempts.clear();
     const k = req.ip + ':' + key;
