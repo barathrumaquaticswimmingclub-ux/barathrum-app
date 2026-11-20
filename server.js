@@ -50,6 +50,7 @@ async function initDb(pool) {
   await require('./tester-reset').initDb(pool);
   await require('./workflow').initDb(pool);
   await require('./training-board').initDb(pool);
+  await require('./whatsapp-payments').initDb(pool);
 }
 function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID, enforceRelease=secureCookies, release, trainingAiFetch } = {}) {
   const app = express();
@@ -58,6 +59,8 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
   app.locals.release=require('./releases').mount(app,{enforce:enforceRelease,release});
+  const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+  require('./whatsapp-payments').mountWebhook(app,{pool,wrap,transaction});
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/registration/api/submit',express.json({limit:'30mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
@@ -71,7 +74,6 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
   app.use('/api/owner/staff',express.json({limit:'30mb'}));
   app.use(express.json({ limit: '100kb' }));
-  const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
   const attempts = new Map();
   function limit(req, key, max = 8, count = true) {
     const now = Date.now();
@@ -268,7 +270,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES]){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES,...require('./whatsapp-payments').TABLES]){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
@@ -411,6 +413,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,validate,audit,passwordHash,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
+  require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {

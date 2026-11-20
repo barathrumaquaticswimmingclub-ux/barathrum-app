@@ -22,7 +22,7 @@ function isProtected(req){
  const p=req.path;if(!/^\/(api|auth)(\/|$)/.test(p)&&!p.startsWith('/swim/api/'))return false;
  if(['/auth/status','/auth/logout','/swim/api/logout'].includes(p))return false;
  // Image/anchor downloads cannot carry a page's custom header; their existing auth remains mandatory.
- if(['GET','HEAD'].includes(req.method)&&(/\/(photo|foto|pdf|word)(\/\d+)?$/.test(p)||p==='/api/backup'||p==='/api/formulir/installer'||/^\/api\/owner\/documents\//.test(p)||/^\/swim\/api\/(documents|receipt)\//.test(p)||p==='/swim/api/statement'))return false;
+ if(['GET','HEAD'].includes(req.method)&&(/\/(photo|foto|pdf|word)(\/\d+)?$/.test(p)||/^\/api\/owner\/whatsapp\/confirmations\/[a-f0-9-]{36}\/proof$/.test(p)||p==='/api/backup'||p==='/api/formulir/installer'||/^\/api\/owner\/documents\//.test(p)||/^\/swim\/api\/(documents|receipt)\//.test(p)||p==='/swim/api/statement'))return false;
  return true;
 }
 function mount(app,{enforce=false,release=metadata()}={}){
