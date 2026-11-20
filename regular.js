@@ -3,7 +3,7 @@ const B=require('./business');
 const fail=(s,m)=>Object.assign(Error(m),{status:s});
 const isRegular=a=>/^Regular Class \([12]x Seminggu\)$/.test(B.canonical(a?.kelompok||a?.jenisKelas));
 const assigned=(s,id)=>String(s.coachId)===String(id)||(s.regularFlex===true&&s.coachIds?.map(String).includes(String(id)));
-async function options(db,h,aid,date){
+async function options(db,h,aid,date,ownerCorrection=false){
  if(!B.validDate(date))throw fail(400,'Tanggal tidak valid');
  const a=await h.record(db,'atlet',aid);if(!isRegular(a)||a.status!=='Aktif')throw fail(400,'Khusus atlet Regular aktif');
  const coaches=(await db.query("SELECT id,nama FROM brtm_users WHERE active=TRUE AND role='coach'")).rows.filter(u=>/\b(fauzan|ilyas)\b/i.test(u.nama));
@@ -17,7 +17,7 @@ async function options(db,h,aid,date){
  const busy=overlapping.some(s=>s.statusSesi!=='Libur'&&!isRegular(s)&&s.atletIds?.length&&coaches.some(c=>assigned(s,c.id)));
  const blocked=busy||overlapping.some(s=>s.statusSesi==='Libur'&&(s.lokasi||'').includes('Pondok Selfie')&&(isRegular(s)||coaches.some(c=>assigned(s,c.id))));
  const ids=new Set(overlapping.filter(s=>s.regularFlex&&s.statusSesi!=='Libur').flatMap(s=>s.atletIds||[]).map(String));
- return {mulai,selesai,selesaiDiabsen:completed,tersedia:!completed&&!blocked&&(date<B.today()||date>B.today()||date===B.today()&&B.time()<selesai+':00')&&(ids.has(String(aid))||ids.size<coaches.length*16),terdaftar:!completed&&overlapping.some(s=>s.regularFlex&&s.atletIds?.map(String).includes(String(aid))),pelatih:coaches.map(c=>c.nama).join(' & ')};});
+ return {mulai,selesai,selesaiDiabsen:completed,tersedia:!completed&&!blocked&&(ownerCorrection||date!==B.today()||B.time()<selesai+':00')&&(ids.has(String(aid))||ids.size<coaches.length*16),terdaftar:!completed&&overlapping.some(s=>s.regularFlex&&s.atletIds?.map(String).includes(String(aid))),pelatih:coaches.map(c=>c.nama).join(' & ')};});
  return {tanggal:date,selesaiDiabsen:completed,slots};
 }
 async function book(db,h,user,aid,date,start,cancel=false){
@@ -29,11 +29,11 @@ async function book(db,h,user,aid,date,start,cancel=false){
  if(allOwn.some(s=>!isRegular(s)&&s.statusSesi!=='Libur'))throw fail(409,'Anak sudah memiliki sesi kelas lain pada tanggal ini. Hubungi Owner untuk koreksi.');
  const own=allOwn.filter(isRegular);
  if(own.some(s=>attendance.some(r=>r.jadwalId===s.id&&String(r.atletId)===String(aid))))throw fail(409,'Absensi sudah diisi. Koreksi absensi dahulu sebelum mengubah sesi.');
- if(!cancel&&!start){const opt=await options(db,h,aid,date);start=opt.slots.find(s=>s.terdaftar&&s.tersedia)?.mulai||opt.slots.find(s=>s.tersedia)?.mulai;if(!start)throw fail(409,'Tidak ada sesi Regular yang tersedia pada tanggal ini.');}
+ if(!cancel&&!start){const opt=await options(db,h,aid,date,user.role==='owner');start=opt.slots.find(s=>s.terdaftar&&s.tersedia)?.mulai||opt.slots.find(s=>s.tersedia)?.mulai;if(!start)throw fail(409,'Tidak ada sesi Regular yang tersedia pada tanggal ini.');}
  const previous=own.find(s=>s.regularFlex&&s.mulai===start);
  if(previous&&previous.statusSesi!=='Libur'&&!cancel)return {pesan:'Sesi sudah diaktifkan',jadwalId:previous.id};
  if(!cancel){
- const opt=await options(db,h,aid,date),slot=opt.slots.find(s=>s.mulai===start);
+ const opt=await options(db,h,aid,date,user.role==='owner'),slot=opt.slots.find(s=>s.mulai===start);
  if(!slot||!slot.tersedia)throw fail(409,'Sesi sudah selesai, penuh, atau libur. Pilih sesi lain.');
  const packs=(await h.payments(db,true)).filter(p=>String(p.atletId)===String(aid)&&isRegular(p)&&p.status==='Lunas'&&p.statusManual!=='Kedaluwarsa'&&p.tanggal<=date&&p.berlakuSampai>=date&&p.sisaPertemuan>0);
  if(!packs.length)throw fail(409,'Tidak ada paket Regular lunas dengan sisa pertemuan pada tanggal ini.');
@@ -51,7 +51,7 @@ async function book(db,h,user,aid,date,start,cancel=false){
  return {pesan:'Sesi aktif di jadwal Coach Fauzan dan Coach Ilyas. Absensi akan diisi pelatih.',jadwalId:saved.id};
 }
 function mountOwner(app,h){
- app.get('/api/owner/regular/:id/options',h.owner,h.wrap(async(req,res)=>res.json(await options(h.pool,h,req.params.id,req.query.date||B.today()))));
+ app.get('/api/owner/regular/:id/options',h.owner,h.wrap(async(req,res)=>res.json(await options(h.pool,h,req.params.id,req.query.date||B.today(),true))));
  app.post('/api/owner/regular/:id',h.owner,h.wrap(async(req,res)=>res.json(await h.transaction(db=>book(db,h,req.user,req.params.id,req.body.tanggal,req.body.mulai,req.body.batal===true)))));
 }
 module.exports={isRegular,assigned,options,book,mountOwner};
