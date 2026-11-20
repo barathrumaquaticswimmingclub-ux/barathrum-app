@@ -80,9 +80,10 @@ for(const root of [$('records'),$('wfBody')])root.addEventListener('click',owner
 
 function ownerWhatsAppInbox(){
  const inbox=S.whatsappInbox,items=(inbox?.items||[]).filter(r=>r.status==='pending');
- return '<section class="panel"><h3>Konfirmasi dari WhatsApp — Menunggu Verifikasi</h3><p>'+(!inbox?.configured?'Sambungan WhatsApp belum lengkap. ':'')+'Bukti, nama lengkap anak, dan kelas harus lengkap. Pembayaran disahkan setelah diperiksa Owner.</p>'+grid(['Diterima','Nama anak','Kelas','Pengirim','Tindakan'],items.map(r=>[esc(stamp(r.created_at)),esc(r.payload.name),esc(r.payload.group),esc(r.sender),btn('wa-review',r.id,'Periksa konfirmasi')]))+(items.length?'':'<p>Belum ada konfirmasi menunggu verifikasi.</p>')+'</section>';
+ return '<section class="panel"><h3>Konfirmasi dari WhatsApp — Menunggu Verifikasi</h3>'+btn('wa-connect','','Pengaturan sambungan')+'<p>'+(!inbox?.configured?'Sambungan WhatsApp belum lengkap. ':'')+'Bukti, nama lengkap anak, dan kelas harus lengkap. Pembayaran disahkan setelah diperiksa Owner.</p>'+grid(['Diterima','Nama anak','Kelas','Pengirim','Tindakan'],items.map(r=>[esc(stamp(r.created_at)),esc(r.payload.name),esc(r.payload.group),esc(r.sender),btn('wa-review',r.id,'Periksa konfirmasi')]))+(items.length?'':'<p>Belum ada konfirmasi menunggu verifikasi.</p>')+'</section>';
 }
 async function ownerWhatsAppAction(e){
+ if(e.target.closest('[data-wf=wa-connect]')&&isOwner()){try{await ownerWhatsAppConnection();}catch(err){notice(err.message,true);}return;}
  const b=e.target.closest('[data-wf="wa-review"]');if(!b||!isOwner())return;
  const r=S.whatsappInbox?.items.find(r=>r.id===b.dataset.id);if(!r)return;
  const norm=s=>String(s||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id');
@@ -93,3 +94,14 @@ async function ownerWhatsAppAction(e){
  $('waReject').onclick=()=>modal('Tolak konfirmasi WhatsApp',field('reason','Alasan penolakan','textarea','',{full:true}),d=>request('/api/owner/whatsapp/confirmations/'+r.id+'/reject',{method:'POST',body:JSON.stringify(d)}));
 }
 $('sectionSummary').addEventListener('click',ownerWhatsAppAction);
+
+async function ownerWhatsAppConnection(){
+ const c=await request('/api/owner/whatsapp/connection');
+ modal('Sambungan WhatsApp BRTM','<p class="full">Nomor WhatsApp Business: <b>0811210260</b>. Tempel kredensial dari aplikasi Meta BRTM. Kolom kosong mempertahankan nilai yang sudah tersimpan.</p>'+field('waToken','Token akses Meta','password','',{required:false,full:true,max:4096})+field('waSecret','App Secret Meta','password','',{required:false,full:true,max:32})+'<p class="full">Token: '+(c.hasToken?'tersimpan':'belum dipasang')+' • App Secret: '+(c.hasSecret?'tersimpan':'belum dipasang')+'</p><div class="full actions"><button type="button" id="waCopyCallback">Salin URL webhook</button><button type="button" id="waCopyVerify">Salin token verifikasi</button><button type="button" id="waConnectionTest">Uji sambungan</button><button type="button" id="waConnectionSubscribe">Hubungkan penerima pesan</button></div><p id="waConnectionResult" class="full" role="status"></p>',async d=>request('/api/owner/whatsapp/connection',{method:'POST',body:JSON.stringify({token:d.waToken,secret:d.waSecret})}));
+ for(const id of ['f_waToken','f_waSecret']){$(id).setAttribute('autocomplete','off');$(id).setAttribute('spellcheck','false');}
+ $('wfSave').textContent='Simpan sambungan';$('wfSave').disabled=!c.canSave;
+ const copy=async value=>{try{await navigator.clipboard.writeText(value);$('waConnectionResult').textContent='Tersalin. Tempel langsung pada pengaturan Meta.';}catch{$('waConnectionResult').textContent='Browser belum mengizinkan penyalinan. Gunakan browser yang mendukung salin ke clipboard.';}};
+ $('waCopyCallback').onclick=()=>copy(c.callback);$('waCopyVerify').onclick=()=>copy(c.verifyToken);
+ const run=async action=>{const buttons=[$('waConnectionTest'),$('waConnectionSubscribe')];buttons.forEach(b=>b.disabled=true);try{const r=await request('/api/owner/whatsapp/connection/'+action,{method:'POST',body:'{}'});$('waConnectionResult').textContent=r.pesan;}catch(err){$('waConnectionResult').textContent=err.message;}finally{buttons.forEach(b=>b.disabled=false);}};
+ $('waConnectionTest').onclick=()=>run('test');$('waConnectionSubscribe').onclick=()=>run('subscribe');
+}
