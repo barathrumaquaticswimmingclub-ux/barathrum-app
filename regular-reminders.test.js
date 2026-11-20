@@ -47,6 +47,14 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  const wa=await call(owner,'post','/api/owner/billing/'+unpaid.id+'/remind',{channel:'wa'});assert.equal(wa.phone,'6281133334444');assert(wa.message.includes('Ayah/Bunda'));assert(wa.document.endsWith('/'+unpaid.id));
  const pdf=await owner.get(wa.document);assert.equal(pdf.status,200);assert.match(pdf.headers['content-type'],/application\/pdf/);
  day='2026-11-18';clock='14:00:00';await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day});await app.locals.maintain();assert((await call(ilyas,'get','/api/jadwal')).some(s=>s.tanggal===day&&s.regularFlex&&s.atletIds.includes(a.id)));
+ clock='19:41:00';
+ await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day,batal:true});
+ assert((await call(parent,'get','/swim/api/regular/options')).slots.every(s=>!s.tersedia));
+ await call(parent,'post','/swim/api/regular',{},409);
+ const late=await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day});
+ assert(late.jadwalId);
+ await call(owner,'post','/api/owner/regular/'+b.id,{tanggal:day},409);
+ clock='14:00:00';
  const nextOptions=await call(parent,'get','/swim/api/regular/options');assert.equal(nextOptions.selesaiDiabsen,false);assert(nextOptions.slots.some(s=>s.terdaftar));
  const fs=require('node:fs'),{JSDOM}=require('jsdom');
  const dom=new JSDOM('<div id="sectionSummary"></div><input id="search">',{runScripts:'outside-only'}),w=dom.window;
