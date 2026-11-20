@@ -30,7 +30,7 @@ function showLogin() {
   $('dashboard').replaceChildren(); $('records').replaceChildren(); $('sectionSummary').replaceChildren();
   if ($('editor').open) $('editor').close();
 }
-function menuKeys() { return isOwner() ? Object.keys(title) : S.user.role === 'coach' ? ['dashboard','atlet','jadwal','absensi','perkembangan','program'] : ['dashboard','atlet','absensi','perkembangan','catatanwaktu','program']; }
+function menuKeys() { return isOwner() ? Object.keys(title).filter(k=>k!=='program') : S.user.role === 'coach' ? ['dashboard','atlet','jadwal','absensi','perkembangan','program'] : ['dashboard','atlet','absensi','perkembangan','catatanwaktu','program']; }
 function renderNav() {
   $('nav').innerHTML = menuKeys().map(k => `<button type="button" data-menu="${k}" class="${S.section===k?'active':''}"><span aria-hidden="true">${icons[k]}</span>${esc(k === 'dashboard' ? 'Dashboard' : title[k])}</button>`).join('');
   if(S.user.role==='prestasi'){const board=document.createElement('button');board.type='button';board.textContent='▦ Training Board ↗';board.onclick=()=>{location.href='/training/';};$('nav').append(board);}
@@ -65,7 +65,7 @@ async function load(options = {}) {
   const sequence=++loadSequence;loadingData=true;
   if(!options.background)$('loading').classList.remove('hidden');
   const owner=isOwner(),role=S.user.role;
-  const kinds=owner?['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','program','akun','pelatih','audit','orangtua','pendaftaran']:['atlet','jadwal','absensi','perkembangan','program',...(role==='prestasi'?['catatanwaktu']:[])];
+  const kinds=owner?['atlet','jadwal','absensi','pembayaran','perkembangan','catatanwaktu','akun','pelatih','audit','orangtua','pendaftaran']:['atlet','jadwal','absensi','perkembangan','program',...(role==='prestasi'?['catatanwaktu']:[])];
   try{
     const config=await request('/api/config');
     if(S.user?.id!==uid||sequence!==loadSequence)return;
