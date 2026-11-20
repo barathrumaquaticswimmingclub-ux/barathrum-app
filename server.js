@@ -474,7 +474,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error); const status = error.status || (error.code === '23505' ? 409 : 500);
     if (status >= 500) console.error('BRTM request failed:', error.code || error.name);
-    res.status(status).json({ pesan: error.code === '23505' ? 'Data sudah tercatat. Muat ulang daftar sebelum menyimpan lagi.' : status >= 500 ? 'Server belum dapat memproses data. Coba lagi.' : error.message });
+    res.status(status).json({ pesan: error.code === '23505' ? 'Data sudah tercatat. Muat ulang daftar sebelum menyimpan lagi.' : status >= 500 && error.expose !== true ? 'Server belum dapat memproses data. Coba lagi.' : error.message });
   });
   let scheduleSync=null,lastScheduleSync=0;
   async function syncSchedules(){
@@ -492,6 +492,8 @@ if (require.main === module) {
   initDb(pool).then(()=>SPP.migrate(pool)).then(() => {
     const app = createApp({ pool });
     let rosterAudited=false;
+    let proofArchiving=false;
+    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();}catch{console.warn('BRTM WhatsApp proof worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
     const stopNotifications=N.startWorker(pool,async()=>{
       await app.locals.maintain();
       if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
@@ -500,7 +502,7 @@ if (require.main === module) {
       return list.map(p=>B.packageView({...p.data,id:String(p.id)},Number(counts.find(c=>c.paket===String(p.id))?.jumlah||0)));
     });
     const server = app.listen(process.env.PORT || 3000, '0.0.0.0', () => console.log('BRTM v' + APP_VERSION + ' ready'));
-    process.on('SIGTERM', () => { stopNotifications(); server.close(() => pool.end().then(() => process.exit(0))); });
+    process.on('SIGTERM', () => { stopNotifications(); clearInterval(proofTimer); server.close(() => pool.end().then(() => process.exit(0))); });
   }).catch(e => { console.error('BRTM database initialization failed:', e.code || e.name); process.exit(1); });
 }
 module.exports = { createApp, initDb, passwordHash, verify };

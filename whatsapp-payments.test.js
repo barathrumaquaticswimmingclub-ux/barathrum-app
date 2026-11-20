@@ -34,7 +34,16 @@ const {initDb,createApp,passwordHash}=require('./server'),W=require('./whatsapp-
  const rejected=inbox.items.find(r=>r.id!==cid).id;await call(owner,'post','/api/owner/whatsapp/confirmations/'+rejected+'/reject',{reason:'Bukti tidak sesuai uang masuk'});assert.equal((await call(owner,'get','/api/pembayaran')).length,1);await call(owner,'post','/api/owner/whatsapp/confirmations/'+rejected+'/reject',{reason:'Ditolak lagi'},409);
  // Download only from Meta media hosts, and never send access tokens to an arbitrary URL.
  app.locals.whatsappFetch=async()=>({ok:true,json:async()=>({url:'https://evil.example/proof'})});await call(owner,'get',inbox.items.find(r=>r.id===cid).proof,{},502);
- app.locals.whatsappFetch=async url=>url.startsWith('https://graph.facebook.com/')?{ok:true,json:async()=>({url:'https://lookaside.fbsbx.com/whatsapp_business/attachments/'})}:{ok:true,body:[Buffer.from([255,216,255,217])]};assert.equal((await owner.get(inbox.items.find(r=>r.id===cid).proof)).status,200);
+ const proofImage=await require('sharp')({create:{width:1400,height:2100,channels:3,background:'#ffffff'}}).jpeg({quality:100}).toBuffer();
+ app.locals.whatsappFetch=async url=>url.startsWith('https://graph.facebook.com/')?{ok:true,json:async()=>({url:'https://lookaside.fbsbx.com/whatsapp_business/attachments/'})}:{ok:true,body:[proofImage]};assert.equal((await owner.get(inbox.items.find(r=>r.id===cid).proof)).status,200);
+ const archived=(await pool.query('SELECT * FROM brtm_wa_proofs WHERE id=$1',[cid])).rows[0];assert(archived.byte_size<proofImage.length);assert.equal(archived.mime,'image/webp');
+ const decoded=await require('sharp')(Buffer.from(archived.content,'base64')).metadata();assert(decoded.width<=2000&&decoded.height<=2000);
+ app.locals.whatsappFetch=async()=>{throw Error('expired token must not affect archived proof');};
+ const cached=await owner.get(inbox.items.find(r=>r.id===cid).proof);assert.equal(cached.status,200);assert.equal(cached.headers['cache-control'],'private, no-store');
+ assert.equal((await pool.query('SELECT * FROM brtm_wa_proofs')).rows.length,1);
+ const pdf=Buffer.from('%PDF-1.7 test');assert((await W.compactProof(pdf,'application/pdf')).buffer.equals(pdf));
+ await assert.rejects(()=>W.compactProof(Buffer.from('invalid'),'image/jpeg'));
+
  assert((await call(owner,'get','/api/backup')).tables.brtm_wa_confirmations.length===2);
 
 
@@ -49,6 +58,8 @@ const {initDb,createApp,passwordHash}=require('./server'),W=require('./whatsapp-
  app.locals.whatsappFetch=async()=>({ok:true,json:async()=>({data:[{id:'306719782526160',display_phone_number:'+62 811-210-260',platform_type:'SMB'}]})});await call(owner,'post','/api/owner/whatsapp/connection/test',{},409);
  app.locals.whatsappFetch=async(url,options)=>{assert.equal(options.headers.Authorization,'Bearer '+configuredToken);return {ok:true,json:async()=>url.endsWith('/subscribed_apps')?{success:true}:{data:[{id:'306719782526160',display_phone_number:'+62 811-210-260',platform_type:'CLOUD_API'}]}};};
  await call(owner,'post','/api/owner/whatsapp/connection/test');await call(owner,'post','/api/owner/whatsapp/connection/subscribe');
+ app.locals.whatsappFetch=async()=>{throw Error('secret transport detail');};const networkError=await call(owner,'post','/api/owner/whatsapp/connection/test',{},503);assert(networkError.pesan.includes('Meta'));assert(!networkError.pesan.includes('secret transport'));
+ app.locals.whatsappFetch=async()=>({ok:false});await app.locals.archiveWhatsAppProofs();assert.equal((await pool.query('SELECT proof_attempts FROM brtm_wa_confirmations WHERE id=$1',[rejected])).rows[0].proof_attempts,1);
  const snapshot=await call(owner,'get','/api/backup');assert(snapshot.tables.brtm_wa_connection.length===1);assert(!JSON.stringify(snapshot).includes(configuredToken));assert(!JSON.stringify(snapshot).includes(configuredSecret));
  const fs=require('node:fs'),{JSDOM,VirtualConsole}=require('jsdom');
  const dom=new JSDOM(fs.readFileSync('public/index.html','utf8').replace(/<script[^>]*src[^>]*><\/script>/g,''),{url:'https://brtm.test/club/',runScripts:'outside-only',virtualConsole:new VirtualConsole()}),w=dom.window;

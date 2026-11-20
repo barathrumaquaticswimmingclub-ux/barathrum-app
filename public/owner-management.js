@@ -80,7 +80,7 @@ for(const root of [$('records'),$('wfBody')])root.addEventListener('click',owner
 
 function ownerWhatsAppInbox(){
  const inbox=S.whatsappInbox,items=(inbox?.items||[]).filter(r=>r.status==='pending');
- return '<section class="panel"><h3>Konfirmasi dari WhatsApp — Menunggu Verifikasi</h3>'+btn('wa-connect','','Pengaturan sambungan')+'<p>'+(!inbox?.configured?'Sambungan WhatsApp belum lengkap. ':'')+'Bukti, nama lengkap anak, dan kelas harus lengkap. Pembayaran disahkan setelah diperiksa Owner.</p>'+grid(['Diterima','Nama anak','Kelas','Pengirim','Tindakan'],items.map(r=>[esc(stamp(r.created_at)),esc(r.payload.name),esc(r.payload.group),esc(r.sender),btn('wa-review',r.id,'Periksa konfirmasi')]))+(items.length?'':'<p>Belum ada konfirmasi menunggu verifikasi.</p>')+'</section>';
+ return '<section class="panel"><h3>Konfirmasi dari WhatsApp — Menunggu Verifikasi</h3>'+btn('wa-connect','','Pengaturan sambungan')+'<p>'+(!inbox?.configured?'Sambungan WhatsApp belum lengkap. ':'')+'Bukti, nama lengkap anak, dan kelas harus lengkap. Foto bukti dikompres otomatis dan disimpan satu kali. Pembayaran disahkan setelah diperiksa Owner.</p>'+grid(['Diterima','Nama anak','Kelas','Pengirim','Tindakan'],items.map(r=>[esc(stamp(r.created_at)),esc(r.payload.name),esc(r.payload.group),esc(r.sender),btn('wa-review',r.id,'Periksa konfirmasi')]))+(items.length?'':'<p>Belum ada konfirmasi menunggu verifikasi.</p>')+'</section>';
 }
 async function ownerWhatsAppAction(e){
  if(e.target.closest('[data-wf=wa-connect]')&&isOwner()){try{await ownerWhatsAppConnection();}catch(err){notice(err.message,true);}return;}
