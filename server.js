@@ -435,10 +435,30 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE'); const old = await record(c, kind, req.params.id, true);
       if (kind === 'atlet') {
-        if((await c.query("SELECT id FROM brtm_training_rosters WHERE (payload->'lines'->0) @> $1::jsonb OR (payload->'lines'->1) @> $1::jsonb OR (payload->'lines'->2) @> $1::jsonb OR (payload->'lines'->3) @> $1::jsonb LIMIT 1",[JSON.stringify([old.id])])).rowCount)throw fail(400,'Atlet memiliki riwayat line latihan. Ubah status menjadi Nonaktif.');
-        if((await c.query('SELECT id FROM brtm_feedback WHERE athlete_id=$1 LIMIT 1',[old.id])).rows.length)throw fail(400,'Atlet memiliki riwayat masukan. Ubah status menjadi Nonaktif.');
-        const linked = (await c.query(`SELECT data FROM data_klub WHERE jenis <> 'atlet'`)).rows.some(r => String(r.data.atletId) === old.id || r.data.atletIds?.map(String).includes(old.id) || r.data.namaAtlet?.trim().toLowerCase() === old.nama?.trim().toLowerCase());
-        if (linked) throw fail(400, 'Atlet memiliki riwayat. Ubah status menjadi Nonaktif.');
+        // Owner deletion removes this athlete's records without touching other athletes.
+        const related=(await c.query("SELECT id,jenis,data FROM data_klub WHERE jenis <> 'atlet'")).rows;
+        for(const r of related){
+          const value={...r.data,id:String(r.id)};
+          if(String(value.atletId)===old.id){
+            await audit(c,req.user,'hapus',r.jenis,value.id,value,null);
+            await c.query('DELETE FROM data_klub WHERE id=$1',[r.id]);
+          }else if(value.atletIds?.map(String).includes(old.id)){
+            await save(c,req.user,r.jenis,{...value,atletIds:value.atletIds.filter(id=>String(id)!==old.id)},value);
+          }
+        }
+        const feedback=(await c.query('SELECT * FROM brtm_feedback WHERE athlete_id=$1',[old.id])).rows;
+        for(const f of feedback){
+          await audit(c,req.user,'hapus','feedback',String(f.id),f,null);
+          await c.query('DELETE FROM brtm_feedback_replies WHERE feedback_id=$1',[f.id]);
+          await c.query('DELETE FROM brtm_staff_notifications WHERE feedback_id=$1',[f.id]);
+        }
+        await c.query('DELETE FROM brtm_feedback WHERE athlete_id=$1',[old.id]);
+        for(const r of (await c.query('SELECT id,payload FROM brtm_training_rosters')).rows){
+          if(!r.payload.lines?.some(line=>line.map(String).includes(old.id)))continue;
+          const next={...r.payload,lines:r.payload.lines.map(line=>line.filter(id=>String(id)!==old.id))};
+          await c.query('UPDATE brtm_training_rosters SET payload=$1 WHERE id=$2',[JSON.stringify(next),r.id]);
+          await audit(c,req.user,'hapus-atlet-line','training',String(r.id),r.payload,next);
+        }
       }
       if (kind === 'jadwal' && (await rows(c, 'absensi')).some(a => a.jadwalId === old.id)) throw fail(400, 'Jadwal dengan absensi tidak boleh dihapus');
       if(kind==='pembayaran'&&old.sppDikelola)throw fail(400,'SPP otomatis mengikuti absensi. Koreksi absensi atau pembayaran, jangan menghapus riwayat SPP.');
