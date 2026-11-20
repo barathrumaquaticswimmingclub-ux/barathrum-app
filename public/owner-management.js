@@ -13,7 +13,7 @@ function activeOwnerPack(a){const ps=(S.records.pembayaran||[]).filter(p=>p.atle
 const managementList=renderList;renderList=function(){if(!isOwner())return managementList();const k=S.section,q=qName(),f=$('filter').value;
  if(k==='atlet'){
   const list=filteredRows().sort(activeFirst);$('records').className='ops-records';$('sectionSummary').innerHTML='';
-  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')]));return;
+  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')+'<button class="danger" data-delete="'+esc(a.id)+'">Hapus atlet</button>']));return;
  }
  if(['aktivasi','pembayaran'].includes(k)){
   const list=(S.records.atlet||[]).filter(a=>byName(a,q)&&(!f||(k==='aktivasi'?(f==='Belum ada paket'?!latestOwnerPack(a):a.status===f):[a.statusSPP,latestOwnerPack(a)?.status,latestOwnerPack(a)?.statusMasaBerlaku].includes(f)))).sort(activeFirst);
