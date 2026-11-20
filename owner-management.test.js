@@ -55,7 +55,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  w.eval(['progression.js','app.js','intake.js','prestasi-ui.js','operations-ui.js','community-ui.js','spp-ui.js','owner-tables.js','coach-ui.js','owner-management.js'].map(p=>fs.readFileSync('public/'+p,'utf8')).join('\n')+'\nwindow.ownerTestState=()=>S;');
  await new Promise(r=>setTimeout(r,1500));assert(!w.document.querySelector('[data-menu=program]'));assert(w.document.querySelector('[data-menu=aktivasi]'));assert(!w.document.getElementById('nav').textContent.includes('Training Board'));
  assert(!w.document.getElementById('dashboard').textContent.includes('Pendapatan lunas'));assert.equal(w.document.getElementById('clubCommunication').hidden,true);w.document.getElementById('toggleClubCommunication').click();assert.equal(w.document.getElementById('clubCommunication').hidden,false);
- assert.equal(w.document.querySelectorAll('#dashboard .owner-summary tbody tr').length,4);assert.equal(w.document.querySelectorAll('#dashboard .owner-metric').length,0);
+ assert.equal(w.document.querySelectorAll('#dashboard .owner-summary-grid .metric').length,4);assert.equal(w.document.querySelectorAll('#dashboard .owner-summary-grid strong').length,4);
  assert(!requested.some(url=>url==='/api/program'||url.startsWith('/api/training')),'Owner must not load removed training modules');
  w.eval("navigate('program')");assert.equal(w.ownerTestState().section,'dashboard');
  w.ownerTestState().section='program';w.eval('renderCurrent()');assert.equal(w.ownerTestState().section,'dashboard');assert.equal(w.document.getElementById('pageTitle').textContent,'Ringkasan klub');
