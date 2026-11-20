@@ -63,7 +63,7 @@ async function main() {
   await expect(write(coach,'put','/api/absensi/'+attendance.id,input),200);
   await expect(write(owner,'put','/api/pembayaran/'+payment.id,{...payInput,status:'Belum Lunas'}),400);
   await expect(write(owner,'delete','/api/pembayaran/'+payment.id),400);
-  await expect(write(owner,'delete','/api/atlet/'+athlete.id),400);
+  await expect(write(coach,'delete','/api/atlet/'+athlete.id),403);
   await expect(write(owner,'put','/api/jadwal/'+schedule.id,{...scheduleInput,coachId:coach2.id,alasanPerubahan:'Coach pengganti'}),400);
   await expect(write(coach,'delete','/api/absensi/'+attendance.id),403);
   const exceptionDate=B.addMonth(B.addMonth(B.today()));
