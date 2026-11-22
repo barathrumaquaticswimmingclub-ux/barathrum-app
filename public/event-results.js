@@ -12,6 +12,7 @@ for(const jarak of [25,50])add('Kaki Dada',jarak,'kick breast','kick');
 for(const jarak of [25,50,100]){add('Bebas',jarak,'free');add('Bebas Fins',jarak,'free fins','fins');}
 for(const jarak of [200,400,800,1200,1500])add('Bebas',jarak,'free');
 for(const jarak of [25,50])add('Kaki Bebas',jarak,'kick free','kick');
+add('Ganti',100,'IM');
 const categories=[['all','Semua nomor'],['normal','Tanpa alat'],['fins','Fins'],['kick','Kaki / Board']];
 const categoryOptions=(selected='all')=>categories.map(([value,label])=>'<option value="'+value+'"'+(selected===value?' selected':'')+'>'+label+'</option>').join('');
 const rounds=['Hasil','Seri','Semifinal','Final','Swim-off'];
