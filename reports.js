@@ -47,9 +47,9 @@ function staffHours(res,period,staff){
  heading(d,'REKAP JAM MELATIH STAF');d.font('Helvetica').fontSize(11).text('Nama: '+staff.nama).text('Periode: '+period.start+' sampai '+period.end+' (WIB)').text('Jam sore: '+hours(staff.jamSore)+' | Jam pagi: '+hours(staff.jamPagi));
  if(period.asOf<period.end)d.text('Rekap sementara berdasarkan absensi sampai '+period.asOf+'.');
  d.moveDown();
- const items=staff.rincian.flatMap(r=>r.kelas.flatMap(k=>{const groups=[];for(let i=0;i<k.atlet.length;i+=8)groups.push([r.tanggal,r.hari,r.mulai+' - '+r.selesai+'\nHitungan '+r.kategori,k.nama,k.atlet.slice(i,i+8).map(a=>a.nama).join(', ')]);return groups;}));
- rows(d,['Tanggal','Hari','Jam / kategori','Kelas','Anak yang dilatih'],items.length?items:[['-','-','-','-','Belum ada jam melatih tercatat pada periode ini.']],[85,65,115,200,300]);
- d.font('Helvetica').fontSize(9).text('Sabtu pagi masuk hitungan sore. Regular Sabtu pagi dihitung untuk kedua pelatih. Jumlah anak tidak menggandakan jam; waktu yang bersamaan dihitung sekali per pelatih.');
+ const items=staff.rincian.flatMap(r=>r.kelas.flatMap(k=>{const groups=[],children=k.atlet.length?k.atlet:[{nama:'-'}];for(let i=0;i<children.length;i+=8)groups.push([r.tanggal,r.hari,r.mulai+' - '+r.selesai+'\n'+r.kategori+' | '+hours(r.jam),k.nama,children.slice(i,i+8).map(a=>a.nama).join(', '),r.keterangan||r.status||'Melatih']);return groups;}));
+ rows(d,['Tanggal','Hari','Jam / hitungan','Kelas','Anak yang dilatih','Keterangan'],items.length?items:[['-','-','-','-','Belum ada latihan tercatat pada periode ini.','-']],[75,50,105,150,235,150]);
+ d.font('Helvetica').fontSize(9).text('Sabtu pagi masuk hitungan sore. Regular Sabtu pagi dihitung untuk kedua pelatih. Jumlah anak tidak menggandakan jam; waktu yang bersamaan dihitung sekali per pelatih. Sesi libur, kosong, dan belum diabsen tidak menambah jam melatih.');
  if(period.unassignedSessions)d.text('Ada '+period.unassignedSessions+' sesi Regular pada periode ini dengan pencatat pelatih belum teridentifikasi; bagian tersebut belum dihitung.');
  footer(d);
 }

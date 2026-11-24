@@ -26,6 +26,29 @@ const B=require('./business'),H=require('./staff-hours'),{initDb,createApp,passw
  assert.equal(by('4').jamSore,3);assert.equal(by('4').jamPagi,0);
  assert.equal(by('5').jamSore,2);assert(!by('6'));assert(!by('1'));assert.equal(result.unassignedSessions,1);
  assert.deepEqual(H.calculate({staff,schedules,attendance,month:'2026-12'}).rows.map(u=>u.jamSore),[0,0,0,0]);
+ // Flexible Regular annotations: no fixed weekly pupil assignment is inferred.
+ const flexSchedules=[],flexAttendance=[];
+ function flex(id,date,start,extra={},status='Hadir',writer='3'){
+  const s={id,tanggal:date,mulai:start,selesai:start==='08:00'?'09:00':start==='09:00'?'10:00':start==='15:00'?'16:00':'17:00',lokasi:'Kolam Renang Pondok Selfie',regularFlex:true,coachId:'4',coachIds:['3','4'],jenisKelas:'Regular Class (1x Seminggu)',atletIds:status?['a']:[],...extra};flexSchedules.push(s);
+  if(status)flexAttendance.push({jadwalId:id,tanggal:date,status,dibuatOlehId:writer,atletId:'a',namaAtlet:'Anak Regular'});
+ }
+ flex('f1','2026-11-17','15:00');flex('retired','2026-11-17','16:00',{regularFlex:false,weeklyKey:'weekly:1',atletIds:['old']},null);
+ flex('f2','2026-11-18','15:00');flex('occupied','2026-11-18','16:00',{atletIds:['waiting']},null);
+ flex('f3','2026-11-19','15:00');flex('other','2026-11-19','16:00',{},'Hadir','4');
+ flex('f4','2026-11-20','15:00');flex('holiday','2026-11-20','16:00',{statusSesi:'Libur',alasanLibur:'Pelatih mendampingi lomba'},null);
+ flex('sat','2026-11-21','08:00');
+ flex('f5','2026-11-23','15:00');flex('all-permission','2026-11-23','16:00',{},'Izin');
+ flex('today','2026-11-24','15:00');
+ const annotated=H.calculate({staff,schedules:flexSchedules,attendance:flexAttendance,month:'2026-11',now:'18:00:00'}),forCoach=id=>annotated.rows.find(r=>r.id===id),noteAt=(id,date,start)=>forCoach(id).rincian.find(r=>r.tanggal===date&&r.mulai===start);
+ assert.equal(noteAt('3','2026-11-17','16:00').keterangan,'Kosong belum ada murid');assert.equal(noteAt('3','2026-11-17','16:00').menit,0);
+ assert.equal(noteAt('3','2026-11-18','16:00').keterangan,'Absensi belum diisi');
+ assert.equal(noteAt('3','2026-11-19','16:00').keterangan,'Sesi ditangani pelatih lain');
+ assert.match(noteAt('3','2026-11-20','16:00').keterangan,/Libur.*Pelatih mendampingi lomba/);assert.equal(noteAt('3','2026-11-20','16:00').jam,0);
+ for(const id of ['3','4']){assert.equal(noteAt(id,'2026-11-21','09:00').keterangan,'Kosong belum ada murid');assert.equal(noteAt(id,'2026-11-21','09:00').kategori,'sore');}
+ assert.equal(noteAt('3','2026-11-23','16:00').keterangan,'Tidak ada anak Hadir');
+ assert.equal(forCoach('3').jamSore,7);assert.equal(forCoach('4').jamSore,2);
+ const notFinished=H.calculate({staff,schedules:flexSchedules,attendance:flexAttendance,month:'2026-11',now:'16:30:00'});assert(!notFinished.rows.find(r=>r.id==='3').rincian.some(r=>r.tanggal===B.today()&&r.mulai==='16:00'));
+ for(const row of annotated.rows)assert.equal(row.rincian.reduce((n,r)=>n+r.menit,0),row.menitPagi+row.menitSore);
  const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
  await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
  for(const u of staff)await pool.query('INSERT INTO brtm_users(id,username,nama,role,password_hash,must_change) VALUES($1,$2,$3,$4,$5,FALSE)',[u.id,u.username,u.nama,u.role,await passwordHash('hours-test-password')]);
@@ -52,15 +75,20 @@ const B=require('./business'),H=require('./staff-hours'),{initDb,createApp,passw
  assert.equal((await owner.get('/api/owner/staff-hours/3/pdf?month=2026-99')).status,400);
  const pdf=await owner.get('/api/owner/staff-hours/3/pdf?month=2026-11');assert.equal(pdf.status,200);assert.match(pdf.headers['content-type'],/application\/pdf/);assert.match(pdf.headers['content-disposition'],/2026-11/);assert(Buffer.isBuffer(pdf.body));assert.equal(pdf.body.subarray(0,5).toString(),'%PDF-');if(process.env.BRTM_PDF_TEST_OUTPUT)fs.writeFileSync(process.env.BRTM_PDF_TEST_OUTPUT,pdf.body);
  assert.equal(require('./releases').isProtected({path:'/api/owner/staff-hours/3/pdf',method:'GET'}),false);
- assert.equal((await owner.get('/api/owner/staff-hours')).body.month,'2026-11');await db.close();
+ assert.equal((await owner.get('/api/owner/staff-hours')).body.month,'2026-11');
+ // Use the same authenticated PDF endpoint with flexible notes, including empty rows.
+ await pool.query('DELETE FROM data_klub');
+ for(const s of flexSchedules){const saved=(await pool.query("INSERT INTO data_klub(jenis,data) VALUES('jadwal',$1) RETURNING id",[JSON.stringify(s)])).rows[0];for(const r of flexAttendance.filter(r=>r.jadwalId===s.id))await pool.query("INSERT INTO data_klub(jenis,data) VALUES('absensi',$1)",[JSON.stringify({...r,jadwalId:String(saved.id)})]);}
+ const annotatedPdf=await owner.get('/api/owner/staff-hours/3/pdf?month=2026-11');assert.equal(annotatedPdf.status,200);assert.equal(annotatedPdf.body.subarray(0,5).toString(),'%PDF-');if(process.env.BRTM_PDF_TEST_OUTPUT)fs.writeFileSync(process.env.BRTM_PDF_TEST_OUTPUT,annotatedPdf.body);
+ await db.close();
  // Exercise the actual UI hooks, month filter, search and role visibility.
  const dom=new JSDOM('<div id="records"></div><div id="sectionSummary"></div><input id="search"><select id="filter"></select><input id="monthFilter">',{runScripts:'outside-only'}),w=dom.window;
- w.eval(`var title={},icons={},descriptions={},S={user:{role:'owner'},section:'slipgaji',config:{today:'2026-11-24'}};var $=id=>document.getElementById(id),isOwner=()=>S.user.role==='owner',menuKeys=()=>['dashboard','akun','laporan'],canWrite=()=>true,configureFilter=()=>{},renderList=()=>{},displayDate=x=>String(x),modal=(name,html)=>{document.getElementById('sectionSummary').insertAdjacentHTML('beforeend','<div id="hoursTestModal">'+html+'</div>');},esc=x=>String(x),grid=(h,r)=>'<table><thead><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+r.map(row=>'<tr>'+row.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('')+'</tbody></table>',calls=[],request=async url=>{calls.push(url);return ${JSON.stringify(result)}};`);
+ w.eval(`var title={},icons={},descriptions={},S={user:{role:'owner'},section:'slipgaji',config:{today:'2026-11-24'}};var $=id=>document.getElementById(id),isOwner=()=>S.user.role==='owner',menuKeys=()=>['dashboard','akun','laporan'],canWrite=()=>true,configureFilter=()=>{},renderList=()=>{},displayDate=x=>String(x),modal=(name,html)=>{document.getElementById('sectionSummary').insertAdjacentHTML('beforeend','<div id="hoursTestModal">'+html+'</div>');},esc=x=>String(x),grid=(h,r)=>'<table><thead><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+r.map(row=>'<tr>'+row.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('')+'</tbody></table>',calls=[],request=async url=>{calls.push(url);return ${JSON.stringify(annotated)}};`);
  w.eval(fs.readFileSync('public/staff-hours-ui.js','utf8'));assert.deepEqual(Array.from(w.eval('menuKeys()')),['dashboard','akun','slipgaji','laporan']);assert(!w.eval("canWrite('slipgaji')"));
- w.eval('renderList()');await new Promise(r=>setTimeout(r,0));assert.equal(w.document.querySelectorAll('th').length,5);assert(w.document.querySelector('#records').textContent.includes('Fauzan'));assert(w.document.querySelector('#records').textContent.includes('5 jam'));
+ w.eval('renderList()');await new Promise(r=>setTimeout(r,0));assert.equal(w.document.querySelectorAll('th').length,5);assert(w.document.querySelector('#records').textContent.includes('Fauzan'));assert(w.document.querySelector('#records').textContent.includes('7 jam'));
  w.document.querySelector('#staffHoursMonth').value='2026-10';w.document.querySelector('#staffHoursMonth').dispatchEvent(new w.Event('change'));await new Promise(r=>setTimeout(r,0));assert(w.eval('calls.at(-1)').endsWith('2026-10'));
  w.document.querySelector('#search').value='fauzan';w.eval('renderList()');await new Promise(r=>setTimeout(r,0));assert.equal(w.document.querySelectorAll('tbody tr').length,1);
- w.document.querySelector('[data-hours-detail]').click();assert(w.document.querySelector('#hoursTestModal').textContent.includes('2026-11-01'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Sabtu'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Atlet '));assert(w.document.querySelector('#hoursTestModal a').getAttribute('href').includes('/3/pdf?month=2026-11'));
+ w.document.querySelector('[data-hours-detail]').click();assert(w.document.querySelector('#hoursTestModal').textContent.includes('2026-11-01'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Sabtu'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Anak Regular'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Kosong belum ada murid'));assert(w.document.querySelector('#hoursTestModal').textContent.includes('Pelatih mendampingi lomba'));assert(w.document.querySelector('#hoursTestModal a').getAttribute('href').includes('/3/pdf?month=2026-11'));
  w.eval("S.user.role='coach'");assert(!w.eval('menuKeys()').includes('slipgaji'));dom.window.close();
  console.log('PASS staff hours: Owner-only API/menu, month/search, union of hours rather than child counts, morning/afternoon, Saturday exception, Regular writers/shared Saturday, historical author preservation and Prestasi alias.');
 })().catch(e=>{console.error(e);process.exit(1);});

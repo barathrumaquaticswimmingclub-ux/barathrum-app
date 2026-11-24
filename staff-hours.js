@@ -3,14 +3,14 @@ const B=require('./business'),R=require('./regular');
 const fail=(status,message)=>Object.assign(Error(message),{status});
 const minute=value=>typeof value==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(value)?Number(value.slice(0,2))*60+Number(value.slice(3)):null;
 function union(intervals){let total=0,end=-1;for(const [a,b] of intervals.sort((x,y)=>x[0]-y[0])){total+=Math.max(0,b-Math.max(a,end));end=Math.max(end,b);}return total;}
-function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()}){
+function calculate({staff,schedules,attendance,athletes=[],month,today=B.today(),now=B.time()}){
  const coaches=staff.filter(u=>['coach','prestasi'].includes(u.role));
  // The shared Prestasi login represents Coach Adhi, not an additional employee.
  const head=coaches.filter(u=>u.role==='coach'&&/\badhi\b/i.test(u.nama));
  const canonical=id=>{const u=coaches.find(u=>String(u.id)===String(id));return u?.role==='prestasi'&&head.length===1?String(head[0].id):u?String(u.id):null;};
  const buckets=new Map(),unassigned=new Set(),detailBuckets=new Map();
  const author=r=>canonical(r.dibuatOlehId||coaches.find(u=>u.username===r.dibuatOleh)?.id);
- const names=records=>records.map(r=>({id:String(r.atletId||r.namaAtlet||''),nama:athletes.find(a=>String(a.id)===String(r.atletId))?.nama||r.namaAtlet||'Atlet #'+(r.atletId||'?')}));
+ const names=records=>records.map(r=>({id:String(r.atletId||r.namaAtlet||''),nama:athletes.find(a=>String(a.id)===String(r.atletId))?.nama||r.namaAtlet||attendance.find(a=>String(a.atletId)===String(r.atletId))?.namaAtlet||'Atlet #'+(r.atletId||'?')}));
  function credit(id,date,start,end,saturday,s,records){id=canonical(id);if(!id)return;const parts=saturday?[[start,end,'sore']]:[[start,Math.min(end,720),'pagi'],[Math.max(start,720),end,'sore']];for(const [a,b,period] of parts){if(b<=a)continue;const key=id+'|'+date+'|'+period;if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push([a,b]);if(!detailBuckets.has(key))detailBuckets.set(key,[]);detailBuckets.get(key).push({start:a,end:b,kelas:s.jenisKelas,atlet:names(records)});}}
  const entries=new Map();for(const r of attendance){if(r.status!=='Hadir')continue;const key=String(r.jadwalId);if(!entries.has(key))entries.set(key,[]);entries.get(key).push(r);}
  for(const s of schedules){
@@ -37,6 +37,46 @@ function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()
   }rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai));
   if(!u.profile?.archived||pagi||sore)result.push({id:String(u.id),nama:u.nama,menitSore:sore,menitPagi:pagi,jamSore:sore/60,jamPagi:pagi/60,rincian});
  }
+ // Explanatory rows never contribute minutes to payroll totals.
+ for(const row of result)for(const d of row.rincian){d.status='Melatih';d.keterangan='Melatih';}
+ const regularPair=s=>{
+  const known=coaches.filter(u=>u.role==='coach'&&/\b(fauzan|ilyas)\b/i.test(u.nama)).map(u=>String(u.id));
+  return known.length===2?known:[...new Set((s.coachIds||[]).map(canonical).filter(Boolean))];
+ };
+ const noteRows=new Map();
+ function note(id,s,status,keterangan,classes){
+  id=canonical(id);const row=result.find(r=>r.id===id);if(!row)return;
+  const key=[id,s.tanggal,s.mulai,s.selesai,status].join('|');
+  let d=noteRows.get(key);if(!d){d={tanggal:s.tanggal,hari:new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(s.tanggal+'T12:00:00Z')),mulai:s.mulai,selesai:s.selesai,kategori:new Date(s.tanggal+'T12:00:00Z').getUTCDay()===6||s.mulai>='12:00'?'sore':'pagi',menit:0,jam:0,status,keterangan,kelas:[]};noteRows.set(key,d);row.rincian.push(d);}
+  for(const k of classes){let group=d.kelas.find(g=>g.nama===k.nama);if(!group){group={nama:k.nama,atlet:[]};d.kelas.push(group);}for(const a of k.atlet)if(!group.atlet.some(x=>x.id===a.id))group.atlet.push(a);}
+ }
+ const enrolled=s=>names((s.atletIds||[]).map(id=>({atletId:id})));
+ const inMonth=s=>B.validDate(s.tanggal)&&s.tanggal.startsWith(month)&&minute(s.mulai)!==null&&minute(s.selesai)>minute(s.mulai);
+ const saturdayMorning=s=>new Date(s.tanggal+'T12:00:00Z').getUTCDay()===6&&s.mulai<'12:00';
+ const assigned=s=>R.isRegular(s)&&saturdayMorning(s)?regularPair(s):[...new Set((s.coachIds?.length?s.coachIds:[s.coachId]).map(canonical).filter(Boolean))];
+ for(const s of schedules.filter(s=>inMonth(s)&&s.statusSesi==='Libur')){
+  for(const id of assigned(s))note(id,s,'Libur','Libur'+(s.alasanLibur?' · '+s.alasanLibur:''),[{nama:s.jenisKelas,atlet:enrolled(s)}]);
+ }
+ // Regular uses per-date flexible bookings. Retired weekly rosters are not evidence
+ // of an occupied second session; only actual flexible activation/attendance is.
+ for(const first of schedules.filter(s=>inMonth(s)&&s.regularFlex===true&&R.isRegular(s)&&s.statusSesi!=='Libur'&&['08:00','15:00'].includes(s.mulai))){
+  const records=entries.get(String(first.id))||[];if(!records.length)continue;
+  const start=first.mulai==='08:00'?'09:00':'16:00',end=start==='09:00'?'10:00':'17:00';
+  if(first.tanggal>today||first.tanggal===today&&end>now.slice(0,5))continue;
+  const ids=saturdayMorning(first)?regularPair(first):[...new Set(records.map(author).filter(Boolean))];
+  const second=schedules.filter(s=>inMonth(s)&&R.isRegular(s)&&s.tanggal===first.tanggal&&s.mulai<end&&s.selesai>start&&s.lokasi===first.lokasi&&(s.regularFlex===true||s.statusSesi==='Libur'));
+  for(const id of ids){
+   const row=result.find(r=>r.id===canonical(id));if(!row||row.rincian.some(r=>r.tanggal===first.tanggal&&r.mulai<end&&r.selesai>start&&['Melatih','Libur'].includes(r.status)))continue;
+   const active=second.filter(s=>s.statusSesi!=='Libur'),present=active.some(s=>(entries.get(String(s.id))||[]).length);
+   const occupied=active.some(s=>(s.atletIds||[]).length),marked=active.some(s=>attendance.some(r=>String(r.jadwalId)===String(s.id)));
+   const otherKnown=active.some(s=>(entries.get(String(s.id))||[]).some(r=>author(r)&&author(r)!==canonical(id)));
+   const status=present?(otherKnown?'Pelatih lain':'Pencatat belum jelas'):marked?'Tidak ada anak Hadir':occupied?'Belum diabsen':'Kosong';
+   const text=present?(otherKnown?'Sesi ditangani pelatih lain':'Absensi ada; pencatat pelatih belum teridentifikasi'):marked?'Tidak ada anak Hadir':occupied?'Absensi belum diisi':'Kosong belum ada murid';
+   const classes=active.length?active.map(s=>({nama:s.jenisKelas,atlet:enrolled(s)})):[{nama:'Regular Class (fleksibel)',atlet:[]}];
+   note(id,{...first,mulai:start,selesai:end},status,text,classes);
+  }
+ }
+ for(const row of result)row.rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai)||a.status.localeCompare(b.status));
  return {month,start:month+'-01',end:B.monthEnd(month+'-01'),asOf:today,rows:result.sort((a,b)=>a.nama.localeCompare(b.nama,'id')),unassignedSessions:unassigned.size};
 }
 function mount(app,{pool,owner,wrap,transaction,rows}){
