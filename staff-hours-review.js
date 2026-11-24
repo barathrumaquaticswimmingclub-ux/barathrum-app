@@ -48,7 +48,12 @@ function augment(report,{staff,schedules,attendance,athletes,workRecords=[],week
   for(const s of relevant){
    if(s.statusSesi==='Libur')continue;
    const evidence=attendance.filter(r=>String(r.jadwalId)===String(s.id));
-   if(s.regularFlex&&evidence.some(r=>r.status==='Hadir'&&canonical(r.dibuatOlehId||coaches.find(u=>u.username===r.dibuatOleh)?.id)))continue;
+   const writer=r=>canonical(r.dibuatOlehId||coaches.find(u=>String(u.username).toLowerCase()===String(r.dibuatOleh||'').toLowerCase())?.id);
+   if(s.regularFlex&&evidence.some(r=>r.status==='Hadir'&&writer(r))&&!evidence.some(r=>r.status==='Hadir'&&!writer(r))){
+    const covered=row.rincian.filter(d=>d.tanggal===s.tanggal).map(d=>[mins(d.mulai),mins(d.selesai)]);
+    for(const [x,y] of cut(mins(s.mulai),mins(s.selesai),covered))row.rincian.push({tanggal:s.tanggal,hari:day(s.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(s.tanggal,clock(x)),menit:0,jam:0,status:'Pelatih lain',keterangan:'Absensi dicatat pelatih lain; tidak menambah jam staf ini',kelas:[{nama:s.jenisKelas,atlet:(s.atletIds||[]).map(pupil)}],perluVerifikasi:false});
+    continue;
+   }
    const covered=row.rincian.filter(d=>d.tanggal===s.tanggal&&(settled(d)||d.perluVerifikasi||d.status==='Pelatih lain')).map(d=>[mins(d.mulai),mins(d.selesai)]);
    for(const [x,y] of cut(mins(s.mulai),mins(s.selesai),covered))row.rincian.push({tanggal:s.tanggal,hari:day(s.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(s.tanggal,clock(x)),menit:0,jam:0,status:'Perlu verifikasi',keterangan:(s.historyOnly?'Jadwal mingguan historis':'Jadwal tercatat')+' · Kehadiran staf belum diverifikasi',kelas:[{nama:s.jenisKelas,atlet:(s.atletIds||[]).map(pupil)}],perluVerifikasi:true});
   }
@@ -60,6 +65,7 @@ function augment(report,{staff,schedules,attendance,athletes,workRecords=[],week
   row.tanpaJam=schedules.filter(s=>assigned(s)&&B.validDate(s.tanggal)&&s.tanggal.startsWith(report.month)&&s.tanggal<=report.asOf&&!inMonth(s)&&!manual.some(m=>m.sourceId===String(s.id)&&m.tanggal===s.tanggal)&&attendance.some(r=>String(r.jadwalId)===String(s.id)&&r.status==='Hadir')).map(s=>({tanggal:s.tanggal,hari:day(s.tanggal),kelas:[{nama:s.jenisKelas,atlet:(s.atletIds||[]).map(pupil)}],sourceId:s.id,keterangan:'Ada absensi Hadir, tetapi jam sesi belum tersimpan'}));
   row.sesiPerluVerifikasi=unresolved.length+row.tanpaJam.length;
   row.jamTerjadwalTerdeteksi=[...new Set(relevant.map(s=>s.tanggal))].reduce((n,date)=>n+union(relevant.filter(s=>s.tanggal===date).map(s=>[mins(s.mulai),mins(s.selesai)])),0)/60;
+  const traced=[...relevant,...row.rincian];row.jamCakupanSesi=[...new Set(traced.map(d=>d.tanggal))].reduce((n,date)=>n+union(traced.filter(d=>d.tanggal===date).map(d=>[mins(d.mulai),mins(d.selesai)])),0)/60;
   row.dataPertama=[...relevant.map(s=>s.tanggal),...row.rincian.map(d=>d.tanggal),...row.tanpaJam.map(d=>d.tanggal)].sort()[0]||null;
   row.cakupanBelumLengkap=!row.dataPertama||row.dataPertama>B.addDays(report.start,6);
   row.statusRekap=row.sesiPerluVerifikasi||row.cakupanBelumLengkap?'Belum lengkap':'Tercatat';
