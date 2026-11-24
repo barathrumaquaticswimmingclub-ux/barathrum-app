@@ -8,7 +8,7 @@ const N = require('./notifications');
 const SPP = require('./spp');
 const {parentEvaluation}=require('./evaluation');
 const digest = x => crypto.createHash('sha256').update(x).digest('hex');
-const norm = x => String(x || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+const norm = x => String(x || '').normalize('NFKC').replace(/[.,]/g,'').trim().replace(/\s+/g, ' ').toLowerCase();
 const phone = x => String(x || '').replace(/\D/g, '').replace(/^0/, '62');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const system = { id: null, username: 'google-form' };
@@ -35,9 +35,9 @@ function mount(app, h) {
   async function resolvedParent(parent){
     if(!parent)return null;
     const a=(await pool.query("SELECT data FROM data_klub WHERE jenis='atlet' AND id=$1",[parent.athlete_id])).rows[0]?.data;
-    if(!a?.mergedInto)return a?.status==='Nonaktif'?null:parent;
+    if(!a?.mergedInto)return a?parent:null;
     const canonical=(await pool.query("SELECT id,data FROM data_klub WHERE jenis='atlet' AND id=$1",[a.mergedInto])).rows[0];
-    if(!canonical||canonical.data.mergedInto||canonical.data.status==='Nonaktif')return null;
+    if(!canonical||canonical.data.mergedInto)return null;
     const account=(await pool.query('SELECT active,deleted FROM brtm_parents WHERE athlete_id=$1',[canonical.id])).rows[0];if(account&&(!account.active||account.deleted))return null;
     return {...parent,athlete_id:canonical.id};
   }
@@ -46,7 +46,7 @@ function mount(app, h) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) throw fail(401, 'Silakan masuk ke BRTM SWIM');
     const ownerSession = (await pool.query(`SELECT u.* FROM brtm_swim_owner_sessions s JOIN brtm_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.active=TRUE AND u.role='owner' AND u.must_change=FALSE`, [digest(token)])).rows[0];
     if (ownerSession) { req.swimOwner = ownerSession; return next(); }
-    const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND p.deleted=FALSE AND a.jenis='atlet' AND (COALESCE(a.data->>'status','Aktif')<>'Nonaktif' OR a.data ? 'mergedInto')`, [digest(token)]);
+    const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND p.deleted=FALSE AND a.jenis='atlet'`, [digest(token)]);
     req.parent=await resolvedParent(r.rows[0]);if (!req.parent) throw fail(401, 'Silakan masuk ke BRTM SWIM');next();
   });
   require('./community').mountParent(app,{pool,wrap,parentAuth,transaction,rows,audit,limit});
@@ -70,7 +70,7 @@ function mount(app, h) {
       await pool.query('INSERT INTO brtm_swim_owner_sessions VALUES ($1,$2,$3)',[digest(token),staff.id,new Date(Date.now()+7*86400000)]);
       await audit(pool,staff,'masuk-owner-swim'); cookie(res,token); return res.json({ok:true,role:'owner'});
     }
-    const u = await resolvedParent((await pool.query(`SELECT p.* FROM brtm_parents p JOIN data_klub a ON a.id=p.athlete_id WHERE p.username=$1 AND a.jenis='atlet' AND (COALESCE(a.data->>'status','Aktif')<>'Nonaktif' OR a.data ? 'mergedInto')`, [username])).rows[0]);
+    const u = await resolvedParent((await pool.query(`SELECT p.* FROM brtm_parents p JOIN data_klub a ON a.id=p.athlete_id WHERE p.username=$1 AND a.jenis='atlet'`, [username])).rows[0]);
     const fallback = '00000000000000000000000000000000:' + '00'.repeat(64);
     if (!(await verify(req.body?.password, u?.password_hash || fallback)) || !u?.active || u.deleted) { limit(req, 'swim-total', 40); throw fail(401, 'Nama anak atau kata sandi salah. Hubungi admin jika perlu bantuan.'); }
     limit.reset(attemptKey);

@@ -78,6 +78,10 @@ async function main(){
   const fullPhoto=(await pool.query('SELECT mime,base64 FROM brtm_photos WHERE athlete_id=$1',[full.id])).rows[0];assert.equal(fullPhoto.mime,'image/webp');
   await body(write(owner,'post','/api/formulir/siapkan'));await body(send('prestasi',{responseId:'stale',data:payload}),401);
   const nonactive=(await body(owner.get('/api/atlet'))).find(x=>x.id===a.id);await body(write(owner,'put','/api/atlet/'+a.id,{...nonactive,status:'Nonaktif'}));
+  await body(write(parent,'post','/swim/api/login',{username:account.username,password:'brtm'}));
+  await body(parent.get('/swim/api/dashboard'));
+  await body(write(owner,'put','/api/orangtua/'+a.id,{active:false}));
+  await body(parent.get('/swim/api/dashboard'),401);
   await body(write(parent,'post','/swim/api/login',{username:account.username,password:'brtm'}),401);
   await expect(anon.get('/swim/manifest.webmanifest'),200);await expect(anon.get('/swim/sw.js'),200);
   // Owner edits preserve the athlete identity, revoke sessions and never expose passwords.

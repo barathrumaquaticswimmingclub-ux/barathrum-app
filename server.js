@@ -52,6 +52,7 @@ async function initDb(pool) {
   await require('./training-board').initDb(pool);
   await require('./whatsapp-payments').initDb(pool);
   await require('./parent-password-reset').run(pool,passwordHash);
+  await require('./parent-password-reset').cleanUsernames(pool);
 }
 function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('./bootstrap.json').setupHash, secureCookies = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT_ID, enforceRelease=secureCookies, release, trainingAiFetch } = {}) {
   const app = express();
