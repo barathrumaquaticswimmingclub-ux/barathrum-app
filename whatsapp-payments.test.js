@@ -59,12 +59,15 @@ const {initDb,createApp,passwordHash}=require('./server'),W=require('./whatsapp-
  await call(owner,'post','/api/owner/whatsapp/connection',{token:configuredToken,secret:configuredSecret});
  const sealed=(await pool.query('SELECT cipher FROM brtm_wa_connection WHERE id=1')).rows[0].cipher;assert(!sealed.includes(configuredToken));assert(!sealed.includes(configuredSecret));
  const state=await call(owner,'get','/api/owner/whatsapp/connection');assert(state.hasToken&&state.hasSecret&&state.canSave);assert(!JSON.stringify(state).includes(configuredToken));assert(!JSON.stringify(state).includes(configuredSecret));
- await call(owner,'post','/api/owner/whatsapp/connection',{token:'',secret:''});assert((await call(owner,'get','/api/owner/whatsapp/connection')).hasToken);
+ await call(owner,'post','/api/owner/whatsapp/connection',{token:'',secret:''},400);assert((await call(owner,'get','/api/owner/whatsapp/connection')).hasToken);
  app.locals.whatsappFetch=async()=>({ok:true,json:async()=>({data:[]})});await call(owner,'post','/api/owner/whatsapp/connection/test',{},409);
  app.locals.whatsappFetch=async()=>({ok:true,json:async()=>({data:[{id:'306719782526160',display_phone_number:'+62 811-210-260',platform_type:'SMB'}]})});await call(owner,'post','/api/owner/whatsapp/connection/test',{},409);
  app.locals.whatsappFetch=async(url,options)=>{assert.equal(options.headers.Authorization,'Bearer '+configuredToken);return {ok:true,json:async()=>url.endsWith('/subscribed_apps')?{success:true}:{data:[{id:'306719782526160',display_phone_number:'+62 811-210-260',platform_type:'CLOUD_API'}]}};};
  await call(owner,'post','/api/owner/whatsapp/connection/test');await call(owner,'post','/api/owner/whatsapp/connection/subscribe');
  app.locals.whatsappFetch=async()=>{throw Error('secret transport detail');};const networkError=await call(owner,'post','/api/owner/whatsapp/connection/test',{},503);assert(networkError.pesan.includes('Meta'));assert(!networkError.pesan.includes('secret transport'));
+ app.locals.whatsappFetch=async()=>({ok:false,json:async()=>({error:{code:190,error_subcode:463,message:'Error validating access token: Session has expired '+configuredToken}})});
+ const expiredError=await call(owner,'post','/api/owner/whatsapp/connection/test',{},502);assert.match(expiredError.pesan,/kedaluwarsa/);assert.match(expiredError.pesan,/463/);assert(!expiredError.pesan.includes(configuredToken));
+ assert((await call(owner,'get','/api/owner/whatsapp/connection')).savedAt);
  app.locals.whatsappFetch=async()=>({ok:false});await app.locals.archiveWhatsAppProofs();assert.equal((await pool.query('SELECT proof_attempts FROM brtm_wa_confirmations WHERE id=$1',[rejected])).rows[0].proof_attempts,1);
  const snapshot=await call(owner,'get','/api/backup');assert(snapshot.tables.brtm_wa_connection.length===1);assert(!JSON.stringify(snapshot).includes(configuredToken));assert(!JSON.stringify(snapshot).includes(configuredSecret));
  const fs=require('node:fs'),{JSDOM,VirtualConsole}=require('jsdom');
