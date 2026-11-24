@@ -29,19 +29,37 @@ function mount(app,{owner,wrap,transaction,record,rows,validate,save,payments}){
   });res.json({data,pesan:'Paket baru tersimpan, riwayat lama tetap ada, dan pemberitahuan tersedia di BRTM SWIM.'});
  }));
 }
+function nextQuota(p){
+ // Only explicit frequency notes override the class allocation; do not infer from prices.
+ const matches=[...String(p.catatan||'').matchAll(/\b([12])\s*(?:x|×|kali)\s*(?:(?:per|dalam)\s*|\/\s*)?(?:se|satu\s*)?minggu\b/gi)];
+ return matches.length?Number(matches.at(-1)[1])*4:Math.max(B.CLASSES[B.canonical(p.jenisKelas)]?.sesi||4,Number(p.totalPertemuan)||0);
+}
+async function syncLegacyQuota(db,{rows,payments,save}){
+ const views=await payments(db);
+ for(const p of await rows(db,'pembayaran')){
+  const standard=B.CLASSES[B.canonical(p.jenisKelas)]?.sesi;
+  if(!standard||p.quotaSyncVersion===1||p.dibatalkan||!(p.activationOnly||p.automaticRenewal)||!Number.isInteger(p.totalPertemuan)||p.totalPertemuan<1||p.totalPertemuan>=standard)continue;
+  const view=views.find(v=>v.id===p.id);
+  // Imported opening balances keep the exact remaining sessions; automatic packages
+  // represent a full allocation; retain any usage corrected by the Owner.
+  const pemakaianAwal=p.automaticRenewal?view.pemakaianAwal:view.pemakaianAwal+standard-p.totalPertemuan;
+  await save(db,{id:null,username:'sistem-kuota'},'pembayaran',{...p,totalPertemuan:standard,pemakaianAwal,quotaSyncVersion:1},p);
+ }
+}
 async function renewExhausted(db,{rows,payments,save}){
+ await syncLegacyQuota(db,{rows,payments,save});
  const all=await payments(db),athletes=(await rows(db,'atlet')).filter(a=>a.status==='Aktif'&&!a.mergedInto);
  for(const a of athletes){
   if(B.canonical(a.kelompok)==='Prestasi Class')continue;
   const related=all.filter(p=>String(p.atletId)===String(a.id)&&B.canonical(p.jenisKelas)===B.canonical(a.kelompok)&&!p.dibatalkan).sort((x,y)=>y.tanggal.localeCompare(x.tanggal)||Number(y.id)-Number(x.id));
   const old=related[0];
   if(!old||old.sisaPertemuan!==0||old.tanggal>B.today()||old.statusManual==='Kedaluwarsa'||!['Lunas','Belum Lunas'].includes(old.status)||related.some(p=>p.renewalFrom===old.id))continue;
-  const terms=B.price({tanggal:B.today(),status:'Belum Lunas',paketKhusus:true,rincianOwner:true,kuotaKhusus:old.totalPertemuan,biayaKhusus:old.jumlah,potonganDiskon:old.potonganDiskon||0,biayaPendaftaran:0,alasanKhusus:'Perpanjangan otomatis karena kuota habis'},a);
-  const p=await save(db,{id:null,username:'sistem-paket'},'pembayaran',{...terms,atletId:a.id,namaAtlet:a.nama,renewalFrom:old.id,renewalRequestId:'automatic:'+old.id,automaticRenewal:true,pemakaianAwal:0},null);
+  const terms=B.price({tanggal:B.today(),status:'Belum Lunas',paketKhusus:true,rincianOwner:true,kuotaKhusus:nextQuota(old),biayaKhusus:old.jumlah,potonganDiskon:old.potonganDiskon||0,biayaPendaftaran:0,alasanKhusus:'Perpanjangan otomatis karena kuota habis'},a);
+  const p=await save(db,{id:null,username:'sistem-paket'},'pembayaran',{...terms,atletId:a.id,namaAtlet:a.nama,renewalFrom:old.id,renewalRequestId:'automatic:'+old.id,automaticRenewal:true,quotaSyncVersion:1,catatan:old.catatan||'',pemakaianAwal:0},null);
   all.push(B.packageView(p));
   const key='paket-otomatis:'+p.id;
   const notice=(await db.query('INSERT INTO brtm_billing_notices(athlete_id,event_key,data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[a.id,key,JSON.stringify({...p,provisional:true})])).rows[0];
   if(notice)await N.enqueue(db,a.id,'invoice:'+notice.id,'Paket baru — Belum Lunas',`Ayah/Bunda, kuota ${a.nama} sebelumnya telah habis. Paket baru ${p.totalPertemuan} pertemuan sudah tersedia dengan tagihan Rp${p.totalTagihan.toLocaleString('id-ID')}, berstatus Belum Lunas. Invoice tersedia di aplikasi. Pembayaran hanya melunasi tagihan ini dan tidak menambah kuota lagi.`);
  }
 }
-module.exports={mount,renewExhausted};
+module.exports={mount,renewExhausted,nextQuota};

@@ -34,5 +34,37 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(o,'post','/api/owner/payment',settlement);await call(o,'post','/api/owner/payment',settlement);
  autoPacks=(await call(o,'get','/api/pembayaran')).filter(p=>p.atletId===autoChild.id);
  assert.equal(autoPacks.length,2);const settled=autoPacks.find(p=>p.id===auto.id);assert.equal(settled.status,'Lunas');assert.equal(settled.sisaPertemuan,3);assert.equal(settled.totalTagihan,175000);assert.equal(settled.berlakuSampai,auto.berlakuSampai);assert.equal(settled.totalPertemuan,4);
+ // Old activation forms stored the remaining balance as the total quota.
+ for(const [kelas,small,total] of [['Semi Private Class',1,4],['Semi Private Class',2,4],['Regular Class (2x Seminggu)',3,8]]){
+  const a=(await call(o,'post','/api/atlet',{nama:'Legacy '+small,kelompok:kelas,status:'Aktif'},201)).data;
+  const p=(await call(o,'post','/api/owner/activation',{atletId:a.id,requestId:'legacy-balance-'+small,tanggal:B.today(),berakhir:'2026-12-19',kuota:small,sisa:small,harga:200000,status:'Lunas'})).data;
+  await app.locals.maintain();await app.locals.maintain();
+  const fixed=(await call(o,'get','/api/pembayaran')).find(x=>x.id===p.id);
+  assert.equal(fixed.totalPertemuan,total);assert.equal(fixed.sisaPertemuan,small);assert.equal(fixed.totalTagihan,p.totalTagihan);assert.equal(fixed.status,p.status);
+ }
+ // Already-created automatic packages recover the full allocation without erasing attendance.
+ await pool.query("UPDATE data_klub SET data=data || $1::jsonb WHERE id=$2",[JSON.stringify({totalPertemuan:2,pemakaianAwal:1,quotaSyncVersion:0,automaticRenewal:true,status:'Belum Lunas'}),auto.id]);
+ await app.locals.maintain();await app.locals.maintain();
+ const repaired=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);
+ assert.equal(repaired.totalPertemuan,4);assert.equal(repaired.pemakaianAwal,1);assert.equal(repaired.sisaPertemuan,3);assert.equal(repaired.status,'Belum Lunas');
+ const quota=require('./package-renewal').nextQuota;
+ assert.equal(quota({jenisKelas:'Semi Private Class',totalPertemuan:1}),4);
+ assert.equal(quota({jenisKelas:'Semi Private Class',totalPertemuan:4,catatan:'Mulai paket berikutnya 2x seminggu'}),8);
+ assert.equal(quota({jenisKelas:'Regular Class (2x Seminggu)',totalPertemuan:8,catatan:'Ganti 1 kali per minggu'}),4);
+ assert.equal(quota({jenisKelas:'Semi Private Class',totalPertemuan:8,catatan:'Dulu 2x seminggu, berikutnya 1x seminggu'}),4);
+ assert(require('./roster-eligibility').paidCovers(repaired,B.today()));
+ await pool.query("INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES('renewcoach','Coach','coach',$1,FALSE)",[await passwordHash('coach-renew-test')]);
+ const coach=supertest.agent(app);await call(coach,'post','/auth/login',{username:'renewcoach',password:'coach-renew-test'});
+ const coachId=String((await pool.query("SELECT id FROM brtm_users WHERE username='renewcoach'")).rows[0].id);
+ await call(o,'post','/api/owner/schedule/coach',{coachId,place:'Hotel Grand Wahid'});
+ const slot=(await call(o,'get','/api/owner/workspace')).slots.find(x=>String(x.coach_id)===coachId&&x.weekday===4&&x.start_time==='15:00');assert(slot);
+ await call(o,'put','/api/owner/schedule/'+slot.id,{className:'Semi Private Class',athleteIds:[autoChild.id],start:slot.start_time,end:slot.end_time});
+ await app.locals.maintain();
+ const session=(await call(coach,'get','/api/jadwal')).find(x=>x.tanggal===B.today()&&x.atletIds.includes(autoChild.id));assert(session,'Unpaid automatic renewal must appear in coach roster');
+ await call(coach,'post','/api/session-entry',{jadwalId:session.id,atletId:autoChild.id,tanggal:B.today(),status:'Hadir',noted:'Latihan dengan paket belum lunas.'});
+ const consumed=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(consumed.sisaPertemuan,2);
+ await call(o,'post','/api/owner/payment',{...settlement,requestId:'settle-after-coach-123'});
+ const final=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(final.sisaPertemuan,2);assert.equal(final.status,'Lunas');
+
  await db.close();console.log('PASS renewal authorization, history preservation, dates, quota, retry, duplicate protection and private notification deduplication');
 })().catch(e=>{console.error(e);process.exit(1);});
