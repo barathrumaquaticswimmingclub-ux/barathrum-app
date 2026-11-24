@@ -1,6 +1,6 @@
 'use strict';
 const crypto=require('node:crypto'),express=require('express'),B=require('./business');
-const TABLES=['brtm_wa_confirmations','brtm_wa_connection','brtm_wa_proofs'];
+const TABLES=['brtm_wa_confirmations','brtm_wa_connection','brtm_wa_proofs',...require('./whatsapp-invoices').TABLES];
 const fail=(status,message)=>Object.assign(Error(message),{status,expose:true});
 async function compactProof(buffer,mime){
  if(mime==='application/pdf')return {buffer,mime};
@@ -24,12 +24,16 @@ async function initProofDb(db){
 }
 function identity(text){
  if(typeof text!=='string'||text.length>4000)return null;
- const name=text.match(/(?:^|\n)\s*nama(?:\s+lengkap)?(?:\s+anak)?\s*[:=]\s*([^\n]{3,150})/i)?.[1]?.trim();
- const raw=text.match(/(?:^|\n)\s*(?:kelas|class)\s*[:=]\s*([^\n]{2,100})/i)?.[1]?.trim();
- if(!name||!raw)return null;
- const aliases={'private':'Private Class','semi private':'Semi Private Class','private couple':'Private Couple Class','group':'Group Class','grup':'Group Class','hydro therapy':'Hydro Terapi Class','hydro terapi':'Hydro Terapi Class','prestasi':'Prestasi Class','regular 1x':'Regular Class (1x Seminggu)','regular 2x':'Regular Class (2x Seminggu)'};
+ const fields=new Map();
+ for(const line of text.split(/\r?\n/)){const m=line.match(/^[ \t]*([^:=]{2,80})[ \t]*[:=][ \t]*(.*)$/);if(m&&m[2].trim())fields.set(normalize(m[1]),m[2].trim().slice(0,150));}
+ const name=fields.get('nama anak')||fields.get('nama lengkap anak')||fields.get('nama lengkap')||fields.get('nama');
+ const raw=fields.get('kelas yang di ambil')||fields.get('kelas yang diambil')||fields.get('kelas')||fields.get('class');
+ if(!name||name.length<3||!raw)return null;
+ const aliases={'private':'Private Class','semi private':'Semi Private Class','private couple':'Private Couple Class','group':'Group Class','grup':'Group Class','hydro therapy':'Hydro Terapi Class','hydro terapi':'Hydro Terapi Class','prestasi':'Prestasi Class','regular 1x':'Regular Class (1x Seminggu)','regular 2x':'Regular Class (2x Seminggu)','regular 1×':'Regular Class (1x Seminggu)','regular 2×':'Regular Class (2x Seminggu)'};
  const group=Object.keys(B.CLASSES).find(k=>normalize(k)===normalize(raw))||aliases[normalize(raw)];
- return group?{name,group}:null;
+ if(!group)return null;
+ const extra={};for(const [field,key]of [['pembayaran bulan','paymentMonth'],['nominal','amountText'],['tanggal transfer','transferDate']])if(fields.get(field))extra[key]=fields.get(field);
+ return {name,group,...extra};
 }
 function signature(raw,header,secret){if(!secret||!/^sha256=[a-f0-9]{64}$/.test(header||''))return false;return crypto.timingSafeEqual(Buffer.from(header.slice(7),'hex'),crypto.createHmac('sha256',secret).update(raw).digest());}
 async function confirmation(db,id,lock=false){if(!/^[a-f0-9-]{36}$/i.test(id||''))throw fail(400,'Konfirmasi tidak valid');const r=(await db.query('SELECT * FROM brtm_wa_confirmations WHERE id=$1'+(lock?' FOR UPDATE':''),[id])).rows[0];if(!r)throw fail(404,'Konfirmasi tidak ditemukan');return r;}
@@ -54,6 +58,7 @@ function mountWebhook(app,{pool,wrap,transaction,fetcher=fetch}){
    if(String(entry.id)!==c.wabaId)continue;
    for(const change of (Array.isArray(entry.changes)?entry.changes:[])){
     const v=change.value;if(change.field!=='messages'||String(v?.metadata?.phone_number_id)!==c.phoneId)continue;
+    if(Array.isArray(v.statuses)&&v.statuses.length)await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./whatsapp-invoices').statuses(db,v.statuses);});
     for(const m of (Array.isArray(v.messages)?v.messages:[])){
      if(typeof m.id!=='string'||m.id.length>300||!/^\d{9,15}$/.test(m.from||'')||!Number.isFinite(Number(m.timestamp))||Math.abs(now-Number(m.timestamp)*1000)>36*60*60*1000)continue;
      const attachment=m.type==='image'?m.image:m.type==='document'?m.document:null;
@@ -102,13 +107,14 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
    if(!data.token&&!data.secret)throw fail(400,'Isi token akses atau App Secret');
    const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',Buffer.from(process.env.WHATSAPP_CONFIG_KEY,'hex'),iv),cipher=Buffer.concat([c.update(JSON.stringify(data),'utf8'),c.final()]);
    await db.query('INSERT INTO brtm_wa_connection(id,cipher) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET cipher=EXCLUDED.cipher,updated_at=NOW()',[iv.toString('hex')+'.'+c.getAuthTag().toString('hex')+'.'+cipher.toString('hex')]);
+   await db.query('UPDATE brtm_wa_invoice_config SET checked_at=NULL WHERE id=1');
    await audit(db,req.user,'atur-sambungan-whatsapp','whatsapp',null,null,{tokenSaved:!!data.token,secretSaved:!!data.secret});});res.json({pesan:'Kredensial WhatsApp tersimpan. Uji sambungan untuk memeriksa akses nomor.'});
  }));
  async function phoneAccess(){const c=await settings(pool);if(!c.token)throw fail(409,'Token akses belum dipasang');const r=await metaFetch(app,'https://graph.facebook.com/'+c.version+'/'+c.wabaId+'/phone_numbers?fields=id,display_phone_number,platform_type',{headers:{Authorization:'Bearer '+c.token},signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok){let code;try{code=(await r.json()).error?.code;}catch{}throw fail(502,'Meta belum memberikan akses API ke nomor BRTM'+(Number.isInteger(code)?' (kode '+code+')':'')+'.');}const data=await r.json(),phone=data.data?.find(p=>String(p.id)===c.phoneId&&String(p.display_phone_number).replace(/\D/g,'')==='62811210260');if(!phone)throw fail(409,'Nomor 0811210260 belum tersedia untuk API aplikasi ini. Perlu penyiapan nomor yang mendukung WhatsApp Business App.');if(phone.platform_type&&phone.platform_type!=='CLOUD_API')throw fail(409,'Nomor BRTM belum terhubung ke Cloud API. Penyiapan coexistence diperlukan agar WhatsApp Business di HP tetap digunakan.');return c;}
  app.post('/api/owner/whatsapp/connection/test',owner,wrap(async(req,res)=>{await phoneAccess();res.json({pesan:'Token memiliki akses API ke nomor 0811210260. Webhook dan penerimaan pesan tetap perlu diuji.'});}));
  app.post('/api/owner/whatsapp/connection/subscribe',owner,wrap(async(req,res)=>{const c=await phoneAccess();if(!c.secret||!c.verify)throw fail(409,'Lengkapi App Secret dan verifikasi webhook terlebih dahulu');const r=await metaFetch(app,'https://graph.facebook.com/'+c.version+'/'+c.wabaId+'/subscribed_apps',{method:'POST',headers:{Authorization:'Bearer '+c.token},signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok||(await r.json()).success!==true)throw fail(502,'Langganan pesan belum berhasil di Meta');await audit(pool,req.user,'langganan-whatsapp','whatsapp',null,null,{phone:'0811210260'});res.json({pesan:'Langganan aplikasi ke akun WhatsApp tersimpan. Uji pesan masuk diperlukan untuk memastikan penerimaan.'});}));
 
- app.get('/api/owner/whatsapp/confirmations',owner,wrap(async(req,res)=>{const c=await settings(pool),items=(await pool.query("SELECT id,sender,payload,status,payment_id,reason,created_at FROM brtm_wa_confirmations ORDER BY created_at DESC LIMIT 200")).rows;res.json({configured:!!(c.secret&&c.verify&&c.token&&c.phoneId&&c.wabaId),items:items.map(r=>({...r,payload:{name:r.payload.name,group:r.payload.group,mime:r.payload.mime},proof:'/api/owner/whatsapp/confirmations/'+r.id+'/proof'}))});}));
+ app.get('/api/owner/whatsapp/confirmations',owner,wrap(async(req,res)=>{const c=await settings(pool),items=(await pool.query("SELECT id,sender,payload,status,payment_id,reason,created_at FROM brtm_wa_confirmations ORDER BY created_at DESC LIMIT 200")).rows;res.json({configured:!!(c.secret&&c.verify&&c.token&&c.phoneId&&c.wabaId),items:items.map(r=>({...r,payload:{name:r.payload.name,group:r.payload.group,mime:r.payload.mime,paymentMonth:r.payload.paymentMonth,amountText:r.payload.amountText,transferDate:r.payload.transferDate},proof:'/api/owner/whatsapp/confirmations/'+r.id+'/proof'}))});}));
  app.post('/api/owner/whatsapp/confirmations/:id/reject',owner,wrap(async(req,res)=>{const reason=String(req.body.reason||'').trim();if(reason.length<8||reason.length>500)throw fail(400,'Isi alasan penolakan 8–500 karakter');await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const r=await confirmation(db,req.params.id,true);if(r.status!=='pending')throw fail(409,'Konfirmasi sudah diproses');await db.query("UPDATE brtm_wa_confirmations SET status='rejected',reason=$2,user_id=$3,updated_at=NOW() WHERE id=$1",[r.id,reason,req.user.id]);await audit(db,req.user,'tolak-konfirmasi-whatsapp','whatsapp',r.id,null,{reason});});res.json({pesan:'Konfirmasi ditolak. Pembayaran dan paket tidak berubah.'});}));
  app.get('/api/owner/whatsapp/confirmations/:id/proof',owner,wrap(async(req,res)=>{
   const r=await confirmation(pool,req.params.id),proof=await archiveProof(app,pool,r);
@@ -125,4 +131,4 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
  };
 
 }
-module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);},mountWebhook,mountOwner,forPayment,identity,signature,compactProof};
+module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);await require('./whatsapp-invoices').initDb(db);},settings,mountWebhook,mountOwner,forPayment,identity,signature,compactProof};

@@ -416,6 +416,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
   require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
+  require('./whatsapp-invoices').mount(app,{pool,owner,wrap,transaction,audit,payments});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
@@ -495,7 +496,7 @@ if (require.main === module) {
     const app = createApp({ pool });
     let rosterAudited=false;
     let proofArchiving=false;
-    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();}catch{console.warn('BRTM WhatsApp proof worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
+    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();await app.locals.deliverWhatsAppInvoices();}catch{console.warn('BRTM WhatsApp proof worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
     const stopNotifications=N.startWorker(pool,async()=>{
       await app.locals.maintain();
       if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
