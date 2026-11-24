@@ -13,6 +13,8 @@ async function inspect(db,{rows,payments}){
   const ownSlots=slots.filter(s=>assigned(s,a)),ownPacks=packs.filter(p=>String(p.atletId)===a.id),paid=ownPacks.some(p=>p.status==='Lunas'&&p.statusMasaBerlaku==='Aktif');
   const reasons=[];if(paid&&ownSlots.length&&a.status!=='Aktif')reasons.push('PAID_ASSIGNED_INACTIVE');
   for(const s of ownSlots){
+   // Regular attendance is booked per date; old weekly assignments are retired.
+   if(require('./regular').isRegular({jenisKelas:s.class_name}))continue;
    if(!users.some(u=>String(u.id)===String(s.coach_id)&&u.active))reasons.push('INACTIVE_COACH:'+s.id);
    if(B.canonical(s.class_name)!==B.canonical(a.kelompok))reasons.push('CLASS_MISMATCH:'+s.id);
    for(let n=-7;n<7;n++){

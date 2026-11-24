@@ -69,6 +69,15 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(owner,'post','/api/owner/activation',{atletId:renewedChild.id,requestId:'regular-auto-renew-test',tanggal:day,berakhir:B.addMonth(day),kuota:4,sisa:0,harga:150000,potonganDiskon:0,status:'Lunas'});
  await app.locals.maintain();
  const renewal=(await call(owner,'get','/api/pembayaran')).find(p=>p.atletId===renewedChild.id&&p.automaticRenewal);assert.equal(renewal.status,'Belum Lunas');
- assert((await call(owner,'post','/api/owner/regular/'+renewedChild.id,{tanggal:day,mulai:'16:00'})).jadwalId);
+ const renewedSession=(await call(owner,'post','/api/owner/regular/'+renewedChild.id,{tanggal:day,mulai:'16:00'})).jadwalId;
+ for(const coach of [fauzan,ilyas])assert((await call(coach,'get','/api/jadwal')).some(s=>s.id===renewedSession&&s.atletIds.includes(renewedChild.id)));
+ clock='16:00:00';
+ await call(ilyas,'post','/api/session-entry',{jadwalId:renewedSession,atletId:renewedChild.id,tanggal:day,status:'Hadir',noted:'Latihan memakai paket otomatis belum lunas.'});
+ const usedRenewal=(await call(owner,'get','/api/pembayaran')).find(p=>p.id===renewal.id);assert.equal(usedRenewal.status,'Belum Lunas');assert.equal(usedRenewal.sisaPertemuan,3);
+ // Retired weekly Regular assignments must not imply missing flexible bookings.
+ const regularCoach=(await pool.query("SELECT id FROM brtm_users WHERE username='ilyas'")).rows[0].id;
+ await pool.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time,class_name,athlete_ids) VALUES($1,'Kolam Renang Pondok Selfie',3,'15:00','16:00',$2,$3) ON CONFLICT(coach_id,place,weekday,start_time) DO UPDATE SET class_name=EXCLUDED.class_name,athlete_ids=EXCLUDED.athlete_ids",[regularCoach,b.kelompok,JSON.stringify([b.id])]);
+ const audit=await app.locals.rosterAudit();assert(!audit.issues.some(i=>i.id===b.id),'Unbooked flexible Regular sessions are not missing weekly members');
+
  await db.close();console.log('PASS Regular flexible activation, reschedule/cancel, shared coach access, quota, time gates, owner help, unpaid protection, invoice reminders and PDF.');
 })().catch(e=>{console.error(e);process.exit(1);});
