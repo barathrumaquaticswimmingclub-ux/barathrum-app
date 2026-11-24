@@ -35,7 +35,7 @@ async function book(db,h,user,aid,date,start,cancel=false){
  if(!cancel){
  const opt=await options(db,h,aid,date,user.role==='owner'),slot=opt.slots.find(s=>s.mulai===start);
  if(!slot||!slot.tersedia)throw fail(409,'Sesi sudah selesai, penuh, atau libur. Pilih sesi lain.');
- const packs=(await h.payments(db,true)).filter(p=>String(p.atletId)===String(aid)&&isRegular(p)&&p.status==='Lunas'&&p.statusManual!=='Kedaluwarsa'&&p.tanggal<=date&&p.berlakuSampai>=date&&p.sisaPertemuan>0);
+ const packs=(await h.payments(db,true)).filter(p=>String(p.atletId)===String(aid)&&isRegular(p)&&(p.status==='Lunas'||p.automaticRenewal&&p.status==='Belum Lunas')&&p.statusManual!=='Kedaluwarsa'&&p.tanggal<=date&&p.berlakuSampai>=date&&p.sisaPertemuan>0);
  if(!packs.length)throw fail(409,'Tidak ada paket Regular lunas dengan sisa pertemuan pada tanggal ini.');
  const reserved=new Set(schedules.filter(s=>s.regularFlex&&s.tanggal>=B.today()&&s.atletIds?.map(String).includes(String(aid))&&!own.includes(s)&&!attendance.some(r=>r.jadwalId===s.id&&String(r.atletId)===String(aid)&&r.status==='Hadir')).map(s=>s.tanggal));
  if(reserved.size>=packs.reduce((n,p)=>n+p.sisaPertemuan,0))throw fail(409,'Sisa kuota sudah dialokasikan ke sesi lain. Batalkan sesi tersebut dahulu.');

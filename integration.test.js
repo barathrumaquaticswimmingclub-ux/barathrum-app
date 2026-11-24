@@ -75,10 +75,10 @@ async function main() {
     const slot=(await expect(write(owner,'post','/api/jadwal',{...scheduleInput,nama:'TEST kuota '+hour,mulai:String(hour).padStart(2,'0')+':00',selesai:String(hour+1).padStart(2,'0')+':00'}),201)).data;
     await expect(write(coach,'post','/api/absensi',{...input,jadwalId:slot.id}),201);
   }
-  packs=await expect(owner.get('/api/pembayaran'),200);assert.equal(packs[0].sisaPertemuan,0);
+  packs=await expect(owner.get('/api/pembayaran'),200);assert.equal(packs.find(p=>p.id===payment.id).sisaPertemuan,0);assert.equal(packs.find(p=>p.renewalFrom===payment.id).status,'Belum Lunas');
   const excess=(await expect(write(owner,'post','/api/jadwal',{...scheduleInput,nama:'TEST kuota habis',mulai:'16:00',selesai:'17:00'}),201)).data;
-  await expect(write(coach,'post','/api/absensi',{...input,jadwalId:excess.id}),400);
-  await expect(write(coach,'post','/api/absensi',{...input,jadwalId:excess.id,status:'Sakit'}),201);
+  const continued=(await expect(write(coach,'post','/api/absensi',{...input,jadwalId:excess.id}),201)).data;
+  await expect(write(coach,'put','/api/absensi/'+continued.id,{...input,jadwalId:excess.id,status:'Sakit'}),200);
   const other=(await expect(write(owner,'post','/api/atlet',{...athleteInput,nama:'TEST Lain',sekolah:'Sekolah lain'}),201)).data;
   await expect(write(owner,'post','/api/pembayaran',{...payInput,atletId:other.id}),400);
   assert.equal((await expect(coach.get('/api/atlet'),200)).length,1);
@@ -93,6 +93,7 @@ async function main() {
   const expiredSlot=(await expect(write(owner,'post','/api/jadwal',{...scheduleInput,nama:'TEST kedaluwarsa',jenisKelas:'Private Class',atletIds:[expired.id],mulai:'18:00',selesai:'19:00'}),201)).data;
   await expect(write(coach,'post','/api/absensi',{...input,atletId:expired.id,jadwalId:expiredSlot.id}),400);
   await expect(write(owner,'post','/api/pembayaran/'+expiredPay.id+'/pengecualian',{berlakuSampai:B.addMonth(B.today()),alasan:'Izin pemulihan medis'}),200);
+  await expect(write(coach,'post','/api/perkembangan',{...input,atletId:expired.id,jadwalId:expiredSlot.id,catatan:'Evaluasi latihan setelah masa pemulihan selesai.'}),201);
   await expect(write(coach,'post','/api/absensi',{...input,atletId:expired.id,jadwalId:expiredSlot.id}),201);
   const old=(await pool.query("INSERT INTO data_klub(jenis,data) VALUES('atlet',$1) RETURNING id",[JSON.stringify({nama:'Atlet Lama',kelompok:'Reguler Class (1x Seminggu)',status:'Aktif',catatanLama:'Jangan hilang'})])).rows[0];
   await expect(write(owner,'put','/api/atlet/'+old.id,{...athleteInput,nama:'Atlet Lama',kelompok:'Regular Class (1x Seminggu)'}),200);

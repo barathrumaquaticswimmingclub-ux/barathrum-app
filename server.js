@@ -148,7 +148,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if(athlete.status!=='Aktif')await save(db,user,'atlet',{...athlete,status:'Aktif'},athlete);
       await require('./workflow').materialize(db,{rows,save},user,35,false);
     }
-    if(kind!=='pembayaran'||B.canonical(out.jenisKelas)!=='Prestasi Class')await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); return kind==='pembayaran'&&B.canonical(out.jenisKelas)==='Prestasi Class'?record(db,kind,out.id):out;
+    if(kind!=='pembayaran'||B.canonical(out.jenisKelas)!=='Prestasi Class')await N.afterSave(db,kind,out,previous); await require('./community').afterSave(db,kind,out); if(kind==='absensi'&&['Hadir','Alpa'].includes(out.status))await require('./package-renewal').renewExhausted(db,{rows,payments,save}); return kind==='pembayaran'&&B.canonical(out.jenisKelas)==='Prestasi Class'?record(db,kind,out.id):out;
   }
   function setCookie(res, token, maxAge = 7 * 86400) { res.setHeader('Set-Cookie', `brtm_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`); }
   app.get('/health', wrap(async (req, res) => { await pool.query('SELECT 1'); res.json({ status: 'ok', database: 'ok', version: APP_VERSION }); }));
@@ -369,7 +369,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       }
       if(previous && out.totalPertemuan!==null && out.totalPertemuan<previous.terpakai)throw fail(400,'Kuota tidak boleh lebih kecil dari pertemuan terpakai');
       out.pemakaianAwal = previous?.pemakaianAwal || 0; delete out.sisaPertemuan; if (old) out.pengecualian = old.pengecualian || null;
-      const duplicate = packs.find(p => !p.dibatalkan && p.id !== old?.id && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
+      const duplicate = packs.find(p => !p.dibatalkan && p.id !== old?.id && p.id !== old?.renewalFrom && (!old || p.renewalFrom !== old.id) && athleteLink(p, athlete) && (out.jenisKelas === 'Prestasi Class' ? p.jenisKelas === 'Prestasi Class' && p.periode === out.periode : p.tanggal === out.tanggal && p.jenisKelas === out.jenisKelas));
       if (duplicate) throw fail(409, 'Tagihan atlet untuk tanggal/periode ini sudah ada. Edit tagihan tersebut.');
       out.catatan = text(input.catatan, 'Catatan pembayaran', false, 1000);out.dibayarWaktu=out.status==='Lunas'?(old?.status==='Lunas'?old.dibayarWaktu||null:new Date().toISOString()):null; out.dibayarPada = out.status === 'Lunas' ? old?.status === 'Lunas' ? old.dibayarPada || old.tanggal : B.today() : null; return out;
     }
@@ -486,7 +486,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     return scheduleSync;
   }
   app.locals.rosterAudit=()=>transaction(c=>require('./roster-audit').inspect(c,{rows,payments}));
-  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));});
+  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./workflow').materialize(c,{rows,save});await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').billing(c,await payments(c));});
   return app;
 }
 if (require.main === module) {

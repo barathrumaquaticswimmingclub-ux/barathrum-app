@@ -29,4 +29,19 @@ function mount(app,{owner,wrap,transaction,record,rows,validate,save,payments}){
   });res.json({data,pesan:'Paket baru tersimpan, riwayat lama tetap ada, dan pemberitahuan tersedia di BRTM SWIM.'});
  }));
 }
-module.exports={mount};
+async function renewExhausted(db,{rows,payments,save}){
+ const all=await payments(db),athletes=(await rows(db,'atlet')).filter(a=>a.status==='Aktif'&&!a.mergedInto);
+ for(const a of athletes){
+  if(B.canonical(a.kelompok)==='Prestasi Class')continue;
+  const related=all.filter(p=>String(p.atletId)===String(a.id)&&B.canonical(p.jenisKelas)===B.canonical(a.kelompok)&&!p.dibatalkan).sort((x,y)=>y.tanggal.localeCompare(x.tanggal)||Number(y.id)-Number(x.id));
+  const old=related[0];
+  if(!old||old.sisaPertemuan!==0||old.tanggal>B.today()||old.statusManual==='Kedaluwarsa'||!['Lunas','Belum Lunas'].includes(old.status)||related.some(p=>p.renewalFrom===old.id))continue;
+  const terms=B.price({tanggal:B.today(),status:'Belum Lunas',paketKhusus:true,rincianOwner:true,kuotaKhusus:old.totalPertemuan,biayaKhusus:old.jumlah,potonganDiskon:old.potonganDiskon||0,biayaPendaftaran:0,alasanKhusus:'Perpanjangan otomatis karena kuota habis'},a);
+  const p=await save(db,{id:null,username:'sistem-paket'},'pembayaran',{...terms,atletId:a.id,namaAtlet:a.nama,renewalFrom:old.id,renewalRequestId:'automatic:'+old.id,automaticRenewal:true,pemakaianAwal:0},null);
+  all.push(B.packageView(p));
+  const key='paket-otomatis:'+p.id;
+  const notice=(await db.query('INSERT INTO brtm_billing_notices(athlete_id,event_key,data) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[a.id,key,JSON.stringify({...p,provisional:true})])).rows[0];
+  if(notice)await N.enqueue(db,a.id,'invoice:'+notice.id,'Paket baru — Belum Lunas',`Ayah/Bunda, kuota ${a.nama} sebelumnya telah habis. Paket baru ${p.totalPertemuan} pertemuan sudah tersedia dengan tagihan Rp${p.totalTagihan.toLocaleString('id-ID')}, berstatus Belum Lunas. Invoice tersedia di aplikasi. Pembayaran hanya melunasi tagihan ini dan tidak menambah kuota lagi.`);
+ }
+}
+module.exports={mount,renewExhausted};

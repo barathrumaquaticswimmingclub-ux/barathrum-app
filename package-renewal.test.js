@@ -21,5 +21,18 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  const packs=await call(o,'get','/api/pembayaran');assert.equal(packs.length,2);assert.equal(packs.find(x=>x.id===p.id).berlakuSampai,'2026-11-19');assert.equal(packs.find(x=>x.id===renewed.id).berlakuSampai,'2026-12-20');
  await call(o,'post','/api/owner/package/'+renewed.id+'/notify');await call(o,'post','/api/owner/package/'+renewed.id+'/notify');
  const notes=(await pool.query("SELECT * FROM brtm_notifications WHERE event_key=$1",['package-renewal:'+renewed.id])).rows;assert.equal(notes.length,1);assert.equal(String(notes[0].athlete_id),a.id);assert.match(notes[0].body,/2026-11-19/);assert.match(notes[0].body,/4 pertemuan/);
+ const autoChild=(await call(o,'post','/api/atlet',{nama:'Automatic Child',kelompok:'Semi Private Class',status:'Aktif'},201)).data;
+ const exhausted=(await call(o,'post','/api/owner/activation',{atletId:autoChild.id,requestId:'auto-exhausted-test',tanggal:'2026-11-01',berakhir:'2026-12-01',kuota:4,sisa:0,harga:200000,potonganDiskon:25000,status:'Lunas'})).data;
+ await app.locals.maintain();await app.locals.maintain();
+ let autoPacks=(await call(o,'get','/api/pembayaran')).filter(p=>p.atletId===autoChild.id);
+ assert.equal(autoPacks.length,2);const auto=autoPacks.find(p=>p.renewalFrom===exhausted.id);
+ assert.equal(auto.status,'Belum Lunas');assert.equal(auto.sisaPertemuan,4);assert.equal(auto.totalTagihan,175000);assert.equal(auto.biayaPendaftaran,0);
+ const notice=(await pool.query('SELECT * FROM brtm_billing_notices WHERE event_key=$1',['paket-otomatis:'+auto.id])).rows;assert.equal(notice.length,1);
+ // Settlement ignores altered terms and keeps previously consumed quota.
+ await pool.query("UPDATE data_klub SET data=jsonb_set(data,'{pemakaianAwal}','1') WHERE id=$1",[auto.id]);
+ const settlement={id:auto.id,atletId:autoChild.id,requestId:'auto-settlement-test',tanggal:'2026-11-19',berakhir:'2027-01-01',kuota:99,harga:1,potonganDiskon:0,status:'Lunas',dibayarPada:B.today()};
+ await call(o,'post','/api/owner/payment',settlement);await call(o,'post','/api/owner/payment',settlement);
+ autoPacks=(await call(o,'get','/api/pembayaran')).filter(p=>p.atletId===autoChild.id);
+ assert.equal(autoPacks.length,2);const settled=autoPacks.find(p=>p.id===auto.id);assert.equal(settled.status,'Lunas');assert.equal(settled.sisaPertemuan,3);assert.equal(settled.totalTagihan,175000);assert.equal(settled.berlakuSampai,auto.berlakuSampai);assert.equal(settled.totalPertemuan,4);
  await db.close();console.log('PASS renewal authorization, history preservation, dates, quota, retry, duplicate protection and private notification deduplication');
 })().catch(e=>{console.error(e);process.exit(1);});

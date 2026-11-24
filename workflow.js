@@ -46,7 +46,7 @@ async function materialize(db,{rows,save},user={id:null,username:'sistem-jadwal'
  const slots=(await db.query('SELECT * FROM brtm_weekly_slots ORDER BY id')).rows.filter(s=>!require('./regular').isRegular({jenisKelas:s.class_name}));
  const schedules=await rows(db,'jadwal'),attendance=await rows(db,'absensi');
  for(const s of [...schedules])if(s.weeklyKey&&s.atletIds?.length&&s.tanggal>=B.today()&&require('./regular').isRegular(s)&&!s.regularFlex&&s.statusSesi!=='Libur'&&!attendance.some(r=>r.jadwalId===s.id)){await save(db,user,'jadwal',{...s,atletIds:[],regularFixedRetired:true},s);schedules.splice(schedules.indexOf(s),1);}
- const paidPacks=(await rows(db,'pembayaran')).filter(p=>p.status==='Lunas'&&p.statusManual!=='Kedaluwarsa');
+ const paidPacks=(await rows(db,'pembayaran')).filter(p=>(p.status==='Lunas'||p.automaticRenewal&&p.status==='Belum Lunas')&&p.statusManual!=='Kedaluwarsa');
  // Recover only recent dates supported by the Owner's recorded weekly assignment.
  // Paid late additions may restore roster membership under Owner authorization; no attendance is generated.
  const changes=(await db.query("SELECT record_id,before_data,created_at FROM brtm_audit WHERE action='ubah-jadwal-mingguan' ORDER BY created_at,id")).rows;

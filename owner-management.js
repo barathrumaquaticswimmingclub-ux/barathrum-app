@@ -6,13 +6,19 @@ function mount(app,h){const {owner,wrap,transaction,record,rows,payments,save,va
  for(const mode of ['activation','payment'])app.post('/api/owner/'+mode,owner,wrap(async(req,res)=>{
   const data=await transaction(async db=>{
    await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
-   const d=req.body,activation=mode==='activation';if(!/^[-\w]{10,80}$/.test(d.requestId||''))throw fail(400,'Muat ulang formulir');
+   let d=req.body;const activation=mode==='activation';if(!/^[-\w]{10,80}$/.test(d.requestId||''))throw fail(400,'Muat ulang formulir');
    const a=await record(db,'atlet',d.atletId,true),old=d.id?await record(db,'pembayaran',d.id,true):null;
    if(old&&(old.atletId!==a.id||old.dibatalkan))throw fail(409,'Paket tidak sesuai atlet');
    const requestHash=crypto.createHash('sha256').update(JSON.stringify([mode,Object.fromEntries(Object.keys(d).sort().map(k=>[k,d[k]]))])).digest('hex');
    const all=await rows(db,'pembayaran'),retry=all.find(p=>p.ownerRequestId===d.requestId);if(retry){if(retry.atletId!==a.id||retry.ownerRequestHash!==requestHash)throw fail(409,'Kode penyimpanan sudah dipakai untuk data lain');return retry;}
    const wa=await require('./whatsapp-payments').forPayment(db,d,a,activation);
-   if(wa&&old?.status==='Lunas')throw fail(409,'Paket ini sudah lunas. Pilih tagihan belum lunas atau paket baru.');
+   if(wa&&(!old||old.status!=='Belum Lunas'))throw fail(409,'Pilih tagihan Belum Lunas yang sudah ada. Validasi pembayaran tidak membuat paket baru.');
+   const settlement=!activation&&old?.status==='Belum Lunas'&&d.status==='Lunas';
+   if(settlement){
+    const view=(await payments(db)).find(p=>p.id===old.id);
+    // Settlement takes package terms from the database, never from the review form.
+    d={...d,tanggal:old.tanggal,berakhir:view.berlakuSampai,kuota:old.totalPertemuan||0,harga:old.jumlah,biayaPendaftaran:old.biayaPendaftaran||0,potonganDiskon:old.potonganDiskon||0};
+   }
    if(old&&d.expectedRevision!==undefined&&d.expectedRevision!==old.diperbaruiPada)throw fail(409,'Paket telah berubah. Muat ulang sebelum mengedit.');
    const prestasi=B.canonical(a.kelompok)==='Prestasi Class';
    const input={...d,atletId:a.id,jenisKelas:a.kelompok,status:d.status,tanggal:d.tanggal,rincianOwner:true,paketKhusus:!prestasi,kuotaKhusus:amount(d.kuota,'Kuota',100),biayaKhusus:amount(d.harga,'Harga'),biayaPendaftaran:activation?old?.biayaPendaftaran||0:amount(d.biayaPendaftaran||0,'Pendaftaran'),potonganDiskon:amount(d.potonganDiskon||0,'Potongan'),alasanKhusus:'Paket diatur oleh Owner',paymentRequestId:d.requestId};
@@ -29,6 +35,7 @@ function mount(app,h){const {owner,wrap,transaction,record,rows,payments,save,va
    if(!prestasi&&d.berakhir>B.addMonth(d.tanggal))p.pengecualian={berlakuSampai:d.berakhir,alasan:'Masa berlaku diatur Owner',oleh:req.user.username,pada:new Date().toISOString()};
    if(!p.activationOnly&&old?.activationOnly){delete p.penerimaanTunai;delete p.penerimaanPerBulan;}
    if(p.activationOnly){delete p.penerimaanTunai;delete p.penerimaanPerBulan;p.dibayarPada=p.status==='Lunas'?(old?.dibayarPada||d.tanggal):null;p.dibayarWaktu=p.status==='Lunas'?(old?.dibayarWaktu||new Date().toISOString()):null;}else if(d.dibayarPada){if(!B.validDate(d.dibayarPada)||d.dibayarPada>B.today())throw fail(400,'Tanggal pembayaran tidak valid');p.dibayarPada=d.dibayarPada;}
+   if(settlement)for(const key of ['tanggal','tanggalBerakhir','aktivasiBerlakuSampai','pengecualian','statusManual','pemakaianAwal','totalPertemuan','renewalFrom','renewalRequestId']){if(Object.hasOwn(old,key))p[key]=old[key];else delete p[key];}
    const result=await save(db,req.user,'pembayaran',p,old);
    if((activation||wa)&&a.status!=='Aktif')await save(db,req.user,'atlet',{...a,status:'Aktif'},a);
    if(wa){await db.query("UPDATE brtm_wa_confirmations SET status='approved',payment_id=$2,user_id=$3,updated_at=NOW() WHERE id=$1",[wa.id,result.id,req.user.id]);await audit(db,req.user,'verifikasi-konfirmasi-whatsapp','whatsapp',wa.id,null,{paymentId:result.id,atletId:a.id,bankChecked:true});}

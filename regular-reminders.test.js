@@ -65,5 +65,10 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  w.eval(`S.records.jadwal=[{id:'s',regularFlex:true,jenisKelas:'Regular Class (1x Seminggu)',tanggal:'2026-11-17',atletIds:['1']}];renderSchedule()`);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Nonaktifkan');
  const sameButton=w.document.querySelector('[data-regular-id]');w.eval(`S.records.absensi=[{jadwalId:'s',atletId:'1',status:'Hadir'}];refreshRegularActivation({records:S.records,config:S.config})`);assert.equal(w.document.querySelector('[data-regular-id]'),sameButton);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Nonaktif');assert(w.document.querySelector('[data-regular-id]').disabled);assert(w.eval('regularScheduleNames(S.records.jadwal[0])').includes('Sean Lengkap (Sean) · Nonaktif'));
  w.eval(`S.config.today='2026-11-18';renderSchedule()`);assert.equal(w.document.querySelector('[data-regular-id]').textContent,'Aktifkan');dom.window.close();
+ const renewedChild=await create('atlet',{nama:'Automatic Regular',kelompok:'Regular Class (1x Seminggu)',status:'Aktif'});
+ await call(owner,'post','/api/owner/activation',{atletId:renewedChild.id,requestId:'regular-auto-renew-test',tanggal:day,berakhir:B.addMonth(day),kuota:4,sisa:0,harga:150000,potonganDiskon:0,status:'Lunas'});
+ await app.locals.maintain();
+ const renewal=(await call(owner,'get','/api/pembayaran')).find(p=>p.atletId===renewedChild.id&&p.automaticRenewal);assert.equal(renewal.status,'Belum Lunas');
+ assert((await call(owner,'post','/api/owner/regular/'+renewedChild.id,{tanggal:day,mulai:'16:00'})).jadwalId);
  await db.close();console.log('PASS Regular flexible activation, reschedule/cancel, shared coach access, quota, time gates, owner help, unpaid protection, invoice reminders and PDF.');
 })().catch(e=>{console.error(e);process.exit(1);});
