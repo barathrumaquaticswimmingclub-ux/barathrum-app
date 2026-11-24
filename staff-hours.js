@@ -83,13 +83,16 @@ function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()
  for(const row of result)row.rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai)||a.status.localeCompare(b.status));
  return {month,start:month+'-01',end:B.monthEnd(month+'-01'),asOf:today,rows:result.sort((a,b)=>a.nama.localeCompare(b.nama,'id')),unassignedSessions:unassigned.size};
 }
-function mount(app,{pool,owner,wrap,transaction,rows}){
+function mount(app,h){
+ const {pool,owner,wrap,transaction,rows}=h;
+ require('./staff-hours-review').mount(app,h);
  async function read(req){
   const month=req.query.month===undefined?B.today().slice(0,7):req.query.month;
   if(typeof month!=='string'||!/^\d{4}-\d{2}$/.test(month)||!B.validDate(month+'-01'))throw fail(400,'Pilih bulan yang valid');
   const data=await transaction(async db=>{
    const staff=(await db.query('SELECT id,nama,username,role,active,profile FROM brtm_users ORDER BY id')).rows;
-   return calculate({staff,schedules:await rows(db,'jadwal'),attendance:await rows(db,'absensi'),athletes:await rows(db,'atlet'),month});
+   const source={staff,schedules:await rows(db,'jadwal'),attendance:await rows(db,'absensi'),athletes:await rows(db,'atlet'),month,workRecords:await rows(db,'jamstaf'),weeklySlots:(await db.query('SELECT * FROM brtm_weekly_slots ORDER BY id')).rows,slotChanges:(await db.query("SELECT record_id,before_data,created_at FROM brtm_audit WHERE action='ubah-jadwal-mingguan' ORDER BY created_at,id")).rows};
+   return require('./staff-hours-review').augment(calculate(source),source,union);
   });return data;
  }
  app.get('/api/owner/staff-hours',owner,wrap(async(req,res)=>res.json(await read(req))));

@@ -414,7 +414,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   }
   require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,validate,audit,passwordHash,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
-  require('./staff-hours').mount(app,{pool,owner,wrap,transaction,rows});
+  require('./staff-hours').mount(app,{pool,owner,wrap,transaction,rows,audit});
   require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
   require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
   require('./whatsapp-invoices').mount(app,{pool,owner,wrap,transaction,audit,payments});
