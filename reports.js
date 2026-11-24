@@ -42,4 +42,15 @@ function bill(res,p,kind,id){
 }
 function receipts(res,list,range){const d=doc(res,'BRTM-Penerimaan-'+range.key+'-'+B.today(),true);heading(d,'LAPORAN PENERIMAAN • '+range.label);d.fontSize(11).text('Tanggal '+range.start+' sampai '+range.end+' (WIB)').text('Dicetak '+new Date().toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})+' WIB');d.text('Total '+money(list.reduce((n,r)=>n+r.amount,0))+' • '+list.length+' penerimaan');d.moveDown();rows(d,['No.','Tanggal bayar','Nama atlet','Kelas','Uang diterima'],list.map((r,i)=>[i+1,r.paidOn,r.nama,r.kelas,money(r.amount)]),[35,100,235,235,160]);d.fontSize(9).text('Berdasarkan tanggal penerimaan uang. Penggunaan kredit tidak dihitung sebagai uang masuk baru. Minggu dimulai Senin.');footer(d);}
 function statement(res,a,list){const d=doc(res,'BRTM-Mutasi-'+a.id,true);heading(d,'MUTASI PEMBAYARAN BRTM');d.font('Helvetica').fontSize(11).text(a.nama+' | '+a.kelompok).text('Riwayat pencatatan pembayaran klub - WIB. Terbaru di atas.').text('Total diterima: '+money(list.filter(r=>r.status==='Diterima').reduce((n,r)=>n+r.amount,0)));d.moveDown();rows(d,['Tanggal bayar','Jam pencatatan WIB','Keterangan','Status','Jumlah'],list.map(r=>[r.paidOn,r.receivedAt?new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}).format(new Date(r.receivedAt)):'Belum tercatat',String(r.keterangan||'').slice(0,250),r.status,money(r.amount)]),[100,125,285,100,155]);d.fontSize(9).text('Mutasi pencatatan BRTM. Jam pada riwayat lama yang tidak tersedia tidak ditambahkan.');footer(d);}
-module.exports={club,program,bill,terbilang,receipts,statement};
+function staffHours(res,period,staff){
+ const d=doc(res,'BRTM-Jam-Staf-'+staff.id+'-'+period.month,true),hours=n=>Number(n).toLocaleString('id-ID',{maximumFractionDigits:2})+' jam';
+ heading(d,'REKAP JAM MELATIH STAF');d.font('Helvetica').fontSize(11).text('Nama: '+staff.nama).text('Periode: '+period.start+' sampai '+period.end+' (WIB)').text('Jam sore: '+hours(staff.jamSore)+' | Jam pagi: '+hours(staff.jamPagi));
+ if(period.asOf<period.end)d.text('Rekap sementara berdasarkan absensi sampai '+period.asOf+'.');
+ d.moveDown();
+ const items=staff.rincian.flatMap(r=>r.kelas.flatMap(k=>{const groups=[];for(let i=0;i<k.atlet.length;i+=8)groups.push([r.tanggal,r.hari,r.mulai+' - '+r.selesai+'\nHitungan '+r.kategori,k.nama,k.atlet.slice(i,i+8).map(a=>a.nama).join(', ')]);return groups;}));
+ rows(d,['Tanggal','Hari','Jam / kategori','Kelas','Anak yang dilatih'],items.length?items:[['-','-','-','-','Belum ada jam melatih tercatat pada periode ini.']],[85,65,115,200,300]);
+ d.font('Helvetica').fontSize(9).text('Sabtu pagi masuk hitungan sore. Regular Sabtu pagi dihitung untuk kedua pelatih. Jumlah anak tidak menggandakan jam; waktu yang bersamaan dihitung sekali per pelatih.');
+ if(period.unassignedSessions)d.text('Ada '+period.unassignedSessions+' sesi Regular pada periode ini dengan pencatat pelatih belum teridentifikasi; bagian tersebut belum dihitung.');
+ footer(d);
+}
+module.exports={club,program,bill,terbilang,receipts,statement,staffHours};
