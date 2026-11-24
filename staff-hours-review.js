@@ -3,7 +3,7 @@ const B=require('./business'),R=require('./regular');
 const fail=(status,message)=>Object.assign(Error(message),{status});
 const mins=s=>/^([01]\d|2[0-3]):[0-5]\d$/.test(s||'')?Number(s.slice(0,2))*60+Number(s.slice(3)):null;
 const clock=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
-const states=['Hadir melatih','Hadir menunggu murid','Tidak hadir','Libur'];
+const states=['Hadir melatih','Hadir menunggu murid','Tidak hadir','Izin','Sakit','Libur'];
 const worked=s=>states.slice(0,2).includes(s);
 const day=s=>new Intl.DateTimeFormat('id-ID',{weekday:'long',timeZone:'Asia/Jakarta'}).format(new Date(s+'T12:00:00Z'));
 const period=(date,start)=>new Date(date+'T12:00:00Z').getUTCDay()===6||start>='12:00'?'sore':'pagi';
@@ -23,13 +23,13 @@ function historical(schedules,slots,edits,month,until){
  }
  return extra;
 }
-function augment(report,{staff,schedules,attendance,athletes,workRecords=[],weeklySlots=[],slotChanges=[],now=B.time()},union){
+function augment(report,{staff,schedules,attendance,athletes,workRecords=[],staffAttendance=[],weeklySlots=[],slotChanges=[],now=B.time()},union){
  const coaches=staff.filter(u=>['coach','prestasi'].includes(u.role)),heads=coaches.filter(u=>u.role==='coach'&&/\badhi\b/i.test(u.nama));
  const canonical=id=>{const u=coaches.find(u=>String(u.id)===String(id));return u?.role==='prestasi'&&heads.length===1?String(heads[0].id):u?String(u.id):null;};
  const closed=s=>s.tanggal<report.asOf||s.tanggal===report.asOf&&s.selesai<=now.slice(0,5);
  const inMonth=s=>B.validDate(s.tanggal)&&s.tanggal.startsWith(report.month)&&mins(s.mulai)!==null&&mins(s.selesai)>mins(s.mulai);
  const plans=[...schedules,...historical(schedules,weeklySlots,slotChanges,report.month,report.asOf<report.end?report.asOf:report.end)].filter(inMonth);
- for(const u of coaches)if(canonical(u.id)===String(u.id)&&!report.rows.some(r=>r.id===String(u.id))&&(workRecords.some(r=>canonical(r.staffId)===String(u.id))||plans.some(s=>canonical(s.coachId)===String(u.id))))report.rows.push({id:String(u.id),nama:u.nama,jamSore:0,jamPagi:0,menitSore:0,menitPagi:0,rincian:[]});
+ for(const u of coaches)if(canonical(u.id)===String(u.id)&&!report.rows.some(r=>r.id===String(u.id))&&(workRecords.some(r=>canonical(r.staffId)===String(u.id))||staffAttendance.some(r=>canonical(r.staffId)===String(u.id))||plans.some(s=>canonical(s.coachId)===String(u.id))))report.rows.push({id:String(u.id),nama:u.nama,jamSore:0,jamPagi:0,menitSore:0,menitPagi:0,rincian:[]});
  const pupil=id=>({id:String(id),nama:athletes.find(a=>String(a.id)===String(id))?.nama||attendance.find(r=>String(r.atletId)===String(id))?.namaAtlet||'Atlet #'+id});
  for(const row of report.rows){
   const assigned=s=>(s.coachIds?.length?s.coachIds:[s.coachId]).some(id=>canonical(id)===row.id);
@@ -56,6 +56,14 @@ function augment(report,{staff,schedules,attendance,athletes,workRecords=[],week
    }
    const covered=row.rincian.filter(d=>d.tanggal===s.tanggal&&(settled(d)||d.perluVerifikasi||d.status==='Pelatih lain')).map(d=>[mins(d.mulai),mins(d.selesai)]);
    for(const [x,y] of cut(mins(s.mulai),mins(s.selesai),covered))row.rincian.push({tanggal:s.tanggal,hari:day(s.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(s.tanggal,clock(x)),menit:0,jam:0,status:'Perlu verifikasi',keterangan:(s.historyOnly?'Jadwal mingguan historis':'Jadwal tercatat')+' · Kehadiran staf belum diverifikasi',kelas:[{nama:s.jenisKelas,atlet:(s.atletIds||[]).map(pupil)}],perluVerifikasi:true});
+  }
+  row.laporanPelatih=staffAttendance.filter(m=>canonical(m.staffId)===row.id&&m.tanggal.startsWith(report.month)).map(m=>({...m,review:manual.some(v=>v.tanggal===m.tanggal&&v.mulai<=m.mulai&&v.selesai>=m.selesai)?'Diverifikasi Owner':'Menunggu verifikasi'}));
+  for(const m of row.laporanPelatih){
+   if(m.review==='Diverifikasi Owner'||m.tanggal>report.asOf||m.tanggal===report.asOf&&m.selesai>now.slice(0,5))continue;
+   const a=mins(m.mulai),b=mins(m.selesai),evidence=row.rincian.filter(d=>d.tanggal===m.tanggal&&d.status==='Melatih').map(d=>[mins(d.mulai),mins(d.selesai)]);
+   if(m.status==='Hadir melatih'&&!cut(a,b,evidence).length){m.review='Sesuai absensi anak';continue;}
+   row.rincian=row.rincian.flatMap(d=>d.tanggal!==m.tanggal||!d.perluVerifikasi?[d]:cut(mins(d.mulai),mins(d.selesai),[[a,b]]).map(([x,y])=>({...d,mulai:clock(x),selesai:clock(y)})));
+   row.rincian.push({tanggal:m.tanggal,hari:day(m.tanggal),mulai:m.mulai,selesai:m.selesai,kategori:period(m.tanggal,m.mulai),menit:0,jam:0,status:m.status,keterangan:'Dilaporkan pelatih: '+m.status+(m.catatan?' · '+m.catatan:'')+(m.replacementId?' · Usulan pengganti: '+(staff.find(u=>String(u.id)===m.replacementId)?.nama||'#'+m.replacementId):'')+' · Menunggu verifikasi Owner',kelas:[{nama:m.kelas,atlet:(m.atletIds||[]).map(pupil)}],perluVerifikasi:true,coachReported:true,alasan:m.catatan,sourceId:m.sourceId,staffReportId:m.id});
   }
   row.rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai));
   const minutes=kind=>{const dates=[...new Set(row.rincian.map(d=>d.tanggal))];return dates.reduce((n,date)=>n+union(row.rincian.filter(d=>d.tanggal===date&&d.kategori===kind&&d.menit>0).map(d=>[mins(d.mulai),mins(d.selesai)])),0);};

@@ -24,7 +24,7 @@ async function request(url, options = {}) {
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.remove('hidden'); $('notice').classList.toggle('error', error); }
 function showLogin() {
   loadSequence++;loadingData=false;S.pendingSnapshot=null;setDataAvailable(false);
-  for(const key of ['workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted'])delete S[key];
+  for(const key of ['workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted','staffAttendance'])delete S[key];
   S.user = null; S.records = {}; S.config = null; S.viewToken++;
   $('app').classList.add('hidden'); $('loginView').classList.remove('hidden');
   $('dashboard').replaceChildren(); $('records').replaceChildren(); $('sectionSummary').replaceChildren();
@@ -50,7 +50,7 @@ function captureListPosition() {
   };
 }
 let loadSequence=0,loadingData=false;
-function dataSnapshot(){return Object.fromEntries(['config','records','workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted'].map(k=>[k,S[k]??null]));}
+function dataSnapshot(){return Object.fromEntries(['config','records','workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted','staffAttendance'].map(k=>[k,S[k]??null]));}
 function setDataAvailable(available){
   $('refreshButton').dataset.available=String(available);
   $('refreshButton').title=available?'Data baru tersedia. Tekan untuk menampilkan pembaruan.':'Muat ulang data';
@@ -70,7 +70,7 @@ async function load(options = {}) {
     const config=await request('/api/config');
     if(S.user?.id!==uid||sequence!==loadSequence)return;
     if(owner&&!options.background&&S.syncedDay!==config.today){await request('/api/owner/schedule/sync',{method:'POST',body:'{}'});}
-    const extra=owner?[['workspace','/api/owner/workspace'],['announcements','/api/community/announcements'],['finance','/api/owner/receipts'],['whatsappInbox','/api/owner/whatsapp/confirmations']]:role==='coach'?[['coachProfile','/api/coach/profile'],['coachNoted','/api/coach/noted']]:[];
+    const extra=owner?[['workspace','/api/owner/workspace'],['announcements','/api/community/announcements'],['finance','/api/owner/receipts'],['whatsappInbox','/api/owner/whatsapp/confirmations']]:role==='coach'?[['coachProfile','/api/coach/profile'],['coachNoted','/api/coach/noted'],['staffAttendance','/api/coach/staff-attendance']]:role==='prestasi'?[['staffAttendance','/api/coach/staff-attendance']]:[];
     const [results,extras]=await Promise.all([
       Promise.all(kinds.map(async kind=>[kind,await request(owner&&['perkembangan','absensi','pembayaran'].includes(kind)?'/api/owner/activity/'+kind:'/api/'+kind)])),
       Promise.all(extra.map(async([key,url])=>[key,await request(url)]))
