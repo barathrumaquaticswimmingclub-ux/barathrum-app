@@ -3,8 +3,8 @@ function renderIntake(){
   const k=S.section,q=$('search').value.toLowerCase();$('records').className='record-list';
   $('sectionSummary').innerHTML='';
   if(k==='orangtua'){
-    $('sectionSummary').innerHTML=`<div class="section-banner">BRTM SWIM menampilkan data anak terkait. ID mengikuti nama lengkap anak; nama yang sama memiliki tambahan nomor. Kata sandi tetap <b>brtm</b> sesuai pengaturan klub. Orang yang mengetahui nama dan sandi dapat mencoba mengakses data anak.</div><div class="account-actions"><button class="primary" data-intake="parents">Siapkan akun atlet aktif</button><a class="secondary download" href="/swim/" target="_blank" rel="noopener">Buka BRTM SWIM ↗</a></div>`;
-    $('records').innerHTML=(S.records.orangtua||[]).filter(a=>[a.nama,a.username].join(' ').toLowerCase().includes(q)).map(a=>`<article class="record"><div class="record-head"><div><h3>${esc(a.nama)}</h3><p>${esc(a.status)}</p></div>${badge(a.username?a.active?'Aktif':'Nonaktif':'Belum disiapkan')}</div>${details([['ID BRTM SWIM',a.username||'Belum disiapkan'],['Kata sandi',a.username?'brtm':'—']])}<div class="record-actions"><button class="secondary" data-parent="${esc(a.id)}" data-active="${!a.active}">${a.active?'Nonaktifkan akses':'Aktifkan akses'}</button></div></article>`).join('')||empty('Belum ada atlet');
+    $('sectionSummary').innerHTML=`<div class="section-banner">BRTM SWIM menampilkan data anak terkait. ID mengikuti nama lengkap anak; nama yang sama memiliki tambahan nomor. Kata sandi awal <b>brtm</b>; Owner dapat mengubah ID dan kata sandi melalui tombol Edit. Orang yang mengetahui nama dan sandi dapat mencoba mengakses data anak.</div><div class="account-actions"><button class="primary" data-intake="parents">Siapkan akun atlet aktif</button><a class="secondary download" href="/swim/" target="_blank" rel="noopener">Buka BRTM SWIM ↗</a></div>`;
+    $('records').innerHTML=(S.records.orangtua||[]).filter(a=>[a.nama,a.username].join(' ').toLowerCase().includes(q)).map(a=>`<article class="record"><div class="record-head"><div><h3>${esc(a.nama)}</h3><p>${esc(a.status)}</p></div>${badge(a.username?a.active?'Aktif':'Nonaktif':'Belum disiapkan')}</div>${details([['ID BRTM SWIM',a.username||'Belum disiapkan'],['Kata sandi',a.username?'Tersimpan (tidak ditampilkan)':'—']])}<div class="record-actions"><button class="secondary" data-parent-edit="${esc(a.id)}">Edit</button><button class="secondary" data-parent="${esc(a.id)}" data-active="${!a.active}">${a.active?'Nonaktifkan akses':'Aktifkan akses'}</button></div></article>`).join('')||empty('Belum ada atlet');
   }
   if(k==='pendaftaran'){
     $('sectionSummary').innerHTML='<div class="section-banner">Biodata sama persis ditolak sebagai duplikat. Satu huruf atau angka berbeda diterima sebagai atlet terpisah untuk diperiksa Owner di Aktivasi. Data yang tidak lengkap atau tidak valid tetap perlu diperbaiki.</div>';
@@ -16,7 +16,8 @@ function renderIntake(){
   }
 }
 async function intakeAction(e){
-  const b=e.target.closest('[data-intake],[data-parent],[data-match]');if(!b||!isOwner())return;
+  const b=e.target.closest('[data-intake],[data-parent],[data-parent-edit],[data-match]');if(!b||!isOwner())return;
+  if(b.dataset.parentEdit){openParentAccessEditor(b.dataset.parentEdit);return;}
   b.disabled=true;
   try{
     if(b.dataset.intake==='parents'){const d=await request('/api/orangtua/siapkan',{method:'POST'});notice(d.pesan);await load();}
@@ -30,3 +31,17 @@ async function intakeAction(e){
   }catch(err){notice(err.message,true);}finally{b.disabled=false;}
 }
 $('records').addEventListener('click',intakeAction);$('sectionSummary').addEventListener('click',intakeAction);
+
+function openParentAccessEditor(id){
+ const account=(S.records.orangtua||[]).find(a=>String(a.id)===String(id));if(!account||!isOwner())return;
+ let dialog=$('parentAccessEditor');
+ if(!dialog){dialog=document.createElement('dialog');dialog.id='parentAccessEditor';document.body.append(dialog);}
+ dialog.innerHTML='<form id="parentAccessForm"><h2>Edit akses orang tua</h2><p>'+esc(account.nama)+'</p><div class="field"><label for="parentAccessUsername">Nama pengguna / ID</label><input id="parentAccessUsername" name="username" required maxlength="200" autocomplete="off" value="'+esc(account.username||account.nama)+'"></div><div class="field"><label for="parentAccessPassword">Kata sandi baru</label><input id="parentAccessPassword" name="password" type="password" minlength="4" maxlength="128" autocomplete="new-password"><small>Kosongkan untuk mempertahankan kata sandi. Minimal 4 karakter.</small></div><p>Sesi login akun ini akan diakhiri setelah disimpan.</p><p id="parentAccessError" role="alert"></p><div class="actions"><button type="button" id="parentAccessCancel">Batal</button><button type="submit">Simpan</button></div></form>';
+ $('parentAccessCancel').onclick=()=>dialog.close();
+ $('parentAccessForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('[type="submit"]');b.disabled=true;$('parentAccessError').textContent='';try{
+  const data={username:$('parentAccessUsername').value,password:$('parentAccessPassword').value};
+  const result=await request('/api/orangtua/'+encodeURIComponent(id)+'/credentials',{method:'PUT',body:JSON.stringify(data)});
+  $('parentAccessPassword').value='';dialog.close();notice(result.pesan);await load();
+ }catch(err){$('parentAccessError').textContent=err.message;}finally{b.disabled=false;}};
+ dialog.addEventListener('close',()=>{$('parentAccessPassword').value='';},{once:true});dialog.showModal();
+}

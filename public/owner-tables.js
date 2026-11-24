@@ -32,7 +32,7 @@ const beforeTableList=renderList;renderList=function(){
  if(k==='orangtua'){
   const list=(S.records.orangtua||[]).map(a=>({...a,namaPanggilan:athletes.find(x=>x.id===a.id)?.namaPanggilan||''})).filter(a=>byName(a,q)&&(!f||(a.active&&a.status==='Aktif'?'Aktif':'Nonaktif')===f)).sort((a,b)=>(a.active&&a.status==='Aktif'?0:1)-(b.active&&b.status==='Aktif'?0:1)||a.nama.localeCompare(b.nama,'id'));
   $('sectionSummary').innerHTML='<div class="actions"><button data-intake="parents">Siapkan akun atlet aktif</button>'+link('/swim/','Buka BRTM SWIM')+'</div>';
-  $('records').innerHTML=grid(['No.','Nama lengkap','Panggilan','Status klub','ID orang tua','Akses','Pengaturan'],list.map((a,i)=>[i+1,esc(a.nama),esc(a.namaPanggilan),badge(a.status),esc(a.username||'Belum dibuat'),badge(a.active?'Aktif':'Nonaktif'),`<button data-parent="${a.id}" data-active="${!a.active}">${a.active?'Nonaktifkan akses':'Aktifkan akses'}</button>`]));
+  $('records').innerHTML=grid(['No.','Nama lengkap','Panggilan','Status klub','ID orang tua','Akses','Pengaturan'],list.map((a,i)=>[i+1,esc(a.nama),esc(a.namaPanggilan),badge(a.status),esc(a.username||'Belum dibuat'),badge(a.active?'Aktif':'Nonaktif'),`<button data-parent-edit="${a.id}">Edit</button> <button data-parent="${a.id}" data-active="${!a.active}">${a.active?'Nonaktifkan akses':'Aktifkan akses'}</button>`]));
  }
  if(k==='audit'){
   const list=(S.records.audit||[]).filter(r=>[r.username,r.action,r.jenis].join(' ').toLowerCase().includes(q));

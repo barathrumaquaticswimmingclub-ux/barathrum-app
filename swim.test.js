@@ -80,6 +80,25 @@ async function main(){
   const nonactive=(await body(owner.get('/api/atlet'))).find(x=>x.id===a.id);await body(write(owner,'put','/api/atlet/'+a.id,{...nonactive,status:'Nonaktif'}));
   await body(write(parent,'post','/swim/api/login',{username:account.username,password:'brtm'}),401);
   await expect(anon.get('/swim/manifest.webmanifest'),200);await expect(anon.get('/swim/sw.js'),200);
+  // Owner edits preserve the athlete identity, revoke sessions and never expose passwords.
+  const credentials='/api/orangtua/'+b.id+'/credentials';
+  await body(write(anon,'put',credentials,{username:'changed'}),401);
+  await body(write(other,'put',credentials,{username:'changed'}),401);
+  await body(write(owner,'put',credentials,{username:account.username}),409);
+  await body(write(owner,'put',credentials,{username:'owner'}),409);
+  await body(write(owner,'put',credentials,{username:'   '}),400);
+  await body(write(owner,'put',credentials,{username:'wali dua',password:'a'}),400);
+  await body(write(owner,'put',credentials,{username:' WALI  DUA ',password:'baru-aman'}));
+  await body(other.get('/swim/api/dashboard'),401);
+  await body(write(other,'post','/swim/api/login',{username:'wali dua',password:'brtm'}),401);
+  await body(write(other,'post','/swim/api/login',{username:'wali dua',password:'baru-aman'}));
+  assert.equal((await body(other.get('/swim/api/dashboard'))).profil.id,b.id);
+  await body(write(owner,'put',credentials,{username:'wali dua baru',password:''}));
+  await body(write(other,'post','/swim/api/login',{username:'wali dua baru',password:'baru-aman'}));
+  const edited=(await body(owner.get('/api/orangtua'))).find(x=>x.id===b.id);
+  assert.equal(edited.username,'wali dua baru');assert.equal(edited.active,true);assert(!JSON.stringify(edited).includes('baru-aman'));
+  const logs=(await pool.query("SELECT * FROM brtm_audit WHERE action='ubah-akses-orangtua'")).rows;
+  assert.equal(logs.length,2);assert(!JSON.stringify(logs).includes('baru-aman'));
   await db.close();console.log('PASS '+checks+' BRTM SWIM/form checks: isolation, identity matching, duplicates, quota correction, revocation, Google keys and existing histories.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});

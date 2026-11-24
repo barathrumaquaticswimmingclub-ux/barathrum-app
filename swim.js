@@ -246,6 +246,28 @@ function mount(app, h) {
       await audit(c, req.user, 'siapkan-akun-orangtua', 'akun'); return n;
     }); res.json({ pesan: `${count} akun atlet aktif siap digunakan. Kata sandi: brtm.` });
   }));
+  app.put('/api/orangtua/:id/credentials', ...admin, wrap(async (req, res) => {
+    const username=norm(req.body?.username);
+    if(!username||username.length>200)throw fail(400,'Nama pengguna wajib diisi, maksimal 200 karakter');
+    const password=req.body?.password;
+    if(password!==undefined&&typeof password!=='string')throw fail(400,'Kata sandi tidak valid');
+    if(password&&(password.length<4||password.length>128))throw fail(400,'Kata sandi harus 4–128 karakter');
+    const hash=password?await passwordHash(password,4):null;
+    await transaction(async c=>{
+      await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      const a=await record(c,'atlet',req.params.id);
+      if(a.mergedInto)throw fail(400,'Gunakan akun atlet utama');
+      const duplicate=(await c.query('SELECT id FROM brtm_parents WHERE username=$1 AND athlete_id<>$2',[username,a.id])).rows[0];
+      const staff=(await c.query("SELECT id FROM brtm_users WHERE username=$1 AND role='owner'",[username])).rows[0];
+      if(duplicate||staff)throw fail(409,'Nama pengguna sudah digunakan. Pilih nama lain.');
+      await provision(c,a);
+      const before=(await c.query('SELECT username FROM brtm_parents WHERE athlete_id=$1',[a.id])).rows[0];
+      await c.query('UPDATE brtm_parents SET username=$1,password_hash=COALESCE($2,password_hash) WHERE athlete_id=$3',[username,hash,a.id]);
+      await c.query('DELETE FROM brtm_parent_sessions WHERE parent_id IN (SELECT id FROM brtm_parents WHERE athlete_id=$1)',[a.id]);
+      await audit(c,req.user,'ubah-akses-orangtua','atlet',a.id,{username:before.username},{username,passwordChanged:!!hash});
+    });
+    res.json({pesan:'Akun orang tua diperbarui. Silakan masuk kembali dengan akun terbaru.'});
+  }));
   app.put('/api/orangtua/:id', ...admin, wrap(async (req, res) => {
     if (typeof req.body.active !== 'boolean') throw fail(400, 'Status tidak valid');
     await transaction(async c => {
