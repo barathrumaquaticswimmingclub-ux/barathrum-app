@@ -16,6 +16,12 @@ async function metaFetch(app,url,options){
 }
 const normalize=s=>String(s||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id');
 async function settings(db){const encrypted=(await db.query('SELECT cipher FROM brtm_wa_connection WHERE id=1')).rows[0]?.cipher;let saved={};if(encrypted){try{const key=Buffer.from(process.env.WHATSAPP_CONFIG_KEY||'','hex');const parts=encrypted.split('.');const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(parts[0],'hex'));d.setAuthTag(Buffer.from(parts[1],'hex'));saved=JSON.parse(Buffer.concat([d.update(Buffer.from(parts[2],'hex')),d.final()]).toString('utf8'));}catch{throw fail(503,'Pengaturan sambungan WhatsApp perlu diperiksa Owner');}}return {secret:saved.secret||process.env.WHATSAPP_APP_SECRET||'',verify:process.env.WHATSAPP_VERIFY_TOKEN||'',token:saved.token||process.env.WHATSAPP_ACCESS_TOKEN||'',phoneId:process.env.WHATSAPP_PHONE_NUMBER_ID||'',wabaId:process.env.WHATSAPP_WABA_ID||'',version:'v27.0'};}
+async function storeSettings(db,data){
+ const key=process.env.WHATSAPP_CONFIG_KEY||'';if(!/^[a-f0-9]{64}$/.test(key))throw fail(503,'Penyimpanan sambungan belum tersedia');
+ const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',Buffer.from(key,'hex'),iv),cipher=Buffer.concat([c.update(JSON.stringify(data),'utf8'),c.final()]);
+ await db.query('INSERT INTO brtm_wa_connection(id,cipher) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET cipher=EXCLUDED.cipher,updated_at=NOW()',[iv.toString('hex')+'.'+c.getAuthTag().toString('hex')+'.'+cipher.toString('hex')]);
+ await db.query('UPDATE brtm_wa_invoice_config SET checked_at=NULL WHERE id=1');
+}
 async function initDb(db){await db.query(`CREATE TABLE IF NOT EXISTS brtm_wa_connection(id INTEGER PRIMARY KEY CHECK(id=1),cipher TEXT NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);await db.query(`CREATE TABLE IF NOT EXISTS brtm_wa_confirmations(id UUID PRIMARY KEY,message_id TEXT UNIQUE NOT NULL,sender TEXT NOT NULL,payload JSONB NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),payment_id TEXT,user_id INTEGER,reason TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);}
 async function initProofDb(db){
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_wa_proofs(id UUID PRIMARY KEY REFERENCES brtm_wa_confirmations(id) ON DELETE CASCADE,mime TEXT NOT NULL,content TEXT NOT NULL,original_size INTEGER NOT NULL,byte_size INTEGER NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
@@ -106,9 +112,7 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
    if(req.body.secret){if(typeof req.body.secret!=='string'||!/^[a-f0-9]{32}$/i.test(req.body.secret.trim()))throw fail(400,'App Secret Meta harus 32 karakter heksadesimal');data.secret=req.body.secret.trim();}
    if(req.body.token){if(typeof req.body.token!=='string'||req.body.token.trim().length<40||req.body.token.trim().length>4096||!/^[A-Za-z0-9._|=-]+$/.test(req.body.token.trim()))throw fail(400,'Token akses Meta tidak valid');data.token=req.body.token.trim();}
    if(!data.token&&!data.secret)throw fail(400,'Isi token akses atau App Secret');
-   const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',Buffer.from(process.env.WHATSAPP_CONFIG_KEY,'hex'),iv),cipher=Buffer.concat([c.update(JSON.stringify(data),'utf8'),c.final()]);
-   await db.query('INSERT INTO brtm_wa_connection(id,cipher) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET cipher=EXCLUDED.cipher,updated_at=NOW()',[iv.toString('hex')+'.'+c.getAuthTag().toString('hex')+'.'+cipher.toString('hex')]);
-   await db.query('UPDATE brtm_wa_invoice_config SET checked_at=NULL WHERE id=1');
+   await storeSettings(db,data);
    await audit(db,req.user,'atur-sambungan-whatsapp','whatsapp',null,null,{tokenSaved:!!data.token,secretSaved:!!data.secret,tokenUpdated:!!req.body.token,secretUpdated:!!req.body.secret});});res.json({pesan:'Kredensial WhatsApp tersimpan. Uji sambungan untuk memeriksa akses nomor.'});
  }));
  async function phoneAccess(){const c=await settings(pool);if(!c.token)throw fail(409,'Token akses belum dipasang');const r=await metaFetch(app,'https://graph.facebook.com/'+c.version+'/'+c.wabaId+'/phone_numbers?fields=id,display_phone_number,platform_type',{headers:{Authorization:'Bearer '+c.token},signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok){let error={};try{error=(await r.json()).error||{};}catch{}
@@ -137,4 +141,4 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
  };
 
 }
-module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);await require('./whatsapp-invoices').initDb(db);},settings,mountWebhook,mountOwner,forPayment,identity,signature,compactProof};
+module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);await require('./whatsapp-invoices').initDb(db);await require('./whatsapp-connect').initDb(db);},settings,storeSettings,mountWebhook,mountOwner,forPayment,identity,signature,compactProof};

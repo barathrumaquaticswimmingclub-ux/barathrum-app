@@ -417,6 +417,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
   require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
   require('./whatsapp-invoices').mount(app,{pool,owner,wrap,transaction,audit,payments});
+  require('./whatsapp-connect').mount(app,{pool,owner,wrap,transaction,audit,secureCookies});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
