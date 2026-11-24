@@ -21,7 +21,7 @@ function mount(app,h){const {owner,wrap,transaction,record,rows,payments,save,va
    }
    if(old&&d.expectedRevision!==undefined&&d.expectedRevision!==old.diperbaruiPada)throw fail(409,'Paket telah berubah. Muat ulang sebelum mengedit.');
    const prestasi=B.canonical(a.kelompok)==='Prestasi Class';
-   const input={...d,atletId:a.id,jenisKelas:a.kelompok,status:d.status,tanggal:d.tanggal,rincianOwner:true,paketKhusus:!prestasi,kuotaKhusus:amount(d.kuota,'Kuota',100),biayaKhusus:amount(d.harga,'Harga'),biayaPendaftaran:activation?old?.biayaPendaftaran||0:amount(d.biayaPendaftaran||0,'Pendaftaran'),potonganDiskon:amount(d.potonganDiskon||0,'Potongan'),alasanKhusus:'Paket diatur oleh Owner',paymentRequestId:d.requestId};
+   const input={...d,catatan:d.catatan??old?.catatan??'',atletId:a.id,jenisKelas:a.kelompok,status:d.status,tanggal:d.tanggal,rincianOwner:true,paketKhusus:!prestasi,kuotaKhusus:amount(d.kuota,'Kuota',100),biayaKhusus:amount(d.harga,'Harga'),biayaPendaftaran:activation?old?.biayaPendaftaran||0:amount(d.biayaPendaftaran||0,'Pendaftaran'),potonganDiskon:amount(d.potonganDiskon||0,'Potongan'),alasanKhusus:'Paket diatur oleh Owner',paymentRequestId:d.requestId};
    if(input.biayaKhusus===0)throw fail(400,'Isi harga paket');
    if(!B.validDate(d.berakhir)||d.berakhir<d.tanggal)throw fail(400,'Tanggal akhir harus setelah tanggal mulai');
    const used=(await payments(db)).find(p=>p.id===old?.id)?.terpakai||0,requestedQuota=input.kuotaKhusus;

@@ -43,7 +43,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
   assert.equal(fixed.totalPertemuan,total);assert.equal(fixed.sisaPertemuan,small);assert.equal(fixed.totalTagihan,p.totalTagihan);assert.equal(fixed.status,p.status);
  }
  // Already-created automatic packages recover the full allocation without erasing attendance.
- await pool.query("UPDATE data_klub SET data=data || $1::jsonb WHERE id=$2",[JSON.stringify({totalPertemuan:2,pemakaianAwal:1,quotaSyncVersion:0,automaticRenewal:true,status:'Belum Lunas'}),auto.id]);
+ await pool.query("UPDATE data_klub SET data=data || $1::jsonb WHERE id=$2",[JSON.stringify({totalPertemuan:2,pemakaianAwal:1,quotaSyncVersion:0,automaticRenewal:true,status:'Belum Lunas',catatan:'Berikutnya 2x seminggu'}),auto.id]);
  await app.locals.maintain();await app.locals.maintain();
  const repaired=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);
  assert.equal(repaired.totalPertemuan,4);assert.equal(repaired.pemakaianAwal,1);assert.equal(repaired.sisaPertemuan,3);assert.equal(repaired.status,'Belum Lunas');
@@ -64,7 +64,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(coach,'post','/api/session-entry',{jadwalId:session.id,atletId:autoChild.id,tanggal:B.today(),status:'Hadir',noted:'Latihan dengan paket belum lunas.'});
  const consumed=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(consumed.sisaPertemuan,2);
  await call(o,'post','/api/owner/payment',{...settlement,requestId:'settle-after-coach-123'});
- const final=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(final.sisaPertemuan,2);assert.equal(final.status,'Lunas');
+ const final=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(final.sisaPertemuan,2);assert.equal(final.status,'Lunas');assert.equal(final.catatan,'Berikutnya 2x seminggu');
 
  await db.close();console.log('PASS renewal authorization, history preservation, dates, quota, retry, duplicate protection and private notification deduplication');
 })().catch(e=>{console.error(e);process.exit(1);});
