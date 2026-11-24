@@ -3,10 +3,10 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = v => v ? new Intl.DateTimeFormat('id-ID', {day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jakarta'}).format(new Date(v+'T12:00:00+07:00')) : 'Belum tercatat';
 let swimViewVersion=0,swimRefreshSequence=0,renderedSnapshot=null,pendingSwim=null;
-let loading = false, ownerMode=false, selectedId=null, ownerData=null;
+let loading = false, loggingOut=false, ownerMode=false, selectedId=null, ownerData=null;
 const profileLabels={nama:'Nama lengkap',namaPanggilan:'Nama panggilan',tanggalLahir:'Tanggal lahir',jk:'Jenis kelamin',tempatLahir:'Tempat lahir',namaOrtu:'Nama orang tua / wali',noHpOrtu:'Nomor WhatsApp',sekolah:'Nama sekolah',kelasSekolah:'Kelas sekolah',alamat:'Alamat rumah',tujuan:'Tujuan latihan',riwayatRenang:'Riwayat latihan renang',jadwalPilihan:'Pilihan jadwal pendaftaran'};
-async function request(url, body, method) {
-  const r = await fetch('/swim/api/'+url, { credentials:'same-origin', ...(body ? {method:method||'POST',headers:{'Content-Type':'application/json','X-BRTM-Request':'1'},body:JSON.stringify(body)} : {}), cache:'no-store' });
+async function request(url, body, method, signal) {
+  const r = await fetch('/swim/api/'+url, { credentials:'same-origin', ...(signal ? {signal} : {}), ...(body ? {method:method||'POST',headers:{'Content-Type':'application/json','X-BRTM-Request':'1'},body:JSON.stringify(body)} : {}), cache:'no-store' });
   const d = await r.json(); if(!r.ok){const e=Error(d.pesan||'Data belum bisa dimuat.');e.status=r.status;throw e;} return d;
 }
 function showLogin(){if($('profileDialog').open)$('profileDialog').close();$('profileFields').replaceChildren();delete $('profileDialog').dataset.revision;swimViewVersion++;swimRefreshSequence++;loading=false;renderedSnapshot=null;pendingSwim=null;setSwimDataAvailable(false); ownerMode=false;selectedId=null;ownerData=null; $('login').hidden=false;$('dashboard').hidden=true;$('logout').hidden=true;$('content').replaceChildren();$('password').value='';$('notificationPanel').hidden=true; }
@@ -39,6 +39,7 @@ function captureSwimPosition(){
  };
 }
 async function refresh(options={}){
+ if(loggingOut)return;
  const background=options.background===true;
  if(background&&(loading||document.querySelector('dialog[open]')))return;
  const viewVersion=swimViewVersion,child=selectedId,sequence=++swimRefreshSequence;loading=true;
@@ -56,7 +57,29 @@ async function refresh(options={}){
 }
 $('loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;$('loginMessage').textContent='';try{await request('login',{username:$('username').value,password:$('password').value});$('password').value='';await refresh();}catch(err){$('loginMessage').textContent=err.message;}finally{b.disabled=false;}};
 $('refresh').onclick=()=>refresh().catch(()=>{});
-$('logout').onclick=async()=>{try{await disablePush();await request('logout',{});showLogin();}catch{$('statusMessage').textContent='Belum berhasil keluar. Periksa koneksi dan coba lagi.';}};
+$('logout').onclick=async()=>{
+ if(loggingOut)return;
+ loggingOut=true;swimViewVersion++;swimRefreshSequence++;loading=false;
+ const button=$('logout'),label=button.textContent,controller=new AbortController();
+ button.disabled=true;button.textContent='Keluar…';$('refresh').disabled=true;
+ $('statusMessage').textContent='Sedang keluar dari akun…';
+ let timer;
+ try{
+  // Notification support must never prevent session revocation.
+  await Promise.race([
+   request('logout',{},undefined,controller.signal),
+   new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('logout-timeout'));},12000);})
+  ]);
+  showLogin();
+  // The session is already revoked; browser push cleanup is best effort.
+  disablePush({localOnly:true}).catch(()=>{});
+ }catch{
+  $('statusMessage').textContent='Belum berhasil keluar. Pastikan internet aktif, lalu tekan Keluar lagi.';
+  $('statusMessage').className='error';
+ }finally{
+  clearTimeout(timer);loggingOut=false;button.disabled=false;button.textContent=label;$('refresh').disabled=false;
+ }
+};
 // Live data while open; no personal data is written to browser storage or offline cache.
 setInterval(()=>{if(!document.hidden&&!$('dashboard').hidden)refresh({background:true}).catch(()=>{});},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('dashboard').hidden)refresh({background:true}).catch(()=>{});});
@@ -146,9 +169,9 @@ async function registerPush(ask){
  let sub=await reg.pushManager.getSubscription();if(!sub&&!ask)return;if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(key.publicKey)});
  await request('push/subscribe',{subscription:sub.toJSON()});$('enablePush').textContent='Nonaktifkan notifikasi HP';$('enablePush').dataset.active='true';$('pushMessage').textContent='Notifikasi HP aktif pada perangkat ini.';
 }
-async function disablePush(){
- if(!('serviceWorker' in navigator))return;const reg=await navigator.serviceWorker.getRegistration('/swim/');const sub=await reg?.pushManager.getSubscription();
- if(sub){await request('push/unsubscribe',{endpoint:sub.endpoint});await sub.unsubscribe();}
+async function disablePush({localOnly=false}={}){
+ if(!('serviceWorker' in navigator))return;const reg=await navigator.serviceWorker.getRegistration('/swim/');const sub=await reg?.pushManager?.getSubscription();
+ if(sub){try{if(!localOnly)await request('push/unsubscribe',{endpoint:sub.endpoint});}finally{await sub.unsubscribe();}}
  $('enablePush').textContent='Aktifkan notifikasi HP';delete $('enablePush').dataset.active;
 }
 $('enablePush').onclick=async()=>{const b=$('enablePush');b.disabled=true;try{if(b.dataset.active){await disablePush();$('pushMessage').textContent='Notifikasi HP dinonaktifkan.';}else await registerPush(true);}catch(e){$('pushMessage').textContent=e.message;}finally{b.disabled=false;}};
