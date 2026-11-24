@@ -9,7 +9,11 @@ function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()
  const head=coaches.filter(u=>u.role==='coach'&&/\badhi\b/i.test(u.nama));
  const canonical=id=>{const u=coaches.find(u=>String(u.id)===String(id));return u?.role==='prestasi'&&head.length===1?String(head[0].id):u?String(u.id):null;};
  const buckets=new Map(),unassigned=new Set(),detailBuckets=new Map();
- const author=r=>canonical(r.dibuatOlehId||coaches.find(u=>u.username===r.dibuatOleh)?.id);
+ const author=r=>canonical(r.dibuatOlehId||coaches.find(u=>String(u.username).toLowerCase()===String(r.dibuatOleh||'').toLowerCase())?.id);
+ // Before shared Regular sessions, the recorded single-coach schedule identifies
+ // the teacher even when the Owner entered attendance. Never guess a shared teacher.
+ const legacyCoach=s=>R.isRegular(s)&&s.regularFlex!==true&&(s.coachIds||[]).length<2&&!(/\bfauzan\b/i.test(s.pelatih||'')&&/\bilyas\b/i.test(s.pelatih||''))?canonical(s.coachId):null;
+ const regularAuthor=(r,s)=>author(r)||legacyCoach(s);
  const names=records=>records.map(r=>({id:String(r.atletId||r.namaAtlet||''),nama:athletes.find(a=>String(a.id)===String(r.atletId))?.nama||r.namaAtlet||attendance.find(a=>String(a.atletId)===String(r.atletId))?.namaAtlet||'Atlet #'+(r.atletId||'?')}));
  function credit(id,date,start,end,saturday,s,records){id=canonical(id);if(!id)return;const parts=saturday?[[start,end,'sore']]:[[start,Math.min(end,720),'pagi'],[Math.max(start,720),end,'sore']];for(const [a,b,period] of parts){if(b<=a)continue;const key=id+'|'+date+'|'+period;if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push([a,b]);if(!detailBuckets.has(key))detailBuckets.set(key,[]);detailBuckets.get(key).push({start:a,end:b,kelas:s.jenisKelas,atlet:names(records)});}}
  const entries=new Map();for(const r of attendance){if(r.status!=='Hadir')continue;const key=String(r.jadwalId);if(!entries.has(key))entries.set(key,[]);entries.get(key).push(r);}
@@ -20,15 +24,15 @@ function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()
   const saturday=new Date(s.tanggal+'T12:00:00Z').getUTCDay()===6;
   if(R.isRegular(s)){
    let ids;
-   if(saturday&&start<720){
+   if(saturday&&start<720&&!legacyCoach(s)){
     ids=coaches.filter(u=>u.role==='coach'&&/\b(fauzan|ilyas)\b/i.test(u.nama)).map(u=>String(u.id));
     if(ids.length!==2)ids=[...new Set((s.coachIds||[]).map(String).filter(id=>canonical(id)))];
     if(ids.length!==2){unassigned.add(String(s.id));continue;}
    }else{
-    ids=[...new Set(records.map(author).filter(Boolean))];
-    if(records.some(r=>!author(r)))unassigned.add(String(s.id));
+    ids=[...new Set(records.map(r=>regularAuthor(r,s)).filter(Boolean))];
+    if(records.some(r=>!regularAuthor(r,s)))unassigned.add(String(s.id));
    }
-   for(const id of ids)credit(id,s.tanggal,start,end,saturday,s,saturday&&start<720?records:records.filter(r=>author(r)===canonical(id)));
+   for(const id of ids)credit(id,s.tanggal,start,end,saturday,s,saturday&&start<720&&!legacyCoach(s)?records:records.filter(r=>regularAuthor(r,s)===canonical(id)));
   }else credit(s.coachId,s.tanggal,start,end,saturday,s,records);
  }
  const result=[];for(const u of coaches){if(canonical(u.id)!==String(u.id))continue;let pagi=0,sore=0;for(const [key,values] of buckets){const [id,,period]=key.split('|');if(id===String(u.id)){if(period==='pagi')pagi+=union(values);else sore+=union(values);}}
@@ -53,7 +57,7 @@ function calculate({staff,schedules,attendance,athletes=[],month,today=B.today()
  const enrolled=s=>names((s.atletIds||[]).map(id=>({atletId:id})));
  const inMonth=s=>B.validDate(s.tanggal)&&s.tanggal.startsWith(month)&&minute(s.mulai)!==null&&minute(s.selesai)>minute(s.mulai);
  const saturdayMorning=s=>new Date(s.tanggal+'T12:00:00Z').getUTCDay()===6&&s.mulai<'12:00';
- const assigned=s=>R.isRegular(s)&&saturdayMorning(s)?regularPair(s):[...new Set((s.coachIds?.length?s.coachIds:[s.coachId]).map(canonical).filter(Boolean))];
+ const assigned=s=>R.isRegular(s)&&saturdayMorning(s)&&!legacyCoach(s)?regularPair(s):[...new Set((s.coachIds?.length?s.coachIds:[s.coachId]).map(canonical).filter(Boolean))];
  for(const s of schedules.filter(s=>inMonth(s)&&s.statusSesi==='Libur')){
   for(const id of assigned(s))note(id,s,'Libur','Libur'+(s.alasanLibur?' · '+s.alasanLibur:''),[{nama:s.jenisKelas,atlet:enrolled(s)}]);
  }

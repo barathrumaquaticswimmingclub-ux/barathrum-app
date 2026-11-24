@@ -5,7 +5,7 @@ const B=require('./business'),H=require('./staff-hours'),{initDb,createApp,passw
  B.today=()=> '2026-11-24';
  const staff=[['owner','owner'],['Panji','coach'],['Fauzan','coach'],['Ilyas','coach'],['Adhi','coach'],['Juara','prestasi']].map(([nama,role],i)=>({id:String(i+1),nama,role,username:nama.toLowerCase(),active:true,profile:{}}));
  const schedules=[],attendance=[];
- function add(date,start,end,coach,regular=true,extra={},authors=['3']){const id=String(schedules.length+1);schedules.push({id,tanggal:date,mulai:start,selesai:end,coachId:coach,jenisKelas:regular?'Regular Class (1x Seminggu)':'Semi Private Class',statusSesi:'Terjadwal',...extra});for(const a of authors)attendance.push({jadwalId:id,tanggal:date,status:'Hadir',atletId:String(attendance.length+1),namaAtlet:'Atlet '+(attendance.length+1),dibuatOlehId:a,dibuatOleh:staff.find(u=>u.id===a)?.username});return id;}
+ function add(date,start,end,coach,regular=true,extra={},authors=['3']){const id=String(schedules.length+1);schedules.push({id,tanggal:date,mulai:start,selesai:end,coachId:coach,jenisKelas:regular?'Regular Class (1x Seminggu)':'Semi Private Class',statusSesi:'Terjadwal',regularFlex:regular,...extra});for(const a of authors)attendance.push({jadwalId:id,tanggal:date,status:'Hadir',atletId:String(attendance.length+1),namaAtlet:'Atlet '+(attendance.length+1),dibuatOlehId:a,dibuatOleh:staff.find(u=>u.id===a)?.username});return id;}
  add('2026-11-23','15:00','16:00','4',true,{},Array(20).fill('3'));
  add('2026-11-23','15:00','16:00','4',true,{jenisKelas:'Regular Class (2x Seminggu)'},['3']);
  const corrected=add('2026-11-24','16:00','17:00','3',true,{},['4']);attendance.find(r=>r.jadwalId===corrected).diperbaruiOleh='owner';
@@ -26,6 +26,25 @@ const B=require('./business'),H=require('./staff-hours'),{initDb,createApp,passw
  assert.equal(by('4').jamSore,3);assert.equal(by('4').jamPagi,0);
  assert.equal(by('5').jamSore,2);assert(!by('6'));assert(!by('1'));assert.equal(result.unassignedSessions,1);
  assert.deepEqual(H.calculate({staff,schedules,attendance,month:'2026-12'}).rows.map(u=>u.jamSore),[0,0,0,0]);
+ // Legacy separate Regular: actual Hadir evidence plus a single assigned teacher.
+ const oldSchedules=[
+  {id:'l1',tanggal:'2026-11-10',mulai:'15:00',selesai:'16:00',coachId:'4',pelatih:'Ilyas',jenisKelas:'Regular Class (1x Seminggu)'},
+  {id:'l2',tanggal:'2026-11-11',mulai:'16:00',selesai:'17:00',coachId:'3',pelatih:'Fauzan',jenisKelas:'Regular Class (2x Seminggu)'},
+  {id:'l3',tanggal:'2026-11-14',mulai:'08:00',selesai:'09:00',coachId:'3',pelatih:'Fauzan',jenisKelas:'Regular Class (1x Seminggu)'},
+  {id:'l4',tanggal:'2026-11-12',mulai:'15:00',selesai:'16:00',coachId:'4',coachIds:['3','4'],regularFlex:true,jenisKelas:'Regular Class (1x Seminggu)'},
+  {id:'l5',tanggal:'2026-11-13',mulai:'15:00',selesai:'16:00',coachId:'4',pelatih:'Ilyas & Fauzan',jenisKelas:'Regular Class (1x Seminggu)'},
+  {id:'l6',tanggal:'2026-11-16',mulai:'15:00',selesai:'16:00',coachId:'4',pelatih:'Ilyas',jenisKelas:'Regular Class (1x Seminggu)'},
+  {id:'l7',tanggal:'2026-11-09',mulai:'15:00',selesai:'16:00',coachId:'4',pelatih:'Ilyas',jenisKelas:'Regular Class (1x Seminggu)'},
+ ];
+ const oldAttendance=[...Array.from({length:16},(_,i)=>({jadwalId:'l1',atletId:String(i),namaAtlet:'Atlet lama '+i,status:'Hadir',dibuatOlehId:'1',dibuatOleh:'owner'})),
+  {jadwalId:'l2',status:'Hadir'},{jadwalId:'l3',status:'Hadir',dibuatOleh:'Owner'},
+  {jadwalId:'l4',status:'Hadir',dibuatOlehId:'1'},{jadwalId:'l5',status:'Hadir',dibuatOlehId:'1'},
+  {jadwalId:'l6',status:'Hadir',dibuatOleh:'FAUZAN',diperbaruiOleh:'owner'},
+ ];
+ const historic=H.calculate({staff,schedules:oldSchedules,attendance:oldAttendance,month:'2026-11'});
+ assert.equal(historic.rows.find(r=>r.id==='4').jamSore,1);assert.equal(historic.rows.find(r=>r.id==='3').jamSore,3);assert.equal(historic.unassignedSessions,2);
+ assert(!historic.rows.some(r=>r.rincian.some(d=>d.tanggal==='2026-11-09')),'A weekly assignment without actual attendance is not evidence of teaching');
+ assert(!historic.rows.find(r=>r.id==='4').rincian.some(d=>d.tanggal==='2026-11-14'),'Before shared sessions, Saturday must not fabricate the other coach attendance');
  // Flexible Regular annotations: no fixed weekly pupil assignment is inferred.
  const flexSchedules=[],flexAttendance=[];
  function flex(id,date,start,extra={},status='Hadir',writer='3'){
