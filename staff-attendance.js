@@ -17,6 +17,7 @@ function slots(staff,user,schedules,month){
  return [...found.values()].sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai)).map(s=>({...s,key:[s.tanggal,s.mulai,s.selesai].join('|'),kelas:s.classes.join(', ')}));
 }
 function mount(app,h){const {pool,wrap,transaction,rows,audit}=h;
+ require('./staff-check-in').mount(app,h);
  const coach=(req,res,next)=>['coach','prestasi'].includes(req.user.role)?next():next(fail(403,'Khusus absensi pribadi pelatih'));
  app.get('/api/coach/staff-attendance',coach,wrap(async(req,res)=>{
   const month=req.query.month||B.today().slice(0,7);if(typeof month!=='string'||!/^\d{4}-\d{2}$/.test(month)||!B.validDate(month+'-01'))throw fail(400,'Pilih bulan yang valid');
@@ -30,7 +31,7 @@ function mount(app,h){const {pool,wrap,transaction,rows,audit}=h;
   });res.json(data);
  }));
  app.post('/api/coach/staff-attendance',coach,wrap(async(req,res)=>{
-  const d=req.body;if(!/^[-\w]{10,80}$/.test(d.requestId||'')||!B.validDate(d.tanggal)||!states.includes(d.status))throw fail(400,'Isi tanggal dan status absensi');
+  const d=req.body;if(worked(d.status))throw fail(400,'Gunakan Hadir Hari Ini dengan foto dan lokasi aktif');if(!/^[-\w]{10,80}$/.test(d.requestId||'')||!B.validDate(d.tanggal)||!states.includes(d.status))throw fail(400,'Isi tanggal dan status absensi');
   const start=mins(d.mulai),end=mins(d.selesai);if(start===null||end===null||end<=start||end-start>240)throw fail(400,'Isi jam per sesi, maksimal 4 jam');
   if(d.tanggal>B.addDays(B.today(),35)||worked(d.status)&&(d.tanggal>B.today()||d.tanggal===B.today()&&d.selesai>B.time().slice(0,5)))throw fail(400,'Kehadiran diisi setelah sesi selesai. Izin/sakit boleh dilaporkan sebelum sesi.');
   const note=String(d.catatan||'').trim();if(note.length>1000||!worked(d.status)&&note.length<3)throw fail(400,'Isi alasan izin, sakit, atau libur');

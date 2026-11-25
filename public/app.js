@@ -18,7 +18,7 @@ async function request(url, options = {}) {
   try { response = await fetch(url, { credentials:'same-origin', ...options, headers }); }
   catch { throw new Error('Koneksi terputus. Periksa internet lalu muat ulang data sebelum mencoba lagi.'); }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) { if (response.status === 401 && !url.endsWith('/login')) showLogin(); throw new Error(data.pesan || 'Permintaan belum dapat diproses.'); }
+  if (!response.ok) { if (response.status === 401 && !url.endsWith('/login')) showLogin(); throw Object.assign(new Error(data.pesan || 'Permintaan belum dapat diproses.'),{status:response.status}); }
   return data;
 }
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.remove('hidden'); $('notice').classList.toggle('error', error); }

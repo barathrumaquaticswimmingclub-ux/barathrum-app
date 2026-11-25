@@ -1,13 +1,13 @@
 'use strict';
 title.slipgaji='Slip Gaji Staf';icons.slipgaji='▤';descriptions.slipgaji='Rekap kehadiran dan jam staf per bulan.';
-const hoursMenu=menuKeys;menuKeys=()=>{const keys=hoursMenu().filter(k=>k!=='slipgaji');return isOwner()?keys.flatMap(k=>k==='akun'?[k,'slipgaji']:[k]):['coach','prestasi'].includes(S.user?.role)?keys.flatMap(k=>k==='absensi'?[k,'slipgaji']:[k]):keys;};
+const hoursMenu=menuKeys;menuKeys=()=>{const keys=hoursMenu().filter(k=>k!=='slipgaji');return isOwner()?keys.flatMap(k=>k==='akun'?[k,'slipgaji']:[k]):keys;};
 const hoursWrite=canWrite;canWrite=kind=>kind==='slipgaji'?false:hoursWrite(kind);
 const hoursFilter=configureFilter;configureFilter=function(){hoursFilter();if(S.section==='slipgaji'){$('filter').classList.add('hidden');$('monthFilter').classList.add('hidden');$('search').placeholder='Cari nama staf…';}};
 let staffHoursMonth='',staffHoursSequence=0,staffHoursData=null,staffSelfData=null,staffSelfSequence=0;
 const hoursLogin=showLogin;showLogin=function(){staffHoursData=null;staffSelfData=null;staffHoursSequence++;staffSelfSequence++;staffHoursMonth='';if(/kehadiran staf/.test($('wfTitle')?.textContent||''))$('wfBody')?.replaceChildren();hoursLogin();};
 const staffHoursPdf=(id,month)=>'/api/owner/staff-hours/'+encodeURIComponent(id)+'/pdf?month='+encodeURIComponent(month);
 const staffHoursFormat=n=>Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:2})+' jam';
-const hoursList=renderList;renderList=function(){if(S.section!=='slipgaji'){hoursList();return;}if(!isOwner()){renderSelfStaffHours();return;}
+const hoursList=renderList;renderList=function(){if(S.section!=='slipgaji'){hoursList();return;}if(!isOwner()){$('records').textContent='Khusus Owner';return;}
  const month=staffHoursMonth||S.config.today.slice(0,7),q=$('search').value.trim().toLocaleLowerCase('id'),sequence=++staffHoursSequence;
  $('records').className='ops-records';
  $('sectionSummary').innerHTML='<label>Bulan rekap<input type="month" id="staffHoursMonth" value="'+esc(month)+'"></label><button type="button" id="staffHoursAdd">Catat kehadiran / jam lama</button><p id="staffHoursPeriod" class="muted"></p><p>Jam terkonfirmasi berasal dari absensi anak Hadir atau verifikasi kehadiran staf oleh Owner. Hadir menunggu murid bisa dicatat Owner sebagai jam tugas. Sesi belum diverifikasi tidak berarti staf tidak hadir. Sabtu pagi masuk hitungan sore. Regular mengikuti aktivasi fleksibel; sesi Sabtu pagi untuk kedua pelatih.</p><p id="staffHoursWarning" class="error"></p>';
@@ -20,7 +20,7 @@ const hoursList=renderList;renderList=function(){if(S.section!=='slipgaji'){hour
   $('staffHoursPeriod').textContent='Periode '+displayDate(data.start)+' – '+displayDate(data.end)+(data.asOf<data.end?' · Bulan berjalan, sampai '+displayDate(data.asOf):'');
   $('records').innerHTML=grid(['Nama','Jam sore terkonfirmasi','Jam pagi terkonfirmasi','Perlu verifikasi','Rincian','PDF'],data.rows.filter(r=>r.nama.toLocaleLowerCase('id').includes(q)).map(r=>[esc(r.nama)+'<small>Sesi ditelusuri: '+fmt(r.jamCakupanSesi)+' · '+esc(r.statusRekap||'Sementara')+'</small>',fmt(r.jamSore),fmt(r.jamPagi),fmt(r.jamPerluVerifikasi)+'<small>'+(r.sesiPerluVerifikasi||0)+' catatan'+(r.tanpaJam?.length?' · '+r.tanpaJam.length+' tanpa jam':'')+'</small>','<button type="button" data-hours-detail="'+esc(r.id)+'">Lihat rincian</button>','<a class="secondary download" href="'+esc(staffHoursPdf(r.id,data.month))+'" target="_blank" rel="noopener">PDF</a>']));
   const reports=data.rows.flatMap(r=>(r.laporanPelatih||[]).map(m=>({...m,nama:r.nama,personId:r.id})));
-  $('sectionSummary').insertAdjacentHTML('beforeend','<details class="panel"><summary>Absensi yang diisi pelatih ('+reports.length+')</summary>'+grid(['Tanggal','Pelatih','Jam','Kehadiran','Catatan / pengganti','Status','Tindakan'],reports.map(m=>[esc(displayDate(m.tanggal)),esc(m.nama),esc(m.mulai+'–'+m.selesai),esc(m.status),esc(m.catatan||'—')+(m.replacementId?'<small>Usulan pengganti: '+esc((S.workspace?.staff||[]).find(u=>String(u.id)===m.replacementId)?.nama||m.replacementId)+'</small>':''),esc(m.review),'<button type="button" data-hours-report="'+esc(m.id)+'" data-hours-staff="'+esc(m.personId)+'">Periksa</button>']))+'</details>');
+  $('sectionSummary').insertAdjacentHTML('beforeend','<details class="panel"><summary>Absensi yang diisi pelatih ('+reports.length+')</summary>'+grid(['Tanggal','Pelatih','Jam','Kehadiran','Bukti absensi','Catatan / pengganti','Status','Tindakan'],reports.map(m=>[esc(displayDate(m.tanggal)),esc(m.nama),esc(m.mulai+'–'+m.selesai),esc(m.status),m.checkInId?'<button type="button" data-check-in-proof="'+esc(m.checkInId)+'">Foto, waktu & lokasi</button>':'—',esc(m.catatan||'—')+(m.replacementId?'<small>Usulan pengganti: '+esc((S.workspace?.staff||[]).find(u=>String(u.id)===m.replacementId)?.nama||m.replacementId)+'</small>':''),esc(m.review),'<button type="button" data-hours-report="'+esc(m.id)+'" data-hours-staff="'+esc(m.personId)+'">Periksa</button>']))+'</details>');
   $('staffHoursWarning').textContent=(data.sesiPerluVerifikasi?data.sesiPerluVerifikasi+' catatan sesi staf belum diverifikasi. ':'')+'Rekap mengikuti data yang tersimpan. Jam lama yang belum tercatat perlu dimasukkan Owner; total saat ini belum membuktikan seluruh jam kerja bulan ini.';
  }).catch(err=>{if(S.section==='slipgaji'&&sequence===staffHoursSequence)$('records').textContent=err.message;});
 };
@@ -48,44 +48,5 @@ $('wfBody').addEventListener('click',e=>{
  const r=staffHoursData.rows.find(r=>r.id===b.dataset.hoursStaff),d=r?.rincian[Number(b.dataset.hoursVerify)];if(d)openStaffHoursVerification(r.id,d);
 });
 function isStaffSelf(){return ['coach','prestasi'].includes(S.user?.role);}
-function selfStaffDay(data){return data.records.filter(r=>r.tanggal===data.today);}
-function renderSelfStaffHours(){
- if(!isStaffSelf())return;const month=staffHoursMonth||S.config.today.slice(0,7),uid=S.user.id,sequence=++staffSelfSequence;
- $('search').classList.add('hidden');$('sectionSummary').innerHTML='<label>Bulan absensi<input type="month" id="staffSelfMonth" value="'+esc(month)+'"></label><button type="button" id="staffSelfAdd">Isi absensi saya</button><p>Isi satu kali per sesi sesuai kehadiran Anda. Absensi anak tetap diisi terpisah. Laporan ini terlihat oleh Owner di Slip Gaji Staf.</p>';
- $('staffSelfMonth').onchange=e=>{if(e.target.value){staffHoursMonth=e.target.value;renderList();}};$('staffSelfAdd').onclick=()=>openSelfStaffAttendance();
- $('records').className='ops-records';$('records').textContent='Memuat absensi Anda…';
- request('/api/coach/staff-attendance?month='+encodeURIComponent(month)).then(data=>{
-  if(!isStaffSelf()||S.user.id!==uid||sequence!==staffSelfSequence||S.section!=='slipgaji')return;staffSelfData=data;
-  $('records').innerHTML=grid(['Tanggal','Jam','Kehadiran','Catatan','Status','Tindakan'],data.records.map((r,i)=>[esc(displayDate(r.tanggal)),esc(r.mulai+'–'+r.selesai),esc(r.status),esc(r.catatan||'—'),esc(r.review),'<button type="button" data-staff-self-edit="'+i+'">Lihat / koreksi</button>']));
- }).catch(e=>{if(sequence===staffSelfSequence&&S.section==='slipgaji')$('records').textContent=e.message;});
-}
-async function openSelfStaffAttendance(existing=null,chosen=null){
- if(!isStaffSelf())return;
- try{
-  let data=staffSelfData||S.staffAttendance;if(!data)data=await request('/api/coach/staff-attendance');if(!isStaffSelf())return;staffSelfData=data;
-  if(existing?.review==='Diverifikasi Owner'){modal('Absensi saya · Slip Gaji Staf','<div class="full"><p>'+esc(data.nama)+' · '+esc(displayDate(existing.tanggal))+' · '+esc(existing.mulai+'–'+existing.selesai)+'</p><p><strong>'+esc(existing.status)+'</strong></p><p>'+esc(existing.catatan||'')+'</p><p>Sudah diverifikasi Owner. Hubungi Owner jika ada koreksi.</p></div>',null);return;}
-  const requestId=crypto.randomUUID(),date=existing?.tanggal||chosen?.tanggal||data.today;
-  modal('Absensi saya · Slip Gaji Staf','<p class="full"><strong>'+esc(data.nama)+'</strong><br>Hadir diisi setelah sesi selesai. Izin/sakit bisa diisi sebelum latihan. Pilih sesi yang benar-benar Anda ikuti; pilihan jam tidak otomatis dihitung hadir.</p>'+field('tanggal','Tanggal','date',date)+field('slotKey','Sesi latihan',[['','Isi jam sendiri / sesi tambahan']],'',{required:false,placeholder:false})+field('mulai','Mulai','time',existing?.mulai||chosen?.mulai||'15:00')+field('selesai','Selesai','time',existing?.selesai||chosen?.selesai||'16:00')+field('status','Kehadiran saya',data.states,existing?.status||'')+field('kelas','Kelas / tugas','text',existing?.kelas||chosen?.kelas||'Jam tugas staf',{full:true,max:200})+field('replacementId','Usulan pelatih pengganti',data.replacements.map(u=>[u.id,u.nama]),existing?.replacementId||'',{required:false,help:'Usulan pengganti tidak mengubah jadwal anak. Koordinasikan dengan Owner; pelatih pengganti mengisi absensinya sendiri.'})+field('catatan','Catatan / alasan izin','textarea',existing?.catatan||'',{required:false,full:true,max:1000})+'<p class="full muted">Laporan diteruskan ke Owner untuk pemeriksaan rekap. Absensi dan kuota anak tidak berubah.</p>',async(d)=>request('/api/coach/staff-attendance',{method:'POST',body:JSON.stringify({...d,id:existing?.id,staffId:data.staffId,slotKey:existing?(data.slots.some(s=>s.key===[existing.tanggal,existing.mulai,existing.selesai].join('|'))?[existing.tanggal,existing.mulai,existing.selesai].join('|'):''):d.slotKey,requestId,expectedRevision:existing?.revision})}));
-  $('wfSave').textContent='Simpan absensi saya';
-  const refreshStatus=()=>{const absent=['Izin','Sakit','Libur'].includes($('f_status').value);$('f_catatan').required=absent;const replacement=$('f_replacementId');replacement.closest('.field').classList.toggle('hidden',!['Izin','Sakit'].includes($('f_status').value));};$('f_status').onchange=refreshStatus;refreshStatus();
-  let slotSequence=0;
-  const refreshSlots=async(preferred='')=>{
-   const date=$('f_tanggal').value,seq=++slotSequence;if(!date)return;
-   if(!date.startsWith(data.month)){try{const next=await request('/api/coach/staff-attendance?month='+encodeURIComponent(date.slice(0,7)));if(seq!==slotSequence||!wfDialog.open||$('f_tanggal').value!==date)return;data=next;staffSelfData=next;}catch(e){$('wfError').textContent=e.message;return;}}
-   const options=data.slots.filter(s=>s.tanggal===date);$('f_slotKey').innerHTML='<option value="">Isi jam sendiri / sesi tambahan</option>'+options.map(s=>'<option value="'+esc(s.key)+'"'+(s.key===preferred?' selected':'')+'>'+esc(s.mulai+'–'+s.selesai+' · '+s.kelas+(s.libur?' · Libur':''))+'</option>').join('');
-  };
-  $('f_tanggal').onchange=()=>refreshSlots();
-  $('f_slotKey').onchange=()=>{const slot=data.slots.find(s=>s.key===$('f_slotKey').value);if(!slot)return;$('f_mulai').value=slot.mulai;$('f_selesai').value=slot.selesai;$('f_kelas').value=slot.kelas;if(slot.libur&&!existing)$('f_status').value='Libur';refreshStatus();};
-  for(const id of ['f_mulai','f_selesai'])$(id).oninput=()=>{$('f_slotKey').value='';};
-  await refreshSlots(chosen?.key||existing&&[existing.tanggal,existing.mulai,existing.selesai].join('|')||'');
-  if(existing){for(const id of ['f_tanggal','f_mulai','f_selesai'])$(id).readOnly=true;$('f_slotKey').disabled=true;}
- }catch(e){notice(e.message,true);}
-}
-$('records').addEventListener('click',e=>{const b=e.target.closest('[data-staff-self-edit]');if(b&&isStaffSelf()&&staffSelfData)openSelfStaffAttendance(staffSelfData.records[Number(b.dataset.staffSelfEdit)]);});
-const staffSelfDashboard=renderDashboard;renderDashboard=function(){staffSelfDashboard();if(!isStaffSelf())return;
- const data=S.staffAttendance,today=data?.today||S.config.today,records=(data?.records||[]).filter(r=>r.tanggal===today),slots=(data?.slots||[]).filter(s=>s.tanggal===today);
- const body=slots.length?slots.map((s,i)=>{const filled=records.find(r=>r.mulai===s.mulai&&r.selesai===s.selesai);return '<div class="mini-row"><div><strong>'+esc(s.mulai+'–'+s.selesai)+'</strong><small>'+esc(s.kelas)+'</small><small>'+esc(filled?filled.status+' · '+filled.review:'Belum diisi')+'</small></div><button type="button" data-staff-self-slot="'+i+'">'+(filled?'Lihat / koreksi':'Isi absensi')+'</button></div>';}).join(''):'<p>Belum ada sesi yang ditugaskan hari ini. Jika mengisi sesi tambahan atau menggantikan pelatih lain, pilih Isi absensi saya.</p>';
- $('dashboard').insertAdjacentHTML('afterbegin','<section class="panel"><h3>Absensi saya</h3><p>'+esc(displayDate(today))+' · Slip Gaji Staf</p><p>Catat kehadiran Anda per sesi. Absensi anak diisi terpisah.</p>'+body+'<div class="actions"><button type="button" data-staff-self-add>Isi absensi saya</button><button type="button" data-staff-self-view>Buka Slip Gaji Staf</button></div></section>');
-};
-$('dashboard').addEventListener('click',e=>{if(!isStaffSelf())return;if(e.target.closest('[data-staff-self-view]')){navigate('slipgaji');return;}if(e.target.closest('[data-staff-self-add]')){staffSelfData=S.staffAttendance||null;openSelfStaffAttendance();return;}const b=e.target.closest('[data-staff-self-slot]');if(!b||!S.staffAttendance)return;const data=S.staffAttendance,slot=data.slots.filter(s=>s.tanggal===data.today)[Number(b.dataset.staffSelfSlot)];if(!slot)return;staffSelfData=data;const record=data.records.find(r=>r.tanggal===slot.tanggal&&r.mulai===slot.mulai&&r.selesai===slot.selesai);openSelfStaffAttendance(record||null,slot);});
+
 if(S.user&&typeof renderNav==='function'){renderNav();renderCurrent();}

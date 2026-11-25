@@ -75,6 +75,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   app.use('/api/program',express.json({limit:'30mb'}));
   app.use('/api/prestasi/ocr',express.json({limit:'8mb'}));
   app.use('/api/owner/staff',express.json({limit:'30mb'}));
+  app.use('/api/coach/check-in',express.json({limit:'2mb'}));
   app.use(express.json({ limit: '100kb' }));
   const attempts = new Map();
   function limit(req, key, max = 8, count = true) {
