@@ -84,7 +84,8 @@ function mount(app,h){
   const config=(await pool.query('SELECT * FROM brtm_wa_invoice_config WHERE id=1')).rows[0];
   const counts=(await pool.query('SELECT status,COUNT(*)::integer AS count FROM brtm_wa_invoice_jobs GROUP BY status')).rows;
   const jobs=(await pool.query('SELECT id,payment_id,status,attempts,last_error,updated_at FROM brtm_wa_invoice_jobs ORDER BY id DESC LIMIT 50')).rows;
-  res.json({config,counts,jobs,template:TEMPLATE,preview:BODY});
+  const deliveryWarning=jobs.some(j=>j.status==='failed'&&/131042/.test(j.last_error||''))?'Ada invoice yang gagal dikirim karena penagihan akun WhatsApp Meta (131042). Periksa pengaturan penagihan Meta. Token tersambung dan template disetujui belum berarti pesan diterima. Invoice tetap tersedia di BRTM SWIM.':null;
+  res.json({config,counts,jobs,deliveryWarning,template:TEMPLATE,preview:BODY});
  }));
  app.post('/api/owner/whatsapp/invoices/enable',owner,wrap(async(req,res)=>{
   await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await db.query('UPDATE brtm_wa_invoice_config SET enabled=TRUE,updated_at=NOW() WHERE id=1');await enqueue(db,await payments(db));await audit(db,req.user,'aktifkan-invoice-whatsapp-otomatis','whatsapp',null,null,{onePerInvoice:true});});

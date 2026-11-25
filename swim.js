@@ -88,19 +88,30 @@ function mount(app, h) {
   async function dashboard(req, res, athleteId) {
     const a = await record(pool, 'atlet', athleteId), today = B.today(), month = today.slice(0, 7);
     const prestasi = B.canonical(a.kelompok) === 'Prestasi Class';
-    const allAthletes = await rows(pool, 'atlet');
-    const uniqueName = allAthletes.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
-    const packs = (await payments()).filter(p => p.atletId ? String(p.atletId) === a.id : uniqueName && norm(p.namaAtlet) === norm(a.nama)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    // Read only this child's operational records. Never share a dashboard cache
+    // across accounts; every response still checks the current authenticated child.
+    const project=r=>r.rows.map(x=>({...x.data,id:String(x.id)}));
+    const ownRows=async kind=>project(await pool.query("SELECT id,data FROM data_klub WHERE jenis=$1 AND data->>'atletId'=$2 ORDER BY id DESC",[kind,a.id]));
+    const [names,paymentRows,ownAttendance,ownEvaluations,coachResult]=await Promise.all([
+      pool.query("SELECT data->>'nama' AS nama FROM data_klub WHERE jenis='atlet'"),
+      pool.query("SELECT id,data FROM data_klub WHERE jenis='pembayaran' AND (data->>'atletId'=$1 OR COALESCE(data->>'atletId','')='') ORDER BY id DESC",[a.id]),
+      ownRows('absensi'),ownRows('perkembangan'),
+      pool.query("SELECT id,nama FROM brtm_users WHERE active=TRUE AND role='coach'")
+    ]);
+    const uniqueName = names.rows.filter(x => norm(x.nama) === norm(a.nama)).length === 1;
+    const selected=project(paymentRows).filter(p=>p.atletId?String(p.atletId)===a.id:uniqueName&&norm(p.namaAtlet)===norm(a.nama));
+    const packs = (await payments(pool,false,selected)).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const settled=packs.filter(p=>p.status==='Lunas'&&!p.sppTidakDitagih);
     const sppState=(await SPP.summaries(pool))[a.id]||{saldoKredit:0,sppMenungguOwner:false};
     const paid = packs.filter(p => B.cashReceived(p)>0).sort((x, y) => String(y.dibayarPada || y.tanggal).localeCompare(String(x.dibayarPada || x.tanggal)) || Number(y.id) - Number(x.id));
     const pack = packs.find(p => p.statusMasaBerlaku === 'Aktif') || packs[0];
-    const attendance = (await rows(pool, 'absensi')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    const attendance = ownAttendance.sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
     const present = attendance.filter(x => x.status === 'Hadir');
-    const evaluations = (await rows(pool, 'perkembangan')).filter(x => String(x.atletId) === a.id).sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
-    const allSchedules=await rows(pool,'jadwal');
+    const evaluations = ownEvaluations.sort((x, y) => String(y.tanggal).localeCompare(String(x.tanggal)) || Number(y.id) - Number(x.id));
+    const linkedSchedules=[...new Set([...attendance,...evaluations].map(x=>x.jadwalId).filter(Boolean).map(String))];
+    const allSchedules=project(await pool.query("SELECT id,data FROM data_klub WHERE jenis='jadwal' AND (EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(data->'atletIds')='array' THEN data->'atletIds' ELSE '[]'::jsonb END) aid WHERE aid=$1) OR id::text=ANY($2::text[])) ORDER BY id DESC",[a.id,linkedSchedules]));
     const schedules = allSchedules.filter(x => x.atletIds?.map(String).includes(a.id)).sort((x, y) => (x.tanggal + x.mulai).localeCompare(y.tanggal + y.mulai));
-    const coachProfiles=(await pool.query("SELECT id,nama FROM brtm_users WHERE active=TRUE AND role='coach'")).rows;
+    const coachProfiles=coachResult.rows;
     const unpaid = packs.filter(p => p.status === 'Belum Lunas');
     const firstPayment=prestasi?(await SPP.firstPayments(pool))[a.id]:null;
     const cycleMonth=B.prestasiPeriod(today,firstPayment);
@@ -111,7 +122,7 @@ function mount(app, h) {
     res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?paymentSummary.sppPeriodeAktifLunas===true:pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: prestasi?unpaid.some(p=>p.jatuhTempo<today):unpaid.length > 0, statusDetail:paymentSummary?.statusSPPDetail||'',status: prestasi?(paymentSummary.statusSPP==='Lunas'&&paymentSummary.sppPeriodeAktifLunas?'Lunas periode ini':paymentSummary.statusSPP):sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':paymentSummary.statusSPP },
-      catatanwaktu: prestasi ? (await rows(pool,'catatanwaktu')).filter(x=>String(x.atletId)===a.id).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
+      catatanwaktu: prestasi ? (await ownRows('catatanwaktu')).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
       hasilLomba:prestasi?(await require('./race-results').list(pool,a.id)).map(require('./race-results').project):[],
       riwayatPembayaran:await require('./parent-ledger').list(pool,a.id,packs),
       jadwal: schedules.map(x => {const r=attendance.find(r=>r.jadwalId===x.id);return {id:x.id,tanggal:x.tanggal,mulai:x.mulai,selesai:x.selesai,lokasi:x.lokasi,pelatih:x.pelatih,coachId:x.coachId||null,coaches:coachProfiles.filter(c=>[x.coachId,...(x.coachIds||[])].map(String).includes(String(c.id))).map(c=>({id:String(c.id),nama:c.nama})),statusSesi:x.statusSesi||'Terjadwal',alasanLibur:x.alasanLibur||'',absensi:r?{status:r.status,keterangan:r.catatan||''}:null};}),

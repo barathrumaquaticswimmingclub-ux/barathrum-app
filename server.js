@@ -243,9 +243,9 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     if (req.user.role === 'prestasi') return new Set((await rows(db, 'atlet')).filter(a => B.canonical(a.kelompok) === 'Prestasi Class').map(a => a.id));
     const schedules = await rows(db, 'jadwal'); return new Set(schedules.filter(s => require('./regular').assigned(s,req.user.id)).flatMap(s => s.atletIds || []).map(String));
   }
-  async function payments(db = pool, lock = false) {
-    const list = (await rows(db, 'pembayaran', lock)).filter(p=>!p.dibatalkan);
-    const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status' IN ('Hadir','Alpa') AND data->>'paketId' IS NOT NULL GROUP BY data->>'paketId'`)).rows;
+  async function payments(db = pool, lock = false, selected = null) {
+    const list = (selected || await rows(db, 'pembayaran', lock)).filter(p=>!p.dibatalkan);
+    const counts = (await db.query(`SELECT data->>'paketId' AS paket, COUNT(*) AS jumlah FROM data_klub WHERE jenis='absensi' AND data->>'status' IN ('Hadir','Alpa') AND data->>'paketId' IS NOT NULL${selected ? " AND data->>'paketId'=ANY($1::text[])" : ''} GROUP BY data->>'paketId'`, selected ? [list.map(p=>String(p.id))] : [])).rows;
     const used = Object.fromEntries(counts.map(x => [x.paket, Number(x.jumlah)])),first=await SPP.firstPayments(db);return list.map(x => B.packageView(x.jenisKelas==='Prestasi Class'?B.prestasiView(x,first[x.atletId]):x,used[x.id]||0));
   }
   function athleteLink(payment, athlete) { return payment.atletId ? String(payment.atletId) === athlete.id : payment.namaAtlet?.trim().toLowerCase() === athlete.nama?.trim().toLowerCase(); }

@@ -1,0 +1,37 @@
+'use strict';
+const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),request=require('supertest'),sharp=require('sharp');
+const {mock}=require('node:test');
+const B=require('./business'),{initDb,createApp,passwordHash}=require('./server');
+(async()=>{
+ mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-28T08:00:00Z')});
+ let day='2026-11-28';B.today=()=>day;B.time=()=> '15:00:00';
+ const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
+ await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
+ for(const [name,role]of [['Owner','owner'],['Fauzan','coach'],['Ilyas','coach']])await pool.query('INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES($1,$2,$3,$4,FALSE)',[name.toLowerCase(),name,role,await passwordHash('maintenance-test')]);
+ await pool.query("INSERT INTO brtm_weekly_slots(coach_id,place,weekday,start_time,end_time) VALUES(2,'Kolam Renang Pondok Selfie',6,'16:00','17:00')");
+ const app=createApp({pool,secureCookies:false}),o=request.agent(app),f=request.agent(app),i=request.agent(app),p=request.agent(app),anon=request(app);let checks=0;
+ const call=async(a,m,url,body,status=200)=>{const r=await a[m](url).set('X-BRTM-Request','1').send(body);assert.equal(r.status,status,url+' '+JSON.stringify(r.body));checks++;return r.body;};
+ for(const [a,u]of [[o,'owner'],[f,'fauzan'],[i,'ilyas']])await call(a,'post','/auth/login',{username:u,password:'maintenance-test'});
+ const config=await call(anon,'get','/registration/api/options'),kind='Regular Class (1x Seminggu)';
+ const photo=(await sharp({create:{width:800,height:600,channels:3,background:'#1681aa'}}).jpeg().toBuffer()).toString('base64');
+ const registration={nama:'Simulasi Maintenance BRTM',namaPanggilan:'Simulasi',tanggalLahir:'2017-03-21',jk:'Perempuan',tempatLahir:'Salatiga',alamat:'Alamat sintetis',namaOrtu:'Wali sintetis',noHpOrtu:'080000000000',sekolah:'Sekolah Uji',kelasSekolah:'3',tujuan:'Uji alur terisolasi',kelompok:kind,schedules:[config.classes[kind].schedules[0].value],consent:true,version:config.version,requestId:'maintenance-registration-12345',foto:{mime:'image/jpeg',base64:photo}};
+ await call(anon,'post','/registration/api/submit',registration,201);await call(anon,'post','/registration/api/submit',registration,201);
+ const athletes=await call(o,'get','/api/atlet');assert.equal(athletes.length,1);const a=athletes[0];
+ const initial=(await call(o,'post','/api/owner/activation',{atletId:a.id,requestId:'maintenance-activation-123',tanggal:day,berakhir:'2026-12-28',kuota:4,sisa:4,harga:150000,biayaPendaftaran:50000,status:'Lunas'})).data;assert.equal(initial.totalTagihan,200000);
+ await call(p,'post','/swim/api/login',{username:registration.nama.toUpperCase(),password:'brtm'});
+ for(const d of ['2026-11-28','2026-11-30','2026-12-01','2026-12-02']){day=d;mock.timers.setTime(Date.parse(day+'T08:00:00Z'));
+  const booked=await call(p,'post','/swim/api/regular',{mulai:'16:00'});assert.equal((await call(p,'post','/swim/api/regular',{mulai:'16:00'})).jadwalId,booked.jadwalId);
+  for(const coach of [f,i])assert((await call(coach,'get','/api/jadwal')).some(s=>s.id===booked.jadwalId&&s.atletIds.includes(a.id)));
+  const before=await call(p,'get','/swim/api/dashboard');assert.equal(before.profil.id,a.id);
+  B.time=()=> '16:00:00';await call(i,'post','/api/session-entry',{jadwalId:booked.jadwalId,atletId:a.id,tanggal:day,status:'Hadir',noted:'Latihan simulasi di database terisolasi.'});
+  assert.equal((await call(p,'get','/swim/api/regular/options')).selesaiDiabsen,true);B.time=()=> '15:00:00';
+ }
+ let packs=await call(o,'get','/api/pembayaran');assert.equal(packs.length,2);const renewal=packs.find(x=>x.automaticRenewal);assert.equal(renewal.status,'Belum Lunas');assert.equal(renewal.sisaPertemuan,4);assert.equal(renewal.biayaPendaftaran,0);
+ day='2026-12-03';mock.timers.setTime(Date.parse(day+'T08:00:00Z'));const booked=await call(p,'post','/swim/api/regular',{mulai:'16:00'});B.time=()=> '16:00:00';await call(f,'post','/api/session-entry',{jadwalId:booked.jadwalId,atletId:a.id,tanggal:day,status:'Hadir',noted:'Kuota paket belum lunas dapat dipakai.'});
+ const settle={id:renewal.id,atletId:a.id,requestId:'maintenance-settlement-123',tanggal:renewal.tanggal,berakhir:renewal.berlakuSampai,kuota:4,harga:150000,status:'Lunas',dibayarPada:day};await call(o,'post','/api/owner/payment',settle);await call(o,'post','/api/owner/payment',settle);
+ const end=await call(p,'get','/swim/api/dashboard');assert.equal(end.latihan.sisaPertemuan,3);assert.equal(end.latihan.kuota,4);assert.equal(end.latihan.hadirTotal,5);assert.equal(end.pembayaran.terakhirBayar,day);
+ packs=await call(o,'get','/api/pembayaran');assert.equal(packs.length,2);assert.equal(packs.find(x=>x.id===renewal.id).sisaPertemuan,3);
+ const receipts=(await call(o,'get','/api/owner/receipts')).receipts;assert.equal(receipts.reduce((n,r)=>n+r.amount,0),350000);
+ const pdf=await p.get('/swim/api/documents/receipt/'+renewal.id);assert.equal(pdf.status,200);assert.match(pdf.headers['content-type'],/application\/pdf/);
+ await db.close();mock.timers.reset();console.log('PASS maintenance full workflow: '+checks+' API checks, public registration replay, new-child fee once, parent case normalization, both coaches, four sessions, automatic unpaid renewal, fifth attendance, settlement replay, unchanged quota, receipt totals and parent PDF.');
+})().catch(e=>{console.error(e);process.exit(1);});
