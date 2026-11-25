@@ -24,8 +24,8 @@ function mount(app,h){const {pool,wrap,transaction,rows,audit}=h;
   const data=await transaction(async db=>{
    const staff=(await db.query('SELECT id,nama,username,role,active FROM brtm_users')).rows,id=person(staff,req.user);
    if(req.query.staffId&&String(req.query.staffId)!==id)throw fail(403,'Hanya absensi Anda sendiri');
-   const records=(await rows(db,'absenstaf')).filter(r=>r.staffId===id&&r.tanggal.startsWith(month)),verified=(await rows(db,'jamstaf')).filter(r=>r.staffId===id&&r.tanggal.startsWith(month));
-   for(const r of records)r.review=verified.some(v=>v.tanggal===r.tanggal&&v.mulai<=r.mulai&&v.selesai>=r.selesai)?'Diverifikasi Owner':'Terkirim ke Owner';
+   const records=(await rows(db,'absenstaf')).filter(r=>!r.deleted&&r.staffId===id&&r.tanggal.startsWith(month)),verified=(await rows(db,'jamstaf')).filter(r=>!r.deleted&&r.staffId===id&&r.tanggal.startsWith(month));
+   for(const r of records)r.review=r.ownerManaged?'Dicatat Owner':r.checkInId?'Tercatat':verified.some(v=>v.tanggal===r.tanggal&&v.mulai<=r.mulai&&v.selesai>=r.selesai)?'Diverifikasi Owner':'Terkirim ke Owner';
    const available=slots(staff,req.user,await rows(db,'jadwal'),month);
    return {month,today:B.today(),time:B.time(),staffId:id,nama:req.user.nama,states,records:records.sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||b.mulai.localeCompare(a.mulai)),slots:available,replacements:staff.filter(u=>u.active&&u.role==='coach'&&String(u.id)!==id).map(u=>({id:String(u.id),nama:u.nama}))};
   });res.json(data);
@@ -53,6 +53,7 @@ function mount(app,h){const {pool,wrap,transaction,rows,audit}=h;
    if((await rows(db,'jamstaf')).some(r=>r.staffId===id&&r.tanggal===d.tanggal&&r.mulai<d.selesai&&r.selesai>d.mulai))throw fail(409,'Jam ini sudah diverifikasi Owner. Hubungi Owner untuk koreksi.');
    if(d.id){const target=all.find(r=>r.id===String(d.id));if(!target||target.staffId!==id)throw fail(403,'Hanya catatan absensi Anda sendiri');if(target.tanggal!==d.tanggal||target.mulai!==d.mulai||target.selesai!==d.selesai)throw fail(400,'Tanggal dan jam catatan lama tidak dapat dipindahkan. Hubungi Owner untuk koreksi.');}
    const old=all.find(r=>r.staffId===id&&r.tanggal===d.tanggal&&r.mulai===d.mulai&&r.selesai===d.selesai);
+   if(old&&(old.deleted||old.ownerManaged||old.checkInId))throw fail(409,'Absensi ini hanya dapat diubah oleh Owner');
    if(!old&&d.expectedRevision)throw fail(409,'Catatan absensi sudah berubah. Muat ulang daftar.');
    if(old&&d.expectedRevision!==old.revision)throw fail(409,'Absensi sudah berubah. Muat ulang sebelum memperbaiki.');
    if(all.some(r=>r.id!==old?.id&&r.staffId===id&&r.tanggal===d.tanggal&&r.mulai<d.selesai&&r.selesai>d.mulai))throw fail(409,'Jam bertumpuk dengan absensi Anda. Koreksi catatan yang sudah ada.');

@@ -87,6 +87,7 @@ function mount(app,h){
  const {pool,owner,wrap,transaction,rows}=h;
  require('./staff-hours-review').mount(app,h);
  require('./staff-attendance').mount(app,h);
+ require('./staff-attendance-owner').mount(app,h);
  async function read(req){
   const month=req.query.month===undefined?B.today().slice(0,7):req.query.month;
   if(typeof month!=='string'||!/^\d{4}-\d{2}$/.test(month)||!B.validDate(month+'-01'))throw fail(400,'Pilih bulan yang valid');

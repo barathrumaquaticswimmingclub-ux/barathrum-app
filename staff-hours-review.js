@@ -57,13 +57,24 @@ function augment(report,{staff,schedules,attendance,athletes,workRecords=[],staf
    const covered=row.rincian.filter(d=>d.tanggal===s.tanggal&&(settled(d)||d.perluVerifikasi||d.status==='Pelatih lain')).map(d=>[mins(d.mulai),mins(d.selesai)]);
    for(const [x,y] of cut(mins(s.mulai),mins(s.selesai),covered))row.rincian.push({tanggal:s.tanggal,hari:day(s.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(s.tanggal,clock(x)),menit:0,jam:0,status:'Perlu verifikasi',keterangan:(s.historyOnly?'Jadwal mingguan historis':'Jadwal tercatat')+' · Kehadiran staf belum diverifikasi',kelas:[{nama:s.jenisKelas,atlet:(s.atletIds||[]).map(pupil)}],perluVerifikasi:true});
   }
-  row.laporanPelatih=staffAttendance.filter(m=>canonical(m.staffId)===row.id&&m.tanggal.startsWith(report.month)).map(m=>({...m,review:manual.some(v=>v.tanggal===m.tanggal&&v.mulai<=m.mulai&&v.selesai>=m.selesai)?'Diverifikasi Owner':'Menunggu verifikasi'}));
+  row.laporanPelatih=staffAttendance.filter(m=>!m.deleted&&canonical(m.staffId)===row.id&&m.tanggal.startsWith(report.month)).map(m=>({...m,review:manual.some(v=>v.tanggal===m.tanggal&&v.mulai<=m.mulai&&v.selesai>=m.selesai)?'Diverifikasi Owner':'Menunggu verifikasi'}));
   for(const m of row.laporanPelatih){
    if(m.review==='Diverifikasi Owner'||m.tanggal>report.asOf||m.tanggal===report.asOf&&m.selesai>now.slice(0,5))continue;
    const a=mins(m.mulai),b=mins(m.selesai),evidence=row.rincian.filter(d=>d.tanggal===m.tanggal&&d.status==='Melatih').map(d=>[mins(d.mulai),mins(d.selesai)]);
    if(m.status==='Hadir melatih'&&!cut(a,b,evidence).length){m.review='Sesuai absensi anak';continue;}
    row.rincian=row.rincian.flatMap(d=>d.tanggal!==m.tanggal||!d.perluVerifikasi?[d]:cut(mins(d.mulai),mins(d.selesai),[[a,b]]).map(([x,y])=>({...d,mulai:clock(x),selesai:clock(y)})));
    row.rincian.push({tanggal:m.tanggal,hari:day(m.tanggal),mulai:m.mulai,selesai:m.selesai,kategori:period(m.tanggal,m.mulai),menit:0,jam:0,status:m.status,keterangan:'Dilaporkan pelatih: '+m.status+(m.catatan?' · '+m.catatan:'')+(m.replacementId?' · Usulan pengganti: '+(staff.find(u=>String(u.id)===m.replacementId)?.nama||'#'+m.replacementId):'')+' · Menunggu verifikasi Owner',kelas:[{nama:m.kelas,atlet:(m.atletIds||[]).map(pupil)}],perluVerifikasi:true,coachReported:true,alasan:m.catatan,sourceId:m.sourceId,staffReportId:m.id});
+  }
+  // Explicit staff check-ins are authoritative for their interval. Owner deletions
+  // also mask child-derived and previously verified hours, including moved dates.
+  const explicit=staffAttendance.filter(m=>!m.deleted&&(m.checkInId||m.ownerManaged)&&canonical(m.staffId)===row.id&&inMonth(m));
+  const masks=staffAttendance.flatMap(m=>[...(m.payrollExclusions||[]),...((m.deleted||m.ownerManaged||m.checkInId)?[{staffId:m.staffId,tanggal:m.tanggal,mulai:m.mulai,selesai:m.selesai}]:[])]).filter(m=>canonical(m.staffId)===row.id&&inMonth(m));
+  for(const mask of masks)row.rincian=row.rincian.flatMap(d=>d.tanggal!==mask.tanggal?[d]:cut(mins(d.mulai),mins(d.selesai),[[mins(mask.mulai),mins(mask.selesai)]]).map(([x,y])=>({...d,mulai:clock(x),selesai:clock(y),menit:d.menit?y-x:0,jam:d.menit?(y-x)/60:0})));
+  for(const m of explicit){
+   const listed=row.laporanPelatih.find(r=>r.id===m.id);if(listed)listed.review=closed(m)?(m.ownerManaged?'Dicatat Owner':'Tercatat'):'Menunggu sesi selesai';
+   if(!closed(m))continue;
+   const a=mins(m.mulai),b=mins(m.selesai),parts=new Date(m.tanggal+'T12:00:00Z').getUTCDay()===6?[[a,b]]:[[a,Math.min(b,720)],[Math.max(a,720),b]].filter(([x,y])=>y>x);
+   for(const [x,y] of parts)row.rincian.push({tanggal:m.tanggal,hari:day(m.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(m.tanggal,clock(x)),menit:worked(m.status)?y-x:0,jam:worked(m.status)?(y-x)/60:0,status:m.status,keterangan:m.status+(m.catatan?' · '+m.catatan:''),kelas:[{nama:m.kelas||'Latihan tambahan',atlet:(m.atletIds||[]).map(pupil)}],staffReportId:m.id,coachReported:true,perluVerifikasi:false,checkInId:m.checkInId});
   }
   row.rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai));
   const minutes=kind=>{const dates=[...new Set(row.rincian.map(d=>d.tanggal))];return dates.reduce((n,date)=>n+union(row.rincian.filter(d=>d.tanggal===date&&d.kategori===kind&&d.menit>0).map(d=>[mins(d.mulai),mins(d.selesai)])),0);};
