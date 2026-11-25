@@ -3,7 +3,7 @@ const BRTM = __BRTM_CONFIG__;
 const RULES = __BRTM_RULES__;
 const QUESTIONS = {
   nama:'Nama lengkap anak', namaPanggilan:'Nama panggilan', tanggalLahir:'Tanggal lahir (DD-MM-YYYY)',
-  jk:'Jenis kelamin', tempatLahir:'Tempat lahir', namaOrtu:'Nama orang tua / wali (salah satu)', noHpOrtu:'Nomor WhatsApp yang bisa dihubungi', emailOrtu:'Email orang tua / wali (salinan invoice)',
+  jk:'Jenis kelamin', tempatLahir:'Tempat lahir', namaOrtu:'Nama orang tua / wali (salah satu)', noHpOrtu:'Nomor WhatsApp yang bisa dihubungi', emailOrtu:'Email aktif orang tua / wali (invoice dan kuitansi)',
   sekolah:'Nama sekolah', kelasSekolah:'Kelas sekolah', alamat:'Alamat rumah', tujuan:'Tujuan mengikuti les',
   riwayatRenang:'Pernah latihan renang di mana saja', foto:'Foto anak (bebas)', kelompok:'Kelas yang dipilih', persetujuan:'Persetujuan orang tua / wali'
 };
@@ -59,7 +59,7 @@ function siapkanBRTM() {
     }
     let emailItem=form.getItems().find(function(i){return i.getTitle()===QUESTIONS.emailOrtu;});
     if(!emailItem)emailItem=form.addTextItem().setTitle(QUESTIONS.emailOrtu);else emailItem=emailItem.asTextItem();
-    emailItem.setRequired(false).setHelpText('Opsional. Salinan invoice BRTM dikirim ke alamat ini.').setValidation(FormApp.createTextValidation().requireTextIsEmail().build());
+    emailItem.setRequired(true).setHelpText('Wajib. Gunakan email aktif untuk menerima invoice dan kuitansi BRTM.').setValidation(FormApp.createTextValidation().requireTextIsEmail().build());
     const waItem=form.getItems().find(function(i){return i.getTitle()===QUESTIONS.noHpOrtu||i.getTitle()===ALIASES.noHpOrtu;});if(waItem)form.moveItem(emailItem.getIndex(),waItem.getIndex()+1);
     const termsNow=form.getItems().find(function(i){return ['Ketentuan BRTM','KETENTUAN & PERSETUJUAN ORANG TUA/WALI'].indexOf(i.getTitle())>=0;});
     if(termsNow)termsNow.asSectionHeaderItem().setHelpText(RULES.common);

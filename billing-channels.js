@@ -5,6 +5,8 @@ async function initDb(db){
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_billing_channel_policy(id INTEGER PRIMARY KEY CHECK(id=1),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
  // One-time switch requested by Owner: WA is prepared manually; never incur Meta sending charges.
  await db.query('WITH first_run AS (INSERT INTO brtm_billing_channel_policy(id) VALUES(1) ON CONFLICT DO NOTHING RETURNING id) UPDATE brtm_wa_invoice_config SET enabled=FALSE,updated_at=NOW() WHERE id=1 AND EXISTS(SELECT 1 FROM first_run)');
+ await db.query('UPDATE brtm_wa_invoice_config SET enabled=FALSE,updated_at=NOW() WHERE id=1');
+ await db.query("UPDATE brtm_wa_invoice_jobs SET status='cancelled',updated_at=NOW() WHERE status='pending'");
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_email_invoice_jobs(id SERIAL PRIMARY KEY,payment_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,athlete_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'pending',recipient TEXT,provider_id TEXT,last_error TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(payment_id))`);
 }
 function configured(){return !!require('./billing-email').mode();}

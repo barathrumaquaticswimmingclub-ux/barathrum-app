@@ -41,6 +41,7 @@ function mount(app,{pool,wrap,transaction,rows,limit,cleanPayload,applyRegistrat
   const input=req.body;if(!input||typeof input!=='object'||Array.isArray(input)||input.website)throw fail(400,'Isian tidak valid.');
   if(!/^[-\w]{20,80}$/.test(input.requestId||''))throw fail(400,'Muat ulang formulir sebelum mengirim.');
   const payload={};for(const k of fields){if(typeof input[k]!=='string'||!input[k].trim()||input[k].length>(k==='nama'?150:500))throw fail(400,'Lengkapi '+k+' dengan benar.');payload[k]=input[k].trim();}
+  if(!require('./billing-policy').email(input.emailOrtu?.trim()||''))throw fail(400,'Email aktif orang tua wajib diisi untuk invoice dan kuitansi');
   if(input.emailOrtu!=null){if(typeof input.emailOrtu!=='string'||input.emailOrtu.trim()&&!require('./billing-policy').email(input.emailOrtu.trim()))throw fail(400,'Alamat email orang tua tidak valid');payload.emailOrtu=input.emailOrtu.trim();}
   payload.persetujuan=input.consent===true?CONSENT:'';payload.versiKetentuan=input.version;
   if(input.version!==rules.version)throw fail(409,'Peraturan telah diperbarui. Muat ulang dan baca peraturan terbaru.');

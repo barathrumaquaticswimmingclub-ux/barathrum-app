@@ -119,7 +119,7 @@ function mount(app, h) {
     const paymentSummary=prestasi?require('./athlete-payment-status').prestasi(packs,firstPayment,hasMonthlyAttendance,sppState.sppMenungguOwner,today):require('./athlete-payment-status').nonprestasi(packs,today);
     const nextPayment = prestasi?B.prestasiNextDue(packs,firstPayment,today):unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : pack?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
+    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, emailRequired:!req.swimOwner&&!require('./billing-policy').email(a.emailOrtu||''), updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : pack?.statusMasaBerlaku === 'Aktif' ? pack.sisaPertemuan : pack ? 0 : null, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?paymentSummary.sppPeriodeAktifLunas===true:pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : pack?.berlakuSampai || null },
       pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: prestasi?unpaid.some(p=>p.jatuhTempo<today):unpaid.length > 0, statusDetail:paymentSummary?.statusSPPDetail||'',status: prestasi?(paymentSummary.statusSPP==='Lunas'&&paymentSummary.sppPeriodeAktifLunas?'Lunas periode ini':paymentSummary.statusSPP):sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':paymentSummary.statusSPP },
       catatanwaktu: prestasi ? (await ownRows('catatanwaktu')).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
@@ -158,6 +158,14 @@ function mount(app, h) {
     res.json({role:'owner',today:B.today(),updatedAt:new Date().toISOString(),counts:{prestasi:active.filter(a=>B.canonical(a.kelompok)==='Prestasi Class').length,pemula:active.filter(a=>B.canonical(a.kelompok)!=='Prestasi Class').length},atlet:athletes.map(a=>{const p=accounts.find(p=>String(p.athlete_id)===a.id);return {id:a.id,nama:a.nama,namaPanggilan:a.namaPanggilan||'',kelompok:B.canonical(a.kelompok),status:a.status||'Aktif',username:p?.username||'',active:p?.active||false,deleted:p?.deleted||false};})});
   }));
   app.get('/swim/api/owner/atlet/:id',parentAuth,swimOwner,wrap(async(req,res)=>dashboard(req,res,req.params.id)));
+  app.post('/swim/api/email',parentAuth,wrap(async(req,res)=>{
+    if(!req.parent||req.swimOwner)throw fail(403,'Khusus akun orang tua');
+    if(!req.body||Object.keys(req.body).some(k=>k!=='emailOrtu')||!require('./billing-policy').email(req.body.emailOrtu?.trim()||''))throw fail(400,'Isi alamat email aktif dengan benar');
+    await transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const old=await record(c,'atlet',String(req.parent.athlete_id),true);
+      if(require('./billing-policy').email(old.emailOrtu||''))return;
+      const actor={id:null,username:'orangtua:'+req.parent.id};await save(c,actor,'atlet',{...old,emailOrtu:req.body.emailOrtu.trim()},old);await audit(c,actor,'lengkapi-email-orangtua','atlet',old.id,null,{emailOrtu:req.body.emailOrtu.trim()});
+    });res.json({ok:true});
+  }));
   app.put('/swim/api/profile',parentAuth,wrap(async(req,res)=>{
     if(!req.parent||req.swimOwner)throw fail(403,'Khusus profil anak pada akun orang tua');
     const allowed=[...P.FIELDS.filter(k=>k!=='jadwalPilihan'),'foto','revision'];
@@ -168,6 +176,7 @@ function mount(app, h) {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
       const old=await record(c,'atlet',String(req.parent.athlete_id),true);
       if(req.body.revision!==P.revision(old))throw fail(409,'Biodata sudah berubah. Tutup editor, muat ulang data, lalu periksa kembali sebelum menyimpan.');
+      if(Object.hasOwn(req.body,'emailOrtu')&&!require('./billing-policy').email(req.body.emailOrtu?.trim()||''))throw fail(400,'Email aktif wajib diisi untuk invoice dan kuitansi');
       const data=P.cleanProfile(req.body,old),actor={id:null,username:'orangtua:'+req.parent.id};
       const conflicts=require('./roster-identity').candidates(await rows(c,'atlet'),data).filter(a=>a.tanggalLahir&&a.tanggalLahir===data.tanggalLahir&&norm(a.nama)===norm(data.nama));
       if(conflicts.length)throw fail(409,'Identitas ini sudah tercatat pada atlet lain. Hubungi Owner untuk mencocokkan data.');
@@ -317,7 +326,7 @@ function mount(app, h) {
     if (!Object.hasOwn(B.CLASSES, out.kelompok) || kind === 'nonprestasi' && out.kelompok === 'Prestasi Class') throw fail(400, 'Kelas tidak sesuai formulir');
     B.validateAge(out);
     if(input.versiKetentuan){
-      const required=['namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
+      const required=['emailOrtu','namaPanggilan','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat',kind==='prestasi'?'riwayatRenang':'tujuan'];
       if(required.some(k=>!out[k])||!['Saya telah membaca dan menyetujui ketentuan BRTM.',require('./registration').CONSENT].includes(out.persetujuan)||!input.foto)throw fail(400,'Lengkapi biodata, foto dan persetujuan ketentuan');
     }
     if(!input.foto)throw fail(400,'Foto anak wajib diunggah (foto bebas)');

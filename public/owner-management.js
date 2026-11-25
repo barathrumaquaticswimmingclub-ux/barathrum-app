@@ -80,14 +80,9 @@ async function ownerManagementAction(e){const b=e.target.closest('[data-wf]');if
  }catch(err){notice(err.message,true);}}
 for(const root of [$('records'),$('wfBody')])root.addEventListener('click',ownerManagementAction);
 
-function ownerWhatsAppInbox(){
- const inbox=S.whatsappInbox,items=(inbox?.items||[]).filter(r=>r.status==='pending');
- return '<section class="panel"><h3>Konfirmasi dari WhatsApp — Menunggu Verifikasi</h3>'+btn('wa-connect','','Pengaturan sambungan')+btn('wa-invoices','','Invoice WA otomatis')+btn('billing-channels','','Saluran invoice')+'<p>'+(!inbox?.configured?'Sambungan WhatsApp belum lengkap. ':'')+'Bukti, nama lengkap anak, dan kelas harus lengkap. Foto bukti dikompres otomatis dan disimpan satu kali. Pembayaran disahkan setelah diperiksa Owner.</p>'+grid(['Diterima','Nama anak','Kelas','Pengirim','Tindakan'],items.map(r=>[esc(stamp(r.created_at)),esc(r.payload.name),esc(r.payload.group),esc(r.sender),btn('wa-review',r.id,'Periksa konfirmasi')]))+(items.length?'':'<p>Belum ada konfirmasi menunggu verifikasi.</p>')+'</section>';
-}
+function ownerWhatsAppInbox(){return '<section class="panel"><h3>Invoice dan kuitansi</h3>'+btn('billing-channels','','Saluran invoice')+'<p>Dokumen tersedia di BRTM SWIM. Email orang tua dikumpulkan sekali untuk invoice dan kuitansi. WhatsApp dikirim manual melalui Riwayat / edit / hapus.</p></section>';}
 async function ownerWhatsAppAction(e){
- if(e.target.closest('[data-wf=wa-invoices]')&&isOwner()){try{await ownerWhatsAppInvoices();}catch(err){notice(err.message,true);}return;}
- if(e.target.closest('[data-wf=wa-connect]')&&isOwner()){try{await ownerWhatsAppConnection();}catch(err){notice(err.message,true);}return;}
- const b=e.target.closest('[data-wf="wa-review"]');if(!b||!isOwner())return;
+   const b=e.target.closest('[data-wf="wa-review"]');if(!b||!isOwner())return;
  const r=S.whatsappInbox?.items.find(r=>r.id===b.dataset.id);if(!r)return;
  const norm=s=>String(s||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id');
  const matches=(S.records.atlet||[]).filter(a=>norm(a.nama)===norm(r.payload.name)&&a.kelompok===r.payload.group);
@@ -97,23 +92,5 @@ async function ownerWhatsAppAction(e){
  $('waReject').onclick=()=>modal('Tolak konfirmasi WhatsApp',field('reason','Alasan penolakan','textarea','',{full:true}),d=>request('/api/owner/whatsapp/confirmations/'+r.id+'/reject',{method:'POST',body:JSON.stringify(d)}));
 }
 $('sectionSummary').addEventListener('click',ownerWhatsAppAction);
-
-async function ownerWhatsAppConnection(){
- const c=await request('/api/owner/whatsapp/connection');
- modal('Sambungan WhatsApp BRTM','<p class="full">Nomor WhatsApp Business: <b>0811210260</b>.</p><div class="full"><button type="button" id="waDirectConnect">Sambungkan lewat Meta — tanpa salin token</button><p>Masuk dengan akun Meta pemilik BRTM. Sambungan diperiksa dan disimpan otomatis.</p></div><p class="full">Atau, tempel kredensial dari aplikasi Meta BRTM. Kolom kosong mempertahankan nilai yang sudah tersimpan.</p>'+field('waToken','Token akses Meta','password','',{required:false,full:true,max:4096})+field('waSecret','App Secret Meta','password','',{required:false,full:true,max:32})+'<p class="full">Token: '+(c.hasToken?'tersimpan':'belum dipasang')+' • App Secret: '+(c.hasSecret?'tersimpan':'belum dipasang')+'</p><p class="full">Terakhir disimpan: '+esc(c.savedAt?stamp(c.savedAt):'belum pernah')+'. '+(c.tokenExpiresAt?'Akses Meta berlaku sampai '+esc(stamp(c.tokenExpiresAt))+'. ':'')+'Kolom kosong tidak mengganti token lama.</p><div class="full actions"><button type="button" id="waCopyCallback">Salin URL webhook</button><button type="button" id="waCopyVerify">Salin token verifikasi</button><button type="button" id="waConnectionTest">Uji sambungan</button><button type="button" id="waConnectionSubscribe">Hubungkan penerima pesan</button></div><p id="waConnectionResult" class="full" role="status"></p>',async d=>request('/api/owner/whatsapp/connection',{method:'POST',body:JSON.stringify({token:d.waToken,secret:d.waSecret})}));
- for(const id of ['f_waToken','f_waSecret']){$(id).setAttribute('autocomplete','off');$(id).setAttribute('spellcheck','false');}
- $('wfSave').textContent='Simpan sambungan';$('wfSave').disabled=true;const updateSave=()=>{$('wfSave').disabled=!c.canSave||!($('f_waToken').value.trim()||$('f_waSecret').value.trim());};$('f_waToken').addEventListener('input',updateSave);$('f_waSecret').addEventListener('input',updateSave);
- const copy=async value=>{try{await navigator.clipboard.writeText(value);$('waConnectionResult').textContent='Tersalin. Tempel langsung pada pengaturan Meta.';}catch{$('waConnectionResult').textContent='Browser belum mengizinkan penyalinan. Gunakan browser yang mendukung salin ke clipboard.';}};
- $('waDirectConnect').onclick=async()=>{const b=$('waDirectConnect');b.disabled=true;try{const r=await request('/api/owner/whatsapp/connect',{method:'POST',body:'{}'});location.assign(r.url);}catch(err){$('waConnectionResult').textContent=err.message;b.disabled=false;}};
- $('waCopyCallback').onclick=()=>copy(c.callback);$('waCopyVerify').onclick=()=>copy(c.verifyToken);
- const run=async action=>{const buttons=[$('waConnectionTest'),$('waConnectionSubscribe')];buttons.forEach(b=>b.disabled=true);try{const r=await request('/api/owner/whatsapp/connection/'+action,{method:'POST',body:'{}'});$('waConnectionResult').textContent=r.pesan;}catch(err){$('waConnectionResult').textContent=err.message;}finally{buttons.forEach(b=>b.disabled=false);}};
- $('waConnectionTest').onclick=()=>run('test');$('waConnectionSubscribe').onclick=()=>run('subscribe');
-}
-
-async function ownerWhatsAppInvoices(){
- const r=await request('/api/owner/whatsapp/invoices'),c=r.config,labels={pending:'Menunggu',sending:'Sedang dikirim',accepted:'Diterima Meta',sent:'Terkirim',delivered:'Sampai',read:'Dibaca',failed:'Gagal',unknown:'Perlu diperiksa',cancelled:'Dibatalkan'};
- modal('Invoice WhatsApp otomatis','<div class="full"><p>WhatsApp manual digunakan melalui tombol Ingatkan via WA Business. Pengiriman otomatis melalui Meta dinonaktifkan; mengaktifkannya kembali dapat menimbulkan biaya pesan Meta. Prestasi hanya ditagih pada akhir bulan.</p><p>Antrean: '+(c.enabled?'aktif':'belum aktif')+' • Template: '+esc(c.template_status)+'</p>'+(c.last_error?'<p role="alert">'+esc(c.last_error)+'</p>':'')+(r.deliveryWarning?'<p role="alert">'+esc(r.deliveryWarning)+'</p>':'')+'<button type="button" id="waInvoiceEnable">'+(c.enabled?'Periksa sambungan dan template':'Aktifkan invoice WA otomatis')+'</button><p id="waInvoiceStatus" role="status"></p><h3>Pesan invoice</h3><pre class="owner-message">'+esc(r.preview)+'</pre>'+grid(['Invoice','Status','Keterangan'],r.jobs.map(j=>['BRTM-'+esc(j.payment_id),esc(labels[j.status]||j.status),esc(j.last_error||'—')]))+'</div>',null);
- $('waInvoiceEnable').onclick=async()=>{const b=$('waInvoiceEnable');b.disabled=true;try{const v=await request('/api/owner/whatsapp/invoices/enable',{method:'POST',body:'{}'});$('waInvoiceStatus').textContent=v.pesan;}catch(err){$('waInvoiceStatus').textContent=err.message;}finally{b.disabled=false;}};
-}
 
 document.addEventListener('click',async e=>{if(!e.target.closest('[data-wf=billing-channels]')||!isOwner())return;try{const r=await request('/api/owner/billing/channels');modal('Saluran invoice BRTM','<div class="full"><p><b>Email pengirim:</b> '+esc(r.emailFrom)+'</p><p><b>BRTM SWIM:</b> invoice tersedia di SPP & pembayaran.</p><p><b>Notifikasi HP:</b> mengikuti izin notifikasi orang tua.</p><p><b>Email otomatis:</b> '+esc(r.emailStatus)+'. Orang tua dapat mengisi email pada Profil & foto.</p><p><b>WhatsApp manual:</b> buka Riwayat / edit, pilih Ingatkan via WA Business, lalu tekan Kirim di WhatsApp.</p><p>'+esc(r.prestasiPolicy)+'</p>'+grid(['Invoice','Status email','Keterangan'],r.jobs.map(j=>[esc('BRTM-'+j.payment_id),esc(({pending:'Menunggu',sending:'Diproses',accepted:'Diterima layanan email',failed:'Gagal',unknown:'Perlu diperiksa',cancelled:'Dibatalkan'})[j.status]||j.status),esc(j.last_error||'—')]))+'</div>',null);}catch(err){notice(err.message,true);}});

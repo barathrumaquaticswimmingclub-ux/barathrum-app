@@ -22,6 +22,7 @@ function parameters(p){
 }
 function phone(value){const p=String(value||'').replace(/\D/g,'').replace(/^0/,'62');return /^\d{9,15}$/.test(p)?p:null;}
 async function graph(app,c,path,body){
+ if(app.locals.metaRetired)throw fail(410,'Integrasi Meta WhatsApp sudah dinonaktifkan.');
  if(!c.token||!c.wabaId||!c.phoneId)throw fail(409,'Lengkapi sambungan WhatsApp BRTM terlebih dahulu.');
  const res=await app.locals.whatsappFetch('https://graph.facebook.com/'+c.version+'/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000),redirect:'error'});
  const data=await res.json();if(!res.ok){const e=fail(502,'Meta menolak permintaan'+(Number.isInteger(data.error?.code)?' (kode '+data.error.code+')':'')+'.');e.metaCode=data.error?.code;e.httpStatus=res.status;throw e;}return data;
@@ -41,6 +42,7 @@ async function refresh(app,db){
  }catch(e){await db.query("UPDATE brtm_wa_invoice_config SET template_status='TERHAMBAT',last_error=$1,checked_at=NOW() WHERE id=1",[e.metaCode===190?'Akses Meta tidak valid (kode 190). Perbarui token sambungan.':e.status?e.message:'Sambungan ke Meta belum berhasil.']);}
 }
 async function deliver(app,h){
+ if(app.locals.metaRetired)return;
  const {pool,payments}=h;let config=(await pool.query('SELECT * FROM brtm_wa_invoice_config WHERE id=1')).rows[0];if(!config?.enabled)return;
  await enqueue(pool,await payments());
  // A worker crash or network timeout is ambiguous; do not automatically resend it.
