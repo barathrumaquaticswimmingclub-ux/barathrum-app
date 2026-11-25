@@ -26,7 +26,7 @@ function ownerPaymentRow(a,month,status){
 const managementList=renderList;renderList=function(){if(!isOwner())return managementList();const k=S.section,q=qName(),f=$('filter').value;
  if(k==='atlet'){
   const list=filteredRows().sort(activeFirst);$('records').className='ops-records';$('sectionSummary').innerHTML='';
-  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')+'<button class="danger" data-delete="'+esc(a.id)+'">Hapus atlet</button>']));return;
+  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua')+btn('replacement',a.id,'Jadwal pengganti'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')+'<button class="danger" data-delete="'+esc(a.id)+'">Hapus atlet</button>']));return;
  }
  if(['aktivasi','pembayaran'].includes(k)){
   const month=k==='pembayaran'?$('monthFilter').value:'';
@@ -67,6 +67,7 @@ function ownerParentInfo(a){const packs=(S.records.pembayaran||[]).filter(p=>p.a
  }catch(e){$('infoResult').textContent=e.message;}finally{if(app.isConnected)app.disabled=wa.disabled=false;}};$('infoApp').onclick=()=>send('app');$('infoWa').onclick=()=>send('wa');
 }
 async function ownerManagementAction(e){const b=e.target.closest('[data-wf]');if(!b||!isOwner())return;const id=b.dataset.id,action=b.dataset.wf,a=(S.records.atlet||[]).find(a=>a.id===id);try{
+ if(action==='replacement')await openReplacementSchedule(a);
  if(action==='athlete-edit')openForm('atlet',a);
  if(action==='activation-open')ownerPackageForm(a,activeOwnerPack(a),true);
  if(action==='payment-open')ownerPackageForm(a,ownerPacks(a).filter(p=>p.status==='Belum Lunas').sort((x,y)=>x.tanggal.localeCompare(y.tanggal)||Number(x.id)-Number(y.id))[0]||null,false);

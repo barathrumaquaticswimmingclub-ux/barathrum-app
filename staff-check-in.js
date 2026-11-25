@@ -15,20 +15,23 @@ function mount(app,{wrap,transaction,rows,audit,owner}){
  app.post('/api/coach/check-in',coach,wrap(async(req,res)=>{
   const d=req.body,loc=location(d);
   if(!/^[-\w]{10,80}$/.test(d.requestId||'')||!Array.isArray(d.slotKeys)||!d.slotKeys.length||d.slotKeys.length>16||new Set(d.slotKeys).size!==d.slotKeys.length||d.slotKeys.some(k=>typeof k!=='string'))throw fail(400,'Pilih minimal satu jadwal hari ini');
-  const image=await photo(d.photo),hash=crypto.createHash('sha256').update(JSON.stringify({slotKeys:d.slotKeys,photo:d.photo,location:loc})).digest('hex');
+  const note=String(d.catatan||'').trim();if(note.length>1000)throw fail(400,'Catatan maksimal 1000 karakter');
+  const image=await photo(d.photo),hash=crypto.createHash('sha256').update(JSON.stringify({slotKeys:d.slotKeys,photo:d.photo,location:loc,lateReason:d.lateReason||'',catatan:note})).digest('hex');
   const data=await transaction(async db=>{
    await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
-   const staff=(await db.query('SELECT id,nama,username,role,active FROM brtm_users')).rows,{person,slots}=require('./staff-attendance'),id=person(staff,req.user),today=B.today();
+   const staff=(await db.query('SELECT id,nama,username,role,active FROM brtm_users')).rows,{person,slots}=require('./staff-attendance'),id=person(staff,req.user),today=B.today(),time=B.time();
    const existing=(await db.query("SELECT id,data FROM data_klub WHERE jenis='buktistaf' AND data->>'requestId'=$1",[d.requestId])).rows[0],retry=existing?{...existing.data,id:String(existing.id)}:null;
    if(retry){if(retry.reportedBy!==String(req.user.id)||retry.requestHash!==hash)throw fail(409,'Kode penyimpanan sudah dipakai');return {id:retry.id,reportedAt:retry.reportedAt};}
    const available=slots(staff,req.user,await rows(db,'jadwal'),today.slice(0,7)),selected=d.slotKeys.map(k=>available.find(s=>s.key===k&&s.tanggal===today&&!s.libur));
    if(selected.some(s=>!s))throw fail(400,'Jadwal berubah atau libur. Muat ulang dan pilih jadwal hari ini');
    if(selected.some((s,i)=>selected.some((t,j)=>i!==j&&s.mulai<t.selesai&&s.selesai>t.mulai)))throw fail(400,'Pilih sesi dengan jam yang tidak bertumpuk');
+   const lateSlots=selected.filter(s=>time>=s.selesai+':00');
+   if(lateSlots.length&&(d.lateReason!=='langsung-mengajar'||note.length<3))throw fail(400,'Untuk absensi setelah sesi, centang terlupa absen karena langsung mengajar dan isi catatan singkat');
    const records=[...await rows(db,'absenstaf'),...await rows(db,'jamstaf')];
    if(selected.some(s=>records.some(r=>!r.deleted&&r.staffId===id&&r.tanggal===today&&r.mulai<s.selesai&&r.selesai>s.mulai)))throw fail(409,'Ada sesi yang sudah diisi. Muat ulang dan pilih sesi yang belum diisi');
-   const reportedAt=new Date().toISOString(),proof={staffId:id,requestId:d.requestId,requestHash:hash,reportedAt,reportedBy:String(req.user.id),reportedName:req.user.nama,location:loc,photo:image,slotKeys:d.slotKeys};
+   const reportedAt=new Date().toISOString(),proof={staffId:id,requestId:d.requestId,requestHash:hash,reportedAt,reportedBy:String(req.user.id),reportedName:req.user.nama,location:loc,photo:image,slotKeys:d.slotKeys,lateSlotKeys:lateSlots.map(s=>s.key),lateReason:lateSlots.length?d.lateReason:'',catatan:note};
    const result=await db.query("INSERT INTO data_klub(jenis,data) VALUES('buktistaf',$1) RETURNING id",[JSON.stringify(proof)]),checkInId=String(result.rows[0].id);
-   for(const s of selected){const saved={staffId:id,tanggal:today,mulai:s.mulai,selesai:s.selesai,status:'Hadir melatih',kelas:s.kelas,catatan:'Hadir Hari Ini',replacementId:'',sourceId:s.sourceIds[0]||'',atletIds:[],origin:'coach',requestId:d.requestId+':'+s.mulai,revision:crypto.randomUUID(),reportedAt,reportedBy:String(req.user.id),reportedName:req.user.nama,checkInId};const q=await db.query("INSERT INTO data_klub(jenis,data) VALUES('absenstaf',$1) RETURNING id",[JSON.stringify(saved)]);await audit(db,req.user,'hadir-hari-ini','absenstaf',String(q.rows[0].id),null,saved);}
+   for(const s of selected){const saved={staffId:id,tanggal:today,mulai:s.mulai,selesai:s.selesai,status:'Hadir melatih',kelas:s.kelas,catatan:note||'Hadir Hari Ini',entryTiming:time>=s.selesai+':00'?'Diisi setelah sesi':'Diisi pada hari latihan',lateReason:time>=s.selesai+':00'?d.lateReason:'',replacementId:'',sourceId:s.sourceIds[0]||'',atletIds:[],origin:'coach',requestId:d.requestId+':'+s.mulai,revision:crypto.randomUUID(),reportedAt,reportedBy:String(req.user.id),reportedName:req.user.nama,checkInId};const q=await db.query("INSERT INTO data_klub(jenis,data) VALUES('absenstaf',$1) RETURNING id",[JSON.stringify(saved)]);await audit(db,req.user,'hadir-hari-ini','absenstaf',String(q.rows[0].id),null,saved);}
    return {id:checkInId,reportedAt};
   });res.json({data,pesan:'Kehadiran, foto, waktu, dan lokasi tersimpan.'});
  }));

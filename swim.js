@@ -121,7 +121,7 @@ function mount(app, h) {
   }
   app.get('/api/owner/athlete/:id/dashboard',auth,changed,owner,wrap(async(req,res)=>{req.swimOwner=req.user;return dashboard(req,res,req.params.id);}));
   app.get('/swim/api/regular/options',parentAuth,wrap(async(req,res)=>{if(req.swimOwner)throw fail(403,'Gunakan menu bantuan Regular pada aplikasi staf');res.json(await require('./regular').options(pool,h,req.parent.athlete_id,B.today()));}));
-  app.post('/swim/api/regular',parentAuth,wrap(async(req,res)=>{if(req.swimOwner)throw fail(403,'Gunakan menu bantuan Regular pada aplikasi staf');res.json(await transaction(db=>require('./regular').book(db,h,{id:null,username:'orangtua:'+req.parent.id},req.parent.athlete_id,B.today(),req.body.mulai,req.body.batal===true)));}));
+  app.post('/swim/api/regular',parentAuth,wrap(async(req,res)=>{if(req.swimOwner)throw fail(403,'Gunakan menu bantuan Regular pada aplikasi staf');if(req.body.batal!==true&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(req.body.mulai||''))throw fail(400,'Pilih jam kedatangan terlebih dahulu');res.json(await transaction(db=>require('./regular').book(db,h,{id:null,username:'orangtua:'+req.parent.id},req.parent.athlete_id,B.today(),req.body.mulai,req.body.batal===true)));}));
   app.post('/swim/api/viewed',parentAuth,wrap(async(req,res)=>{
     if(req.swimOwner)throw fail(403,'Khusus orang tua');
     const entries=req.body.entries;

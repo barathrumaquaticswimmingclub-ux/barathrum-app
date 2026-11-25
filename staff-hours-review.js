@@ -74,7 +74,7 @@ function augment(report,{staff,schedules,attendance,athletes,workRecords=[],staf
    const listed=row.laporanPelatih.find(r=>r.id===m.id);if(listed)listed.review=closed(m)?(m.ownerManaged?'Dicatat Owner':'Tercatat'):'Menunggu sesi selesai';
    if(!closed(m))continue;
    const a=mins(m.mulai),b=mins(m.selesai),parts=new Date(m.tanggal+'T12:00:00Z').getUTCDay()===6?[[a,b]]:[[a,Math.min(b,720)],[Math.max(a,720),b]].filter(([x,y])=>y>x);
-   for(const [x,y] of parts)row.rincian.push({tanggal:m.tanggal,hari:day(m.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(m.tanggal,clock(x)),menit:worked(m.status)?y-x:0,jam:worked(m.status)?(y-x)/60:0,status:m.status,keterangan:m.status+(m.catatan?' · '+m.catatan:''),kelas:[{nama:m.kelas||'Latihan tambahan',atlet:(m.atletIds||[]).map(pupil)}],staffReportId:m.id,coachReported:true,perluVerifikasi:false,checkInId:m.checkInId});
+   for(const [x,y] of parts)row.rincian.push({tanggal:m.tanggal,hari:day(m.tanggal),mulai:clock(x),selesai:clock(y),kategori:period(m.tanggal,clock(x)),menit:worked(m.status)?y-x:0,jam:worked(m.status)?(y-x)/60:0,status:m.status,keterangan:m.status+(m.entryTiming==='Diisi setelah sesi'?' · Diisi setelah sesi':'')+(m.catatan?' · '+m.catatan:''),kelas:[{nama:m.kelas||'Latihan tambahan',atlet:(m.atletIds||[]).map(pupil)}],staffReportId:m.id,coachReported:true,perluVerifikasi:false,checkInId:m.checkInId});
   }
   row.rincian.sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.mulai.localeCompare(b.mulai));
   const minutes=kind=>{const dates=[...new Set(row.rincian.map(d=>d.tanggal))];return dates.reduce((n,date)=>n+union(row.rincian.filter(d=>d.tanggal===date&&d.kategori===kind&&d.menit>0).map(d=>[mins(d.mulai),mins(d.selesai)])),0);};

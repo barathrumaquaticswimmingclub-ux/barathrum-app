@@ -17,7 +17,8 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(owner,'post','/api/orangtua/siapkan');await call(parent,'post','/swim/api/login',{username:a.nama,password:'brtm'});
  await call(anon,'post','/swim/api/regular',{mulai:'15:00'},401);
  await call(parent,'post','/swim/api/regular',{mulai:'10:00'},409);
- const result=await call(parent,'post','/swim/api/regular',{}),sid=result.jadwalId;
+ await call(parent,'post','/swim/api/regular',{},400);
+ const result=await call(parent,'post','/swim/api/regular',{mulai:'15:00'}),sid=result.jadwalId;
  assert.equal((await call(parent,'post','/swim/api/regular',{mulai:'15:00'})).jadwalId,sid);
  const dashboard=await call(parent,'get','/swim/api/dashboard');
  const shared=dashboard.jadwal.find(s=>s.id===sid);assert.equal(shared.coaches.length,2);
@@ -37,7 +38,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  assert.equal((await call(fauzan,'get','/api/absensi')).filter(r=>r.atletId===a.id).length,1);
  assert.equal((await call(owner,'get','/api/pembayaran')).find(x=>x.id===p.id).sisaPertemuan,3);
  const doneOptions=await call(parent,'get','/swim/api/regular/options');assert.equal(doneOptions.selesaiDiabsen,true);assert(doneOptions.slots.every(s=>!s.terdaftar&&!s.tersedia));
- await call(parent,'post','/swim/api/regular',{},409);
+ await call(parent,'post','/swim/api/regular',{mulai:'15:00'},409);
  await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day},409);
  await call(parent,'post','/swim/api/regular',{batal:true},409);
  await call(parent,'post','/api/owner/billing/'+unpaid.id+'/remind',{channel:'app'},401);
@@ -50,7 +51,7 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  clock='19:41:00';
  await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day,batal:true});
  assert((await call(parent,'get','/swim/api/regular/options')).slots.every(s=>!s.tersedia));
- await call(parent,'post','/swim/api/regular',{},409);
+ await call(parent,'post','/swim/api/regular',{mulai:'15:00'},409);
  const late=await call(owner,'post','/api/owner/regular/'+a.id,{tanggal:day});
  assert(late.jadwalId);
  await call(owner,'post','/api/owner/regular/'+b.id,{tanggal:day},409);
