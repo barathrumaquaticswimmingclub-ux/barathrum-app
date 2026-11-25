@@ -234,7 +234,7 @@ function mount(app, h) {
   app.get('/swim/api/statement',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');const a=await record(pool,'atlet',req.parent.athlete_id),packs=(await payments()).filter(p=>String(p.atletId)===String(a.id));require('./reports').statement(res,a,await require('./parent-ledger').list(pool,a.id,packs));}));
   app.get('/swim/api/documents/:kind/:id',parentAuth,wrap(async(req,res)=>{
     const kind=req.params.kind;let p;
-    if(kind==='notice'){const n=(await pool.query('SELECT * FROM brtm_billing_notices WHERE id=$1',[req.params.id])).rows[0];if(n&&!n.data.sppSuperseded)p=n.data;}
+    if(kind==='notice'){const n=(await pool.query('SELECT * FROM brtm_billing_notices WHERE id=$1',[req.params.id])).rows[0];if(n&&!n.data.sppSuperseded){p=n.data;const current=require('./billing-policy').currentNotice(n,(await payments()).filter(p=>String(p.atletId)===String(n.athlete_id)));if(current)p={...current,atletId:String(n.athlete_id)};}}
     else if(['invoice','receipt'].includes(kind))p=await record(pool,'pembayaran',req.params.id);
     if(!p||!req.swimOwner&&String(p.atletId)!==String(req.parent.athlete_id))throw fail(404,'Dokumen tidak tersedia');
     if(kind==='invoice'&&p.jenisKelas==='Prestasi Class'){p=B.prestasiView(p,(await SPP.firstPayments(pool))[p.atletId]);if(!p.invoiceTersedia)throw fail(409,'Invoice periode ini tersedia pada '+p.invoicePada+'. Toleransi pembayaran sampai akhir bulan.');}
@@ -304,10 +304,11 @@ function mount(app, h) {
   function cleanPayload(input, kind) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail(400, 'Data formulir tidak valid');
     const out = {};
-    for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) {
+    for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','emailOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) {
       if (input[k] != null && typeof input[k] !== 'string') throw fail(400, 'Isian tidak valid');
       out[k] = String(input[k] || '').trim(); if (out[k].length > (k === 'nama' ? 150 : 500)) throw fail(400, 'Isian terlalu panjang');
     }
+    if(out.emailOrtu&&!require('./billing-policy').email(out.emailOrtu))throw fail(400,'Alamat email orang tua tidak valid');
     if (/^\d{2}-\d{2}-\d{4}$/.test(out.tanggalLahir)) out.tanggalLahir=out.tanggalLahir.split('-').reverse().join('-');
     if (!out.nama || !B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today() || !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nama, tanggal lahir, dan WhatsApp orang tua wajib valid');
     if (!['Laki-laki','Perempuan'].includes(out.jk)) throw fail(400, 'Jenis kelamin tidak valid');
@@ -335,7 +336,7 @@ function mount(app, h) {
       const old = await record(db, 'atlet', target, true);
       // Keep existing class, name, status and training/financial history. Fill missing profile fields only.
       const data = { ...old };
-      for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','jadwalPilihan']) if (!data[k] && p[k]) data[k] = p[k];
+      for (const k of ['namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','emailOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','jadwalPilihan']) if (!data[k] && p[k]) data[k] = p[k];
       if(source==='Formulir BRTM'&&p.jadwalPilihan)data.jadwalPilihan=p.jadwalPilihan;
       a = await save(db, system, 'atlet', data, old);
     }
@@ -362,7 +363,7 @@ function mount(app, h) {
     catch (e) {
       if (e.status !== 400 || !req.body.data || typeof req.body.data !== 'object' || Array.isArray(req.body.data)) throw e;
       validationError = e.message; data = {};
-      for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
+      for (const k of ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','emailOrtu','namaOrtu','tujuan','riwayatRenang','persetujuan','versiKetentuan','kelompok','jadwalPilihan']) data[k] = typeof req.body.data[k] === 'string' ? req.body.data[k].slice(0,500) : '';
     }
     const result = await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');

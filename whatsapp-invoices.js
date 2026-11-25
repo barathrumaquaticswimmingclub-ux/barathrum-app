@@ -9,7 +9,7 @@ async function initDb(db){
  await db.query('INSERT INTO brtm_wa_invoice_config(id) VALUES(1) ON CONFLICT DO NOTHING');
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_wa_invoice_jobs(id SERIAL PRIMARY KEY,payment_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,athlete_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,event_key TEXT UNIQUE NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,message_id TEXT UNIQUE,last_error TEXT,recipient TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),next_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
 }
-function eligible(p){return !p.dibatalkan&&!p.sppSuperseded&&!p.sppTidakDitagih&&p.status==='Belum Lunas'&&Number(p.totalTagihan)>0&&(B.canonical(p.jenisKelas)!=='Prestasi Class'||p.invoiceTersedia===true);}
+function eligible(p){return require('./billing-policy').eligible(p);}
 async function enqueue(db,packs){
  const c=(await db.query('SELECT enabled FROM brtm_wa_invoice_config WHERE id=1')).rows[0];if(!c?.enabled)return;
  for(const p of packs.filter(eligible)){

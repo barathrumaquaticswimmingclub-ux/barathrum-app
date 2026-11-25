@@ -69,3 +69,34 @@ Manifest memakai tampilan standalone, ikon PNG 192/512 dan maskable. Service wor
 BRTM installs at `/club/` and BRTM SWIM at `/swim/`, with different icons and non-overlapping scopes. Manifest IDs stay stable for existing installs. The SWIM Owner uses the existing active Owner account (including its current password); no new default password is published. Owner SWIM cookies cannot authenticate staff APIs. Owners can see active Prestasi/nonprestasi totals, all children's dashboards, edit biodata/photo, disable or reversibly remove a SWIM dashboard/account without deleting operational history. Parent profiles include only their own biodata and a private authenticated photo endpoint. Photos and owner sessions require full PostgreSQL backups.
 
 The Google installer migrates the existing forms in place, preserves form IDs and triggers, and writes a private snapshot of existing answers to the Owner's Drive before removing superseded questions. New forms require consent, all biodata, DD-MM-YYYY birth dates and an image upload. **Google's API cannot create file-upload items:** in each form's Google editor, convert `Foto anak (bebas)` to File upload, images only, one file, required. The installer preserves that item on reruns. Apply the blue theme in Google's editor. File uploads require respondents to sign into Google. The script needs Drive read access for photos and Drive write access for the one-time private response snapshot. It sends a small photo thumbnail when available, otherwise an image up to 5 MB, using the existing authenticated integration. Original uploads remain private in the Owner's Drive; no public Drive sharing is required. Old responses without the new schema remain readable and idempotent.
+
+### Invoice: aplikasi, push, email dan WhatsApp manual
+
+Invoice dan PDF tetap tersedia di BRTM SWIM. Notifikasi HP memerlukan izin
+orang tua. Email orang tua dapat diisi pada formulir pendaftaran, edit Data
+Atlet atau Profil & foto BRTM SWIM; kosong berarti tidak dikirim lewat email.
+
+Email otomatis mendukung SMTP (termasuk akun Gmail dengan kredensial aplikasi)
+melalui `BRTM_EMAIL_FROM`, `BRTM_SMTP_HOST`, `BRTM_SMTP_PORT` (465/587),
+`BRTM_SMTP_USER` dan `BRTM_SMTP_PASSWORD`; koneksi wajib TLS. Alternatifnya,
+menggunakan `RESEND_API_KEY` dan `BRTM_EMAIL_FROM` (alamat
+pengirim yang sudah diverifikasi di Resend, tanpa nama tampilan). Tanpa sambungan lengkap,
+email tidak dikirim; Owner melihat status sambungan pada Pembayaran → Saluran
+invoice. Setiap email membawa satu invoice PDF, dikirim ke satu wali anak terkait.
+Status `accepted` berarti diterima layanan pengiriman, bukan bukti masuk kotak
+masuk. Penolakan eksplisit ditandai gagal, timeout/crash ditandai perlu diperiksa
+dan tidak dikirim ulang otomatis. Biaya/batas paket layanan email mengikuti akun
+pengirim; aplikasi tidak membuat langganan layanan email.
+
+Prestasi: pengiriman tagihan melalui email, push, pengingat aplikasi dan persiapan
+WhatsApp hanya pada hari terakhir bulan menurut Asia/Jakarta. Antrean yang
+tertunda tidak dikirim pada tanggal 1. Tagihan dibaca ulang sebelum pengiriman;
+Lunas, dibatalkan, digantikan atau tidak ditagih tidak dikirim. Konfirmasi
+pembayaran diterima tetap dapat dikirim segera karena bukan penagihan baru.
+Riwayat invoice tetap dapat dibuka; status terkini ada pada SPP & pembayaran.
+
+Migrasi saluran satu kali mematikan invoice WA otomatis sesuai pilihan Owner.
+WhatsApp manual menyiapkan pesan/PDF; Owner memilih kontak dan menekan Kirim
+di WhatsApp Business. Pengaktifan kembali pengiriman API Meta merupakan pilihan
+terpisah yang dapat menimbulkan biaya Meta. Backup operasional menyertakan tabel
+antrean email dan penanda migrasi, tetapi tidak menyertakan rahasia pengirim.

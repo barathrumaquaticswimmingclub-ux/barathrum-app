@@ -24,7 +24,7 @@ async function billing(db,packs){
     const month=B.prestasiPeriod(B.today(),first[a.id]);
     // Bill the cycle already in progress, never the following month's unpaid preview.
     const existing=related.find(p=>p.periode===month);
-    if(existing?.status==='Belum Lunas'&&existing.totalTagihan>0)await noticeBill(db,a,'prestasi-periode:'+a.id+':'+month,{jumlah:existing.jumlah,biayaPendaftaran:existing.biayaPendaftaran||0,potonganDiskon:existing.potonganDiskon||0,totalTagihan:existing.totalTagihan,periode:month,...B.prestasiCycle(month,first[a.id]),jatuhTempo:B.prestasiDue(month)});
+    if(existing?.status==='Belum Lunas'&&existing.totalTagihan>0)await noticeBill(db,a,'prestasi-periode:'+a.id+':'+month,{paymentId:existing.id,jumlah:existing.jumlah,biayaPendaftaran:existing.biayaPendaftaran||0,potonganDiskon:existing.potonganDiskon||0,totalTagihan:existing.totalTagihan,periode:month,...B.prestasiCycle(month,first[a.id]),jatuhTempo:B.prestasiDue(month)});
    }
   }else if(related[0]?.sisaPertemuan===0){const p=related[0];await noticeBill(db,a,'paket-habis:'+p.id,{jumlah:p.jumlah,biayaPendaftaran:0,potonganDiskon:p.potonganDiskon,totalTagihan:p.jumlah-p.potonganDiskon,totalPertemuan:p.totalPertemuan});}
  }

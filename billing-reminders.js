@@ -8,7 +8,7 @@ function mount(app,h){const {pool,owner,wrap,record,transaction,audit}=h;
  await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
  const p=(await h.payments(db,true)).find(p=>p.id===String(req.params.id));
  if(!p)throw fail(404,'Tagihan tidak ditemukan');
- if(p.status!=='Belum Lunas'||p.sppTidakDitagih||p.totalTagihan<=0)throw fail(409,'Pengingat hanya untuk tagihan yang belum lunas');
+ require('./billing-policy').assertReminder(p);
  if(p.jenisKelas==='Prestasi Class'&&p.invoiceTersedia===false)throw fail(409,'Invoice belum tersedia untuk periode ini');
  const a=await record(db,'atlet',p.atletId),body=message(p);
  if(req.body.channel==='app'){
