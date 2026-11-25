@@ -58,7 +58,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   const app = express();
   app.disable('x-powered-by'); app.set('trust proxy', 1);
   app.use((req, res, next) => {
-    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
+    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); next();
   });
   app.locals.release=require('./releases').mount(app,{enforce:enforceRelease,release});
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
