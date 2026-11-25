@@ -47,7 +47,7 @@ async function main(){
  let staffSent=0;await C.deliver(pool,async(s,payload)=>{staffSent++;assert(!payload.includes(feedback.body));assert.equal(JSON.parse(payload).url,'/club/');});await C.deliver(pool,async()=>staffSent++);assert.equal(staffSent,1);
  // Account switching on a shared device must not deliver the old user's pending jobs.
  await send(parent,'post','/swim/api/feedback',{...feedback,requestId:'parent-feedback-test-003'},201);await send(other,'post','/api/community/push/subscribe',{subscription:sub});await C.deliver(pool,async()=>staffSent++);assert.equal(staffSent,1);
- await send(owner,'delete','/api/atlet/'+a.id,{},400);
+ await send(coach,'delete','/api/atlet/'+a.id,{},403);
  await send(owner,'post','/api/tester/reset',{},409);
  const legacy=(await pool.query("INSERT INTO data_klub(jenis,data,dibuat_pada) VALUES('atlet',$1,'2025-06-01') RETURNING id",[JSON.stringify({nama:'Atlet Lama',status:'Nonaktif',kelompok:'Private Class'})])).rows[0];
  await C.initDb(pool);const history=await send(owner,'get','/api/community/members?year=2025');assert.equal(history.throughYear,1);assert.equal(history.newInYear,1);assert.equal(history.members.find(m=>m.athlete_id===legacy.id).member_id,C.memberId(history.members.find(m=>m.athlete_id===legacy.id).member_number,'2025-06-01T00:00:00Z'));
@@ -125,6 +125,15 @@ async function main(){
  w.document.querySelector('[data-member-athlete="10"]').value='1';w.document.querySelector('[data-member-athlete="20"]').value='2';w.$('memberNumberReason').value='Permintaan Owner untuk nomor awal';
  await w.$('memberNumberForm').onsubmit({preventDefault(){}});
  assert.deepEqual(posted.changes,[{athleteId:'20',memberNumber:2,expectedMemberId:'BRTM0000101012025'},{athleteId:'10',memberNumber:1,expectedMemberId:'BRTM0000201012025'}]);assert(closed&&reloaded);dom.window.close();
- await db.close();console.log('PASS community: audited atomic Owner number swaps, conflicts/stale reads, audit rollback, next sequence, parent projections and UI, permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching and backups.');
+ // Owner deletion must also remove delivered and pending staff push jobs for
+ // this child's feedback, while retaining every other child's records.
+ const otherFeedback=(await send(parent2,'post','/swim/api/feedback',{...feedback,requestId:'other-child-delete-check'},201));
+ const notices=(await pool.query('SELECT id FROM brtm_staff_notifications WHERE feedback_id=$1',[otherFeedback.id])).rows;
+ await send(owner,'delete','/api/atlet/'+a.id,{});
+ assert.equal((await pool.query('SELECT id FROM brtm_feedback WHERE athlete_id=$1',[a.id])).rows.length,0);
+ assert.equal((await pool.query('SELECT id FROM brtm_feedback WHERE id=$1',[otherFeedback.id])).rows.length,1);
+ assert.equal((await pool.query('SELECT id FROM brtm_staff_notifications WHERE feedback_id=$1',[otherFeedback.id])).rows.length,notices.length);
+ await send(parent,'get','/swim/api/dashboard',undefined,401);
+ await db.close();console.log('PASS community: audited atomic Owner number swaps, conflicts/stale reads, audit rollback, next sequence, parent projections and UI, permanent member IDs, registration counts, year validation, targeted announcements and push, deduplication, feedback privacy, correct child binding, owner/coach routing, replies, read isolation, device account switching, athlete deletion with push jobs and backups.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});

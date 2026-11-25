@@ -21,7 +21,6 @@ const {initDb,createApp,passwordHash}=require('./server'),T=require('./training-
  await call(owner,'put','/api/training/reports',{date,rosterRevision:0,items:[item]},409);await call(owner,'put','/api/training/reports',{date,rosterRevision:1,items:[item]});await call(owner,'put','/api/training/reports',{date,rosterRevision:1,items:[item]},409);
  let d=await call(owner,'get','/api/training/day?date='+date);assert.equal(d.reports.length,1);assert.deepEqual(d.reports[0].payload.rosterSnapshot.map(x=>x.id),[thania,bastian]);
  await call(owner,'post','/api/training/roster',{date,revision:1,lines:[[bastian],[],[thania],[]]});d=await call(owner,'get','/api/training/day?date='+date);assert.deepEqual(d.reports[0].payload.rosterSnapshot.map(x=>x.id),[thania,bastian]);assert.deepEqual(d.roster.lines[2],[thania]);
- await call(owner,'delete','/api/atlet/'+thania,undefined,400);
  const rid=crypto.randomUUID(),ai={date,line:1,reportRevision:1,requestId:rid};const prior=process.env.OPENAI_API_KEY;delete process.env.OPENAI_API_KEY;await call(owner,'post','/api/training/ai',ai,503);assert.equal(calls,0);process.env.OPENAI_API_KEY='test-placeholder-never-sent';
  const result=await call(owner,'post','/api/training/ai',ai);assert.equal(result.status,'completed');assert.equal(calls,1);await call(owner,'post','/api/training/ai',ai);assert.equal(calls,1);
  await call(owner,'post','/api/training/ai/'+rid+'/apply',{targetDate:'2026-11-17',planRevision:1},409);await call(owner,'post','/api/training/ai/'+rid+'/apply',{targetDate:'2026-11-17',planRevision:0});const tomorrow=await call(owner,'get','/api/training/day?date=2026-11-17');assert(tomorrow.plan.draft.lines[0].includes('4 x 50'));assert(!T.unsafeFoundation(tomorrow.plan.draft.lines[1]));
@@ -31,5 +30,10 @@ const {initDb,createApp,passwordHash}=require('./server'),T=require('./training-
  const shifted=await call(owner,'get','/api/training/day?date=2027-04-05');assert(shifted.plan.original.phase.startsWith('TAPER'));assert(shifted.plan.original.note.includes('POPDA Kota 2027'));const backup=await call(owner,'get','/api/backup');for(const t of T.TABLES)assert(Array.isArray(backup.tables[t]));assert(backup.tables.brtm_training_reports.length===1);const exportData=await call(owner,'get','/api/training/export');assert.equal(exportData.format,'BRTM-training-v2');
  const future='2099-01-01';await call(owner,'put','/api/training/reports',{date:future,rosterRevision:2,items:[item]},400);
  const page=await owner.get('/training/');assert.equal(page.status,200);assert(!page.text.includes('__BRTM_RELEASE__'));assert(page.text.includes('Laporan'));
+ await call(owner,'delete','/api/atlet/'+thania);
+ const deletedDay=await call(owner,'get','/api/training/day?date='+date);
+ assert(!deletedDay.roster.lines.flat().includes(thania));
+ assert(deletedDay.roster.lines.flat().includes(bastian));
+ assert.deepEqual(deletedDay.reports[0].payload.rosterSnapshot.map(x=>x.id),[thania,bastian]);
  if(prior===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=prior;await db.close();console.log('PASS Training Board: auth, real athlete rosters, effective dates, immutable report snapshots, validation, revision conflicts, peak updates, backup, AI errors/cache, stale-analysis protection and explicit program application.');
 })().catch(e=>{console.error(e);process.exit(1);});

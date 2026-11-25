@@ -460,6 +460,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
         for(const f of feedback){
           await audit(c,req.user,'hapus','feedback',String(f.id),f,null);
           await c.query('DELETE FROM brtm_feedback_replies WHERE feedback_id=$1',[f.id]);
+          await c.query('DELETE FROM brtm_staff_push_jobs WHERE notification_id IN (SELECT id FROM brtm_staff_notifications WHERE feedback_id=$1)',[f.id]);
           await c.query('DELETE FROM brtm_staff_notifications WHERE feedback_id=$1',[f.id]);
         }
         await c.query('DELETE FROM brtm_feedback WHERE athlete_id=$1',[old.id]);
