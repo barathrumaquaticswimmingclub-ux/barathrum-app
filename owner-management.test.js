@@ -27,6 +27,16 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  const classAfter=(await call(o,'get','/api/pembayaran')).find(p=>p.id===classPack.id);assert.equal(classAfter.jenisKelas,classBefore.jenisKelas);assert.equal(classAfter.totalTagihan,classBefore.totalTagihan);assert.equal(classAfter.sisaPertemuan,classBefore.sisaPertemuan);
  await call(coach,'put','/api/atlet/'+classFix.id,{...classEdited,kelompok:'Group Class'},403);
  await call(o,'post','/api/owner/package/'+classPack.id+'/cancel',{reason:'Selesai uji koreksi kelas aktivasi'});
+ const newcomer=await create('atlet',{nama:'New Registration Fee',kelompok:'Group Class',status:'Nonaktif'});
+ const feeBody={...initial,atletId:newcomer.id,requestId:'activation-new-fee-123',harga:150000,sisa:4,biayaPendaftaran:50000,status:'Belum Lunas'};
+ const feePack=(await call(o,'post','/api/owner/activation',feeBody)).data;
+ assert.equal(feePack.biayaPendaftaran,50000);assert.equal(feePack.totalTagihan,200000);
+ assert.equal((await call(o,'post','/api/owner/activation',feeBody)).data.id,feePack.id);
+ const feeEdit=(await call(o,'post','/api/owner/activation',{...feeBody,id:feePack.id,requestId:'activation-fee-edit-123'})).data;
+ assert.equal(feeEdit.totalTagihan,200000);
+ const noFee=(await call(o,'post','/api/owner/activation',{...feeBody,id:feePack.id,requestId:'activation-fee-remove-123',biayaPendaftaran:0})).data;
+ assert.equal(noFee.totalTagihan,150000);
+ await call(o,'post','/api/owner/package/'+feePack.id+'/cancel',{reason:'Selesai uji biaya pendaftaran'});
  const staff=(await call(o,'get','/api/akun')).find(x=>x.username==='coach');
  const schedule=await create('jadwal',{nama:'Sesi uji kuota',tanggal:B.today(),jenisKelas:a.kelompok,coachId:staff.id,mulai:'15:00',selesai:'16:00',lokasi:'Hotel Grand Wahid',atletIds:[a.id]});
  const entry=await create('absensi',{atletId:a.id,jadwalId:schedule.id,tanggal:B.today(),status:'Alpa'});
