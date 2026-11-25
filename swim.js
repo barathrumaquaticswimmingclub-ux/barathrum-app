@@ -308,6 +308,7 @@ function mount(app, h) {
       if (input[k] != null && typeof input[k] !== 'string') throw fail(400, 'Isian tidak valid');
       out[k] = String(input[k] || '').trim(); if (out[k].length > (k === 'nama' ? 150 : 500)) throw fail(400, 'Isian terlalu panjang');
     }
+    if(!out.emailOrtu)out.emailOrtu=require('./registration-email').extract(input);
     if(out.emailOrtu&&!require('./billing-policy').email(out.emailOrtu))throw fail(400,'Alamat email orang tua tidak valid');
     if (/^\d{2}-\d{2}-\d{4}$/.test(out.tanggalLahir)) out.tanggalLahir=out.tanggalLahir.split('-').reverse().join('-');
     if (!out.nama || !B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today() || !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nama, tanggal lahir, dan WhatsApp orang tua wajib valid');
@@ -367,6 +368,7 @@ function mount(app, h) {
     }
     const result = await transaction(async c => {
       await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      if(!data.emailOrtu)data.emailOrtu=require('./registration-email').extract(req.body.data);
       const old = (await c.query('SELECT id,status FROM brtm_registrations WHERE kind=$1 AND response_id=$2', [kind, responseId])).rows[0];
       if (old) return { status: old.status, duplicate: true };
       const r = (await c.query("INSERT INTO brtm_registrations (kind,response_id,payload,status) VALUES ($1,$2,$3,'Perlu diperiksa') RETURNING *", [kind, responseId, JSON.stringify(data)])).rows[0];

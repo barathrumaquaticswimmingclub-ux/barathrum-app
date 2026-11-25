@@ -100,3 +100,16 @@ WhatsApp manual menyiapkan pesan/PDF; Owner memilih kontak dan menekan Kirim
 di WhatsApp Business. Pengaktifan kembali pengiriman API Meta merupakan pilihan
 terpisah yang dapat menimbulkan biaya Meta. Backup operasional menyertakan tabel
 antrean email dan penanda migrasi, tetapi tidak menyertakan rahasia pengirim.
+
+Pengirim pilihan Owner: `barathrumaquaticswimmingclub@gmail.com` (default apabila
+`BRTM_EMAIL_FROM` kosong). Alamat ini saja tidak mengaktifkan pengiriman; sambungan
+SMTP atau Resend tetap diperlukan. Akun Gmail yang terhubung di ChatGPT tidak
+memberikan kredensial kepada aplikasi Railway.
+
+Email wali diambil dari kolom email pendaftaran. Data lama hanya diisi otomatis
+jika jawaban sudah berstatus Tersambung dengan `athlete_id` yang pasti dan hanya
+memiliki satu alamat email valid. Email profil yang sudah ada tidak ditimpa;
+konflik email tidak dipilih berdasarkan nama. Formulir Google lama disetel tidak
+mengumpulkan email, jadi email yang tidak pernah disimpan tidak dapat ditebak.
+Installer Google Forms diperbarui dengan kolom email wali opsional; script yang
+sudah terpasang di Google tetap perlu diperbarui dan dijalankan kembali oleh Owner.

@@ -495,7 +495,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     return scheduleSync;
   }
   app.locals.rosterAudit=()=>transaction(c=>require('./roster-audit').inspect(c,{rows,payments}));
-  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));await require('./billing-channels').enqueue(c,await payments(c));});
+  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./registration-email').sync(c);await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));await require('./billing-channels').enqueue(c,await payments(c));});
   return app;
 }
 if (require.main === module) {
