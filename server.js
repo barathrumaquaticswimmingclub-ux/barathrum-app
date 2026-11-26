@@ -19,7 +19,7 @@ function text(value, label, required = true, max = 500) {
 }
 function date(value, label = 'Tanggal') { if (!B.validDate(value)) throw fail(400, `${label} tidak valid`); return value; }
 function id(value) { const v = String(value || ''); if (!/^[1-9]\d{0,14}$/.test(v)) throw fail(400, 'ID tidak valid'); return v; }
-function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change }; }
+function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change, emailRequired: u.role!=='owner'&&!require('./billing-policy').email(u.profile?.email||'') }; }
 async function passwordHash(password, minimum = 5) {
   if (typeof password !== 'string' || password.length < minimum || password.length > 128) throw fail(400, 'Kata sandi harus 5–128 karakter');
   const salt = crypto.randomBytes(16).toString('hex');

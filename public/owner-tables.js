@@ -41,7 +41,7 @@ const beforeTableList=renderList;renderList=function(){
  }
  if(k==='akun'){
   const staff=(S.workspace?.staff||[]).filter(u=>!u.profile.archived&&(u.nama+' '+u.username).toLowerCase().includes(q));
-  $('records').innerHTML=grid(['No.','Foto','Nama','Jabatan','WhatsApp','Status','Pengaturan'],staff.map((u,i)=>[i+1,u.profile.photo?`<img class="staff-photo" src="/api/owner/staff/${u.id}/photo" alt="Foto ${esc(u.nama)}">`:'—',esc(u.nama),esc(u.profile.jabatan||roleName(u.role)),esc(u.profile.noWa||''),badge(u.active?'Aktif':'Nonaktif'),btn('credentials',u.id,'Setting ID / password')+btn('staff',u.id,'Edit data')+(u.role==='owner'?'':btn('remove-staff',u.id,'Hapus data','danger'))]));
+  $('records').innerHTML=grid(['No.','Foto','Nama','Jabatan','WhatsApp','Email','Status','Pengaturan'],staff.map((u,i)=>[i+1,u.profile.photo?`<img class="staff-photo" src="/api/owner/staff/${u.id}/photo" alt="Foto ${esc(u.nama)}">`:'—',esc(u.nama),esc(u.profile.jabatan||roleName(u.role)),esc(u.profile.noWa||''),esc(u.profile.email||'Belum diisi'),badge(u.active?'Aktif':'Nonaktif'),btn('credentials',u.id,'Setting ID / password')+btn('staff',u.id,'Edit data')+(u.role==='owner'?'':btn('remove-staff',u.id,'Hapus data','danger'))]));
  }
  if(k==='program'){
   const list=(S.records.program||[]).filter(p=>p.jenis==='Program'&&(!m||p.tanggal.startsWith(m))&&[p.tanggal,p.dryland].join(' ').toLowerCase().includes(q)).sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||Number(b.id)-Number(a.id));

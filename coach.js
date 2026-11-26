@@ -27,7 +27,16 @@ async function context(db,h){return {attendance:await h.rows(db,'absensi'),notes
 async function status(db,h,athlete,date,current=null,ctx=null){const c=ctx||await context(db,h);return policy({...c,athlete,date,current,registeredAt:c.members.find(m=>String(m.athlete_id)===String(athlete.id))?.registered_at});}
 async function enforce(db,h,req,entry){if(req.user.role!=='coach'||entry.status!=='Hadir')return;const a=await h.record(db,'atlet',entry.atletId),p=await status(db,h,a,entry.tanggal,entry);if(p.required)throw fail(400,'Noted untuk orang tua wajib diisi: '+p.reason+'. Batas periode '+p.end+'.');}
 function mount(app,h){const {pool,wrap,rows,record,transaction,audit}=h;
- app.get('/api/coach/profile',wrap(async(req,res)=>{const u=(await pool.query('SELECT id,nama,role,profile FROM brtm_users WHERE id=$1',[req.user.id])).rows[0];res.json({id:String(u.id),nama:u.nama,jabatan:u.profile.jabatan||(u.role==='coach'?'Pelatih':u.role==='prestasi'?'Tim Prestasi':'Owner'),noWa:u.profile.noWa||'',foto:u.profile.photo?'/api/coach/profile/photo':null});}));
+ app.post('/api/coach/email',wrap(async(req,res)=>{
+  if(!['coach','prestasi'].includes(req.user.role))throw fail(403,'Khusus akun pelatih');
+  const d=req.body||{};if(Object.keys(d).some(k=>k!=='email')||!require('./billing-policy').email(d.email||''))throw fail(400,'Isi email aktif yang valid');
+  const email=String(d.email).trim();
+  await transaction(async c=>{const u=(await c.query('SELECT * FROM brtm_users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];if(require('./billing-policy').email(u.profile?.email||''))return;
+   const profile={...u.profile,email};await c.query('UPDATE brtm_users SET profile=$1 WHERE id=$2',[JSON.stringify(profile),u.id]);await audit(c,req.user,'lengkapi-email-pelatih','akun',String(u.id),{email:u.profile?.email||''},{email});
+  });res.json({ok:true,pesan:'Email tersimpan'});
+ }));
+
+ app.get('/api/coach/profile',wrap(async(req,res)=>{const u=(await pool.query('SELECT id,nama,role,profile FROM brtm_users WHERE id=$1',[req.user.id])).rows[0];res.json({id:String(u.id),nama:u.nama,jabatan:u.profile.jabatan||(u.role==='coach'?'Pelatih':u.role==='prestasi'?'Tim Prestasi':'Owner'),noWa:u.profile.noWa||'',email:u.profile.email||'',foto:u.profile.photo?'/api/coach/profile/photo':null});}));
  app.get('/api/coach/profile/photo',wrap(async(req,res)=>{const p=(await pool.query('SELECT profile FROM brtm_users WHERE id=$1',[req.user.id])).rows[0]?.profile.photo;if(!p)throw fail(404,'Foto profil belum tersedia');res.type(p.mime).send(Buffer.from(p.base64,'base64'));}));
  app.get('/api/coach/noted',wrap(async(req,res)=>{
   if(!['owner','coach'].includes(req.user.role))throw fail(403,'Khusus Coach dan Owner');

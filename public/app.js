@@ -24,6 +24,7 @@ async function request(url, options = {}) {
 }
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.remove('hidden'); $('notice').classList.toggle('error', error); }
 function showLogin() {
+  $('staffEmailView')?.remove();
   loadSequence++;loadingData=false;S.pendingSnapshot=null;setDataAvailable(false);
   for(const key of ['workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted','staffAttendance'])delete S[key];
   S.user = null; S.records = {}; S.config = null; S.viewToken++;
@@ -91,6 +92,15 @@ async function load(options = {}) {
 async function start(user) {
   S.user = user; $('loginView').classList.add('hidden');
   if (user.mustChangePassword) { $('app').classList.add('hidden'); openPassword(true); return; }
+  if(user.emailRequired){
+    $('app').classList.add('hidden');
+    let screen=$('staffEmailView');if(!screen){screen=document.createElement('section');screen.id='staffEmailView';screen.className='login-view';$('loginView').after(screen);}
+    screen.innerHTML='<div class="login-panel"><form id="staffEmailForm" class="login-form"><p class="eyebrow">DATA PELATIH</p><h2>Lengkapi email aktif</h2><p>Email ini disimpan untuk pesan dan pengingat BRTM. Cukup isi sekali.</p><label for="staffEmail">Email aktif</label><input id="staffEmail" name="email" type="email" autocomplete="email" maxlength="254" required><button class="primary" type="submit">Simpan dan lanjutkan</button><p id="staffEmailError" class="error" role="alert"></p><button id="staffEmailLogout" type="button" class="secondary">Keluar</button></form></div>';
+    $('staffEmailLogout').onclick=async()=>{await logout();screen.remove();};
+    $('staffEmailForm').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('[type=submit]');button.disabled=true;try{await request('/api/coach/email',{method:'POST',body:JSON.stringify({email:$('staffEmail').value.trim()})});const d=await request('/auth/me');screen.remove();await start(d.user);}catch(err){$('staffEmailError').textContent=err.message;}finally{button.disabled=false;}};
+    return;
+  }
+  $('staffEmailView')?.remove();
   S.config = await request('/api/config'); $('app').classList.remove('hidden');
   $('userName').textContent = user.nama; $('roleBadge').textContent = roleName(user.role); $('accountButton').textContent = user.nama.slice(0,1).toUpperCase();
   $('dateLabel').textContent = new Intl.DateTimeFormat('id-ID',{ weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Jakarta' }).format(new Date()).toUpperCase();
