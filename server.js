@@ -408,6 +408,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000);if(user.role==='coach'&&!require('./coach').content(out))throw fail(400,'Noted untuk orang tua tidak boleh kosong');return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
       if (['Hadir','Alpa'].includes(out.status) && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
+        if(!['Hadir','Alpa'].includes(old?.status))await require('./package-renewal').ensureAttendancePackage(db,{rows,payments,save},athlete,out.tanggal);
         const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && ['Lunas','Belum Lunas'].includes(p.status) && (p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id) && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (['Hadir','Alpa'].includes(old?.status) && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
         if (!packs.length) throw fail(400, 'Tidak ada paket dengan sisa pertemuan pada tanggal sesi. Hubungi Owner untuk mencatat paket berikutnya.'); out.paketId = packs[0].id;
       } return out;
@@ -497,7 +498,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     return scheduleSync;
   }
   app.locals.rosterAudit=()=>transaction(c=>require('./roster-audit').inspect(c,{rows,payments}));
-  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./registration-email').sync(c);await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));await require('./billing-channels').enqueue(c,await payments(c));});
+  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./registration-email').sync(c);await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./package-renewal').recoverLatePackages(c,{rows,payments,save});await require('./workflow').billing(c,await payments(c));await require('./billing-channels').enqueue(c,await payments(c));});
   return app;
 }
 if (require.main === module) {

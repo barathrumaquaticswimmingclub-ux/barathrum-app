@@ -46,15 +46,15 @@ async function syncLegacyQuota(db,{rows,payments,save}){
   await save(db,{id:null,username:'sistem-kuota'},'pembayaran',{...p,totalPertemuan:standard,pemakaianAwal,quotaSyncVersion:1},p);
  }
 }
-async function renewExhausted(db,{rows,payments,save}){
+async function renewExhausted(db,{rows,payments,save,renewalDate=B.today(),athleteId=null}){
  await syncLegacyQuota(db,{rows,payments,save});
- const all=await payments(db),athletes=(await rows(db,'atlet')).filter(a=>a.status==='Aktif'&&!a.mergedInto);
+ const all=await payments(db),athletes=(await rows(db,'atlet')).filter(a=>a.status==='Aktif'&&!a.mergedInto&&(!athleteId||String(a.id)===String(athleteId)));
  for(const a of athletes){
   if(B.canonical(a.kelompok)==='Prestasi Class')continue;
   const related=all.filter(p=>String(p.atletId)===String(a.id)&&B.canonical(p.jenisKelas)===B.canonical(a.kelompok)&&!p.dibatalkan).sort((x,y)=>y.tanggal.localeCompare(x.tanggal)||Number(y.id)-Number(x.id));
   const old=related[0];
-  if(!old||old.sisaPertemuan!==0||old.tanggal>B.today()||old.statusManual==='Kedaluwarsa'||!['Lunas','Belum Lunas'].includes(old.status)||related.some(p=>p.renewalFrom===old.id))continue;
-  const terms=B.price({tanggal:B.today(),status:'Belum Lunas',paketKhusus:true,rincianOwner:true,kuotaKhusus:nextQuota(old),biayaKhusus:old.jumlah,potonganDiskon:old.potonganDiskon||0,biayaPendaftaran:0,alasanKhusus:'Perpanjangan otomatis karena kuota habis'},a);
+  if(!old||old.sisaPertemuan!==0||old.tanggal>renewalDate||old.statusManual==='Kedaluwarsa'||!['Lunas','Belum Lunas'].includes(old.status)||related.some(p=>p.renewalFrom===old.id))continue;
+  const terms=B.price({tanggal:renewalDate,status:'Belum Lunas',paketKhusus:true,rincianOwner:true,kuotaKhusus:nextQuota(old),biayaKhusus:old.jumlah,potonganDiskon:old.potonganDiskon||0,biayaPendaftaran:0,alasanKhusus:'Perpanjangan otomatis karena kuota habis'},a);
   const p=await save(db,{id:null,username:'sistem-paket'},'pembayaran',{...terms,atletId:a.id,namaAtlet:a.nama,renewalFrom:old.id,renewalRequestId:'automatic:'+old.id,automaticRenewal:true,quotaSyncVersion:1,catatan:old.catatan||'',pemakaianAwal:0},null);
   all.push(B.packageView(p));
   const key='paket-otomatis:'+p.id;
@@ -62,4 +62,41 @@ async function renewExhausted(db,{rows,payments,save}){
   if(notice)await N.enqueue(db,a.id,'invoice:'+notice.id,'Paket baru — Belum Lunas',`Ayah/Bunda, kuota ${a.nama} sebelumnya telah habis. Paket baru ${p.totalPertemuan} pertemuan sudah tersedia dengan tagihan Rp${p.totalTagihan.toLocaleString('id-ID')}, berstatus Belum Lunas. Invoice tersedia di aplikasi. Pembayaran hanya melunasi tagihan ini dan tidak menambah kuota lagi.`);
  }
 }
-module.exports={mount,renewExhausted,nextQuota};
+// A late entry must use the session date, never the day the coach opens the form.
+async function ensureAttendancePackage(db,h,athlete,date){
+ if(athlete.status!=='Aktif'||B.canonical(athlete.kelompok)==='Prestasi Class'||!B.validDate(date)||date>B.today())return;
+ const packs=(await h.payments(db,true)).filter(p=>String(p.atletId)===String(athlete.id)&&B.canonical(p.jenisKelas)===B.canonical(athlete.kelompok));
+ if(packs.some(p=>['Lunas','Belum Lunas'].includes(p.status)&&p.statusManual!=='Kedaluwarsa'&&p.tanggal<=date&&p.berlakuSampai>=date&&p.sisaPertemuan>0))return;
+ const attendance=await h.rows(db,'absensi');
+ const old=packs.filter(p=>p.tanggal<=date&&p.sisaPertemuan===0&&p.statusManual!=='Kedaluwarsa'&&['Lunas','Belum Lunas'].includes(p.status)&&Number(p.pemakaianAwal||0)+attendance.filter(a=>String(a.paketId)===String(p.id)&&['Hadir','Alpa'].includes(a.status)&&a.tanggal<=date).length>=p.totalPertemuan).sort((a,b)=>b.tanggal.localeCompare(a.tanggal)||Number(b.id)-Number(a.id))[0];
+ if(!old)return;
+ const successor=packs.find(p=>String(p.renewalFrom)===String(old.id));
+ if(successor){
+  // Preserve the agreed end date, invoice amount and all usage/payment history.
+  if(successor.automaticRenewal&&successor.status==='Belum Lunas'&&successor.statusManual!=='Kedaluwarsa'&&successor.tanggal>date&&successor.sisaPertemuan>0){
+   const raw=(await h.rows(db,'pembayaran')).find(p=>p.id===successor.id);
+   await h.save(db,{id:null,username:'sistem-paket'},'pembayaran',{...raw,tanggal:date,lateAttendanceStart:raw.lateAttendanceStart||raw.tanggal},raw);
+   return true;
+  }
+  return;
+ }
+ // Do not insert a package into the middle of a manually arranged payment chain.
+ if(packs.some(p=>p.tanggal>old.tanggal&&p.id!==old.id))return;
+ await renewExhausted(db,{...h,renewalDate:date,athleteId:athlete.id});
+ return true;
+}
+async function recoverLatePackages(db,h){
+ const packs=await h.payments(db),candidates=new Set(packs.filter(p=>p.sisaPertemuan===0&&p.statusManual!=='Kedaluwarsa').map(p=>String(p.atletId)));
+ const athletes=(await h.rows(db,'atlet')).filter(a=>candidates.has(String(a.id))),attendance=await h.rows(db,'absensi');
+ const repaired=[];
+ const cutoff=B.addDays(B.today(),-7);
+ const sessions=(await h.rows(db,'jadwal')).filter(s=>s.statusSesi!=='Libur'&&s.tanggal>=cutoff&&s.tanggal<=B.today()).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));
+ for(const session of sessions)for(const aid of session.atletIds||[]){
+  if(attendance.some(a=>String(a.jadwalId)===String(session.id)&&String(a.atletId)===String(aid)))continue;
+  const athlete=athletes.find(a=>String(a.id)===String(aid));
+  if(athlete&&B.canonical(session.jenisKelas)===B.canonical(athlete.kelompok)&&await ensureAttendancePackage(db,h,athlete,session.tanggal))repaired.push({athleteId:String(aid),date:session.tanggal});
+ }
+ if(repaired.length)console.log('Late attendance package recovery:',JSON.stringify(repaired));
+ return repaired;
+}
+module.exports={mount,renewExhausted,nextQuota,ensureAttendancePackage,recoverLatePackages};
