@@ -70,6 +70,17 @@ const {initDb,createApp,passwordHash}=require('./server'),W=require('./whatsapp-
  assert((await call(owner,'get','/api/owner/whatsapp/connection')).savedAt);
  app.locals.whatsappFetch=async()=>({ok:false});await app.locals.archiveWhatsAppProofs();assert.equal((await pool.query('SELECT proof_attempts FROM brtm_wa_confirmations WHERE id=$1',[rejected])).rows[0].proof_attempts,1);
  const snapshot=await call(owner,'get','/api/backup');assert(snapshot.tables.brtm_wa_connection.length===1);assert(!JSON.stringify(snapshot).includes(configuredToken));assert(!JSON.stringify(snapshot).includes(configuredSecret));
+ // Text confirmations persist immediately; proofs may arrive after a process restart.
+ const textOnly=message('text-without-proof',{type:'text',text:{body:'Nama anak: Nikeisha\nPembayaran bulan: desember\nKelas yang di ambil: prestasi\nNominal: Rp 250.00\nTanggal transfer: 26-11-2026'}});
+ await send(payload([textOnly]),configuredSecret);await send(payload([textOnly]),configuredSecret);
+ let textRow=(await pool.query("SELECT * FROM brtm_wa_confirmations WHERE message_id='text-without-proof'")).rows[0];assert(textRow);assert.equal(textRow.status,'pending');assert.equal(textRow.payload.paymentMonth,'desember');assert(!textRow.payload.mediaId);
+ const textInbox=await call(owner,'get','/api/owner/whatsapp/confirmations');assert.equal(textInbox.items.find(r=>r.id===textRow.id).proof,null);assert.equal(textInbox.outgoingDocumentsEnabled,false);
+ const restarted=request(createApp({pool,secureCookies:false}));
+ const lateProof=payload([message('late-proof-after-restart',{type:'image',image:{id:'989898',mime_type:'image/jpeg'}})]),lateRaw=JSON.stringify(lateProof),lateSig='sha256='+crypto.createHmac('sha256',configuredSecret).update(lateRaw).digest('hex');
+ for(let i=0;i<2;i++)assert.equal((await restarted.post('/integrations/whatsapp').set('Content-Type','application/json').set('X-Hub-Signature-256',lateSig).send(lateRaw)).status,200);
+ textRow=(await pool.query('SELECT * FROM brtm_wa_confirmations WHERE id=$1',[textRow.id])).rows[0];assert.equal(textRow.payload.mediaId,'989898');assert.equal(textRow.status,'pending');
+ assert.equal((await pool.query("SELECT count(*)::int n FROM brtm_wa_confirmations WHERE payload->>'name'='Nikeisha'")).rows[0].n,1);
+ assert.equal((await call(owner,'get','/api/pembayaran')).length,1,'Incoming text/proof must never create a package or mark payment paid');
  const fs=require('node:fs'),{JSDOM,VirtualConsole}=require('jsdom');
  const dom=new JSDOM(fs.readFileSync('public/index.html','utf8').replace(/<script[^>]*src[^>]*><\/script>/g,''),{url:'https://brtm.test/club/',runScripts:'outside-only',virtualConsole:new VirtualConsole()}),w=dom.window;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};w.scrollTo=()=>{};w.matchMedia=()=>({matches:false,addEventListener(){}});w.crypto.randomUUID=crypto.randomUUID;

@@ -10,7 +10,6 @@ async function compactProof(buffer,mime){
  }catch{throw fail(502,'Foto bukti tidak dapat dibaca. Kirim ulang sebagai foto JPG atau PNG.');}
 }
 async function metaFetch(app,url,options){
- if(app.locals.metaRetired)throw fail(410,'Integrasi Meta WhatsApp sudah dinonaktifkan.');
  try{return await app.locals.whatsappFetch(url,options);}catch{
   throw fail(503,'Server belum dapat terhubung ke Meta. Coba uji sambungan lagi beberapa saat kemudian.');
  }
@@ -44,11 +43,18 @@ function identity(text){
 }
 function signature(raw,header,secret){if(!secret||!/^sha256=[a-f0-9]{64}$/.test(header||''))return false;return crypto.timingSafeEqual(Buffer.from(header.slice(7),'hex'),crypto.createHmac('sha256',secret).update(raw).digest());}
 async function confirmation(db,id,lock=false){if(!/^[a-f0-9-]{36}$/i.test(id||''))throw fail(400,'Konfirmasi tidak valid');const r=(await db.query('SELECT * FROM brtm_wa_confirmations WHERE id=$1'+(lock?' FOR UPDATE':''),[id])).rows[0];if(!r)throw fail(404,'Konfirmasi tidak ditemukan');return r;}
+function matchingAthletes(payload,athletes){
+ const name=normalize(payload.name),eligible=athletes.filter(a=>!a.mergedInto&&B.canonical(a.kelompok)===payload.group);
+ const exact=eligible.filter(a=>normalize(a.nama)===name);
+ if(exact.length)return exact;
+ return name.length>=3?eligible.filter(a=>normalize(a.nama).startsWith(name+' ')||normalize(a.namaPanggilan)===name):[];
+}
 async function forPayment(db,d,a,activation){
  if(!d.whatsappConfirmationId)return null;
  if(activation||d.status!=='Lunas'||d.bankChecked!==true)throw fail(400,'Cocokkan bukti dengan uang masuk, lalu verifikasi sebagai Lunas melalui Pembayaran');
  const r=await confirmation(db,d.whatsappConfirmationId,true);if(r.status!=='pending')throw fail(409,'Konfirmasi sudah diproses; muat ulang daftar');
- if(normalize(r.payload.name)!==normalize(a.nama)||r.payload.group!==B.canonical(a.kelompok))throw fail(409,'Nama lengkap dan kelas konfirmasi harus sesuai atlet yang dipilih');
+ const athletes=(await db.query("SELECT id,data FROM data_klub WHERE jenis='atlet'")).rows.map(r=>({...r.data,id:String(r.id)}));
+ if(!matchingAthletes(r.payload,athletes).some(v=>String(v.id)===String(a.id)))throw fail(409,'Nama dan kelas konfirmasi harus sesuai atlet yang dipilih');
  return r;
 }
 function mountWebhook(app,{pool,wrap,transaction,fetcher=fetch}){
@@ -73,11 +79,29 @@ function mountWebhook(app,{pool,wrap,transaction,fetcher=fetch}){
      const details=identity(m.type==='text'?m.text?.body:attachment?.caption);
      if(!proof&&!details)continue;
      const key=m.from,prior=candidates.get(key);let item=prior&&Math.abs(Number(m.timestamp)*1000-prior.time)<=windowMs?prior:{received:now,time:Number(m.timestamp)*1000};
-     if(details){if(item.details&&normalize(item.details.name)!==normalize(details.name))item={received:now,time:Number(m.timestamp)*1000};item.details=details;item.time=Number(m.timestamp)*1000;}
+     if(details){if(item.details&&normalize(item.details.name)!==normalize(details.name))item={received:now,time:Number(m.timestamp)*1000};item.details=details;item.detailsMessageId=m.id;item.time=Number(m.timestamp)*1000;}
      if(proof)item.proof=proof;item.received=now;candidates.delete(key);if(candidates.size>=1000)candidates.delete(candidates.keys().next().value);candidates.set(key,item);
+     let attached=false;
+     await transaction(async db=>{
+      await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');
+      // A proof is attached at most once, including webhook replays.
+      if(proof&&(await db.query("SELECT id FROM brtm_wa_confirmations WHERE message_id=$1 OR payload->>'messageId'=$1",[proof.messageId])).rows.length){attached=true;return;}
+      if(!item.details&&proof){
+       const pending=(await db.query("SELECT * FROM brtm_wa_confirmations WHERE sender=$1 AND status='pending' AND payload->>'mediaId' IS NULL AND created_at>NOW()-INTERVAL '30 minutes' FOR UPDATE",[m.from])).rows.filter(r=>Math.abs(Number(m.timestamp)*1000-Number(r.payload.messageTime))<=windowMs);
+       // Never guess which child a proof belongs to if several are awaiting it.
+       if(pending.length===1){await db.query('UPDATE brtm_wa_confirmations SET payload=$2,updated_at=NOW() WHERE id=$1',[pending[0].id,JSON.stringify({...pending[0].payload,...proof})]);attached=true;}
+       return;
+      }
+      if(!item.details)return;
+      const detailsId=item.detailsMessageId||m.id;
+      const existing=(await db.query('SELECT * FROM brtm_wa_confirmations WHERE message_id=$1 FOR UPDATE',[detailsId])).rows[0];
+      const payload={...item.details,detailsMessageId:detailsId,messageTime:item.time,...(item.proof||{})};
+      if(existing){
+       if(item.proof&&!existing.payload.mediaId&&existing.status==='pending')await db.query('UPDATE brtm_wa_confirmations SET payload=$2,updated_at=NOW() WHERE id=$1',[existing.id,JSON.stringify(payload)]);
+      }else await db.query('INSERT INTO brtm_wa_confirmations(id,message_id,sender,payload) VALUES($1,$2,$3,$4) ON CONFLICT(message_id) DO NOTHING',[crypto.randomUUID(),item.proof?.messageId||detailsId,m.from,JSON.stringify(payload)]);
+     });
+     if(attached)candidates.delete(key);
      if(!item.details||!item.proof)continue;
-     const payload={...item.details,...item.proof};
-     await transaction(async db=>{await db.query('INSERT INTO brtm_wa_confirmations(id,message_id,sender,payload) VALUES($1,$2,$3,$4) ON CONFLICT(message_id) DO NOTHING',[crypto.randomUUID(),item.proof.messageId,m.from,JSON.stringify(payload)]);});
      candidates.delete(key);
     }
    }
@@ -125,14 +149,14 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
  app.post('/api/owner/whatsapp/connection/test',owner,wrap(async(req,res)=>{await phoneAccess();res.json({pesan:'Token memiliki akses API ke nomor 0811210260. Webhook dan penerimaan pesan tetap perlu diuji.'});}));
  app.post('/api/owner/whatsapp/connection/subscribe',owner,wrap(async(req,res)=>{const c=await phoneAccess();if(!c.secret||!c.verify)throw fail(409,'Lengkapi App Secret dan verifikasi webhook terlebih dahulu');const r=await metaFetch(app,'https://graph.facebook.com/'+c.version+'/'+c.wabaId+'/subscribed_apps',{method:'POST',headers:{Authorization:'Bearer '+c.token},signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok||(await r.json()).success!==true)throw fail(502,'Langganan pesan belum berhasil di Meta');await audit(pool,req.user,'langganan-whatsapp','whatsapp',null,null,{phone:'0811210260'});res.json({pesan:'Langganan aplikasi ke akun WhatsApp tersimpan. Uji pesan masuk diperlukan untuk memastikan penerimaan.'});}));
 
- app.get('/api/owner/whatsapp/confirmations',owner,wrap(async(req,res)=>{const c=await settings(pool),items=(await pool.query("SELECT id,sender,payload,status,payment_id,reason,created_at FROM brtm_wa_confirmations ORDER BY created_at DESC LIMIT 200")).rows;res.json({configured:!app.locals.metaRetired&&!!(c.secret&&c.verify&&c.token&&c.phoneId&&c.wabaId),retired:!!app.locals.metaRetired,items:items.map(r=>({...r,payload:{name:r.payload.name,group:r.payload.group,mime:r.payload.mime,paymentMonth:r.payload.paymentMonth,amountText:r.payload.amountText,transferDate:r.payload.transferDate},proof:'/api/owner/whatsapp/confirmations/'+r.id+'/proof'}))});}));
+ app.get('/api/owner/whatsapp/confirmations',owner,wrap(async(req,res)=>{const c=await settings(pool),items=(await pool.query("SELECT id,sender,payload,status,payment_id,reason,created_at FROM brtm_wa_confirmations ORDER BY created_at DESC LIMIT 200")).rows,athletes=await rows(pool,'atlet');res.json({configured:!!(c.secret&&c.verify&&c.token&&c.phoneId&&c.wabaId),retired:false,outgoingDocumentsEnabled:false,items:items.map(r=>({...r,athleteIds:matchingAthletes(r.payload,athletes).map(a=>String(a.id)),payload:{name:r.payload.name,group:r.payload.group,mime:r.payload.mime,paymentMonth:r.payload.paymentMonth,amountText:r.payload.amountText,transferDate:r.payload.transferDate},proof:r.payload.mediaId?'/api/owner/whatsapp/confirmations/'+r.id+'/proof':null}))});}));
  app.post('/api/owner/whatsapp/confirmations/:id/reject',owner,wrap(async(req,res)=>{const reason=String(req.body.reason||'').trim();if(reason.length<8||reason.length>500)throw fail(400,'Isi alasan penolakan 8–500 karakter');await transaction(async db=>{await db.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');const r=await confirmation(db,req.params.id,true);if(r.status!=='pending')throw fail(409,'Konfirmasi sudah diproses');await db.query("UPDATE brtm_wa_confirmations SET status='rejected',reason=$2,user_id=$3,updated_at=NOW() WHERE id=$1",[r.id,reason,req.user.id]);await audit(db,req.user,'tolak-konfirmasi-whatsapp','whatsapp',r.id,null,{reason});});res.json({pesan:'Konfirmasi ditolak. Pembayaran dan paket tidak berubah.'});}));
  app.get('/api/owner/whatsapp/confirmations/:id/proof',owner,wrap(async(req,res)=>{
   const r=await confirmation(pool,req.params.id),proof=await archiveProof(app,pool,r);
   res.type(proof.mime).set('Cache-Control','private, no-store').set('Content-Disposition','inline; filename="bukti-whatsapp.'+(proof.mime==='application/pdf'?'pdf':proof.mime.split('/')[1])+'"').send(proof.buffer);
  }));
  app.locals.archiveWhatsAppProofs=async()=>{
-  const pending=(await pool.query(`SELECT c.* FROM brtm_wa_confirmations c LEFT JOIN brtm_wa_proofs p ON p.id=c.id WHERE p.id IS NULL AND c.proof_attempts<5 AND c.proof_retry_at<=NOW() ORDER BY c.created_at LIMIT 3`)).rows;
+  const pending=(await pool.query(`SELECT c.* FROM brtm_wa_confirmations c LEFT JOIN brtm_wa_proofs p ON p.id=c.id WHERE p.id IS NULL AND c.payload->>'mediaId' IS NOT NULL AND c.proof_attempts<5 AND c.proof_retry_at<=NOW() ORDER BY c.created_at LIMIT 3`)).rows;
   for(const r of pending){
    // Claim before downloading so multiple workers do not repeatedly fetch the same proof.
    const claim=await pool.query("UPDATE brtm_wa_confirmations SET proof_attempts=proof_attempts+1,proof_retry_at=NOW()+INTERVAL '5 minutes' WHERE id=$1 AND proof_retry_at<=NOW() RETURNING id",[r.id]);
@@ -142,4 +166,4 @@ function mountOwner(app,{pool,owner,wrap,transaction,audit,rows}){
  };
 
 }
-module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);await require('./whatsapp-invoices').initDb(db);await require('./whatsapp-connect').initDb(db);},settings,storeSettings,mountWebhook,mountOwner,forPayment,identity,signature,compactProof};
+module.exports={TABLES,initDb:async db=>{await initDb(db);await initProofDb(db);await require('./whatsapp-invoices').initDb(db);await require('./whatsapp-connect').initDb(db);},settings,storeSettings,mountWebhook,mountOwner,forPayment,identity,signature,compactProof,matchingAthletes};

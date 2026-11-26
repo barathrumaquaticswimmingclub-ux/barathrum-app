@@ -63,9 +63,10 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   });
   app.locals.release=require('./releases').mount(app,{enforce:enforceRelease,release});
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+  // Incoming payment confirmations remain active; outgoing WA documents stay disabled.
   app.locals.metaRetired=true;
-  app.use('/integrations/whatsapp',(req,res)=>res.status(410).json({pesan:'Integrasi Meta WhatsApp tidak digunakan lagi.'}));
-  app.use('/api/owner/whatsapp',(req,res,next)=>{if(/^\/confirmations(?:\/|$)/.test(req.path))return next();res.status(410).json({pesan:'Otomatisasi Meta WhatsApp sudah dinonaktifkan. Gunakan WhatsApp manual.'});});
+  require('./whatsapp-payments').mountWebhook(app,{pool,wrap,transaction});
+  app.use('/api/owner/whatsapp/invoices',(req,res)=>res.status(410).json({pesan:'Invoice dan kuitansi WhatsApp dinonaktifkan. Dokumen menggunakan email dan BRTM SWIM.'}));
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/registration/api/submit',express.json({limit:'30mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
@@ -426,7 +427,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   require('./replacement-schedule').mount(app,{owner,wrap,transaction,record,rows,save});
   require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
   app.locals.deliverWhatsAppInvoices=async()=>{};
-  // Meta connection and automatic sending routes are retired.
+  require('./whatsapp-connect').mount(app,{pool,owner,wrap,transaction,audit,secureCookies});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
   app.post('/api/pembayaran/:id/pengecualian', owner, wrap(async (req, res) => {
@@ -507,7 +508,7 @@ if (require.main === module) {
     const app = createApp({ pool });
     let rosterAudited=false;
     let proofArchiving=false;
-    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.deliverBillingEmails();}catch{console.warn('BRTM WhatsApp proof worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
+    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();await app.locals.deliverBillingEmails();}catch{console.warn('BRTM incoming proof/email worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
     const stopNotifications=N.startWorker(pool,async()=>{
       await app.locals.maintain();
       if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
