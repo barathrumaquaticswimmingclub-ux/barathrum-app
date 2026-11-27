@@ -57,6 +57,7 @@ function mount(app,h){const {owner,wrap,transaction,record,rows,payments,save,va
    if(!p)throw fail(404,'Pilih paket anak ini');if(!['invoice','receipt','expired','new'].includes(kind)||!['app','wa'].includes(channel))throw fail(400,'Pilih jenis informasi dan saluran');
    if(kind==='receipt'&&B.cashReceived(p)<=0)throw fail(409,'Belum ada penerimaan untuk kuitansi');
    if(kind==='expired'&&p.statusMasaBerlaku!=='Kedaluwarsa'&&p.berlakuSampai>=B.today())throw fail(409,'Paket ini belum kedaluwarsa');
+   if(kind!=='receipt'&&B.canonical(p.jenisKelas)==='Prestasi Class')require('./billing-policy').assertReminder(p);
    if(kind==='invoice'&&p.invoiceTersedia===false)throw fail(409,'Invoice belum terbit');
    const titles={invoice:'Informasi invoice BRTM',receipt:'Informasi kuitansi BRTM',expired:'Paket latihan kedaluwarsa',new:'Informasi paket baru BRTM'};
    const body=`Yth. Ayah/Bunda ${a.nama},\n\n${titles[kind]}. ${p.jenisKelas}${p.totalPertemuan!==null?' • '+p.totalPertemuan+' pertemuan':''}, berlaku ${p.tanggal} sampai ${p.berlakuSampai}. Status ${p.status}. ${kind==='receipt'?'Penerimaan':'Tagihan'} Rp${Number(kind==='receipt'?B.cashReceived(p):p.totalTagihan).toLocaleString('id-ID')}.${kind==='expired'?' Silakan menghubungi admin untuk memperpanjang paket.':''}\n\nTerima kasih. 🙏\nBARATHRUM AQUATIC SWIMMING CLUB`;

@@ -9,7 +9,7 @@ async function initDb(db){
  await db.query('INSERT INTO brtm_wa_invoice_config(id) VALUES(1) ON CONFLICT DO NOTHING');
  await db.query(`CREATE TABLE IF NOT EXISTS brtm_wa_invoice_jobs(id SERIAL PRIMARY KEY,payment_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,athlete_id INTEGER NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE,event_key TEXT UNIQUE NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,message_id TEXT UNIQUE,last_error TEXT,recipient TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),next_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
 }
-function eligible(p){return !p.dibatalkan&&!p.sppSuperseded&&!p.sppTidakDitagih&&p.status==='Belum Lunas'&&Number(p.totalTagihan)>0&&(B.canonical(p.jenisKelas)!=='Prestasi Class'||p.invoiceTersedia===true);}
+function eligible(p){return require('./billing-policy').eligible(p);}
 async function enqueue(db,packs){
  const c=(await db.query('SELECT enabled FROM brtm_wa_invoice_config WHERE id=1')).rows[0];if(!c?.enabled)return;
  for(const p of packs.filter(eligible)){
@@ -22,6 +22,7 @@ function parameters(p){
 }
 function phone(value){const p=String(value||'').replace(/\D/g,'').replace(/^0/,'62');return /^\d{9,15}$/.test(p)?p:null;}
 async function graph(app,c,path,body){
+ if(app.locals.metaRetired)throw fail(410,'Integrasi Meta WhatsApp sudah dinonaktifkan.');
  if(!c.token||!c.wabaId||!c.phoneId)throw fail(409,'Lengkapi sambungan WhatsApp BRTM terlebih dahulu.');
  const res=await app.locals.whatsappFetch('https://graph.facebook.com/'+c.version+'/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000),redirect:'error'});
  const data=await res.json();if(!res.ok){const e=fail(502,'Meta menolak permintaan'+(Number.isInteger(data.error?.code)?' (kode '+data.error.code+')':'')+'.');e.metaCode=data.error?.code;e.httpStatus=res.status;throw e;}return data;
@@ -41,6 +42,7 @@ async function refresh(app,db){
  }catch(e){await db.query("UPDATE brtm_wa_invoice_config SET template_status='TERHAMBAT',last_error=$1,checked_at=NOW() WHERE id=1",[e.metaCode===190?'Akses Meta tidak valid (kode 190). Perbarui token sambungan.':e.status?e.message:'Sambungan ke Meta belum berhasil.']);}
 }
 async function deliver(app,h){
+ if(app.locals.metaRetired)return;
  const {pool,payments}=h;let config=(await pool.query('SELECT * FROM brtm_wa_invoice_config WHERE id=1')).rows[0];if(!config?.enabled)return;
  await enqueue(pool,await payments());
  // A worker crash or network timeout is ambiguous; do not automatically resend it.

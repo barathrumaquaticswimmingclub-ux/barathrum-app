@@ -24,7 +24,7 @@ async function billing(db,packs){
     const month=B.prestasiPeriod(B.today(),first[a.id]);
     // Bill the cycle already in progress, never the following month's unpaid preview.
     const existing=related.find(p=>p.periode===month);
-    if(existing?.status==='Belum Lunas'&&existing.totalTagihan>0)await noticeBill(db,a,'prestasi-periode:'+a.id+':'+month,{jumlah:existing.jumlah,biayaPendaftaran:existing.biayaPendaftaran||0,potonganDiskon:existing.potonganDiskon||0,totalTagihan:existing.totalTagihan,periode:month,...B.prestasiCycle(month,first[a.id]),jatuhTempo:B.prestasiDue(month)});
+    if(existing?.status==='Belum Lunas'&&existing.totalTagihan>0)await noticeBill(db,a,'prestasi-periode:'+a.id+':'+month,{paymentId:existing.id,jumlah:existing.jumlah,biayaPendaftaran:existing.biayaPendaftaran||0,potonganDiskon:existing.potonganDiskon||0,totalTagihan:existing.totalTagihan,periode:month,...B.prestasiCycle(month,first[a.id]),jatuhTempo:B.prestasiDue(month)});
    }
   }else if(related[0]?.sisaPertemuan===0){const p=related[0];await noticeBill(db,a,'paket-habis:'+p.id,{jumlah:p.jumlah,biayaPendaftaran:0,potonganDiskon:p.potonganDiskon,totalTagihan:p.jumlah-p.potonganDiskon,totalPertemuan:p.totalPertemuan});}
  }
@@ -141,7 +141,7 @@ function mount(app,h){require('./billing-reminders').mount(app,h);require('./reg
   await tx(async c=>{const u=(await c.query('INSERT INTO brtm_users(nama,username,role,password_hash,must_change,profile) VALUES($1,$2,$3,$4,FALSE,$5) RETURNING id',[d.nama.trim().slice(0,100),d.username,d.role,hash,JSON.stringify({jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)})])).rows[0];await audit(c,req.user,'tambah-staf','akun',String(u.id));});res.json({ok:true});
  }));
  app.put('/api/owner/staff/:id/profile',owner,wrap(async(req,res)=>{
-  const d=req.body;const profile={jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)};if(d.photo)profile.photo=await require('./images').staff(d.photo);
+  const d=req.body;const profile={jabatan:String(d.jabatan||'Pelatih').slice(0,100),noWa:String(d.noWa||'').slice(0,30)};if(Object.hasOwn(d,'email')){if(!require('./billing-policy').email(d.email||''))throw fail(400,'Isi email aktif staf yang valid');profile.email=String(d.email).trim();}if(d.photo)profile.photo=await require('./images').staff(d.photo);
   await tx(async c=>{const u=(await c.query('SELECT * FROM brtm_users WHERE id=$1',[req.params.id])).rows[0];if(!u)throw fail(404,'Staf tidak ditemukan');const next={...u.profile,...profile};await c.query('UPDATE brtm_users SET profile=$1 WHERE id=$2',[JSON.stringify(next),u.id]);await audit(c,req.user,'ubah-profil-staf','akun',String(u.id),u.profile,next);});res.json({ok:true});
  }));
  app.get('/api/owner/staff/:id/photo',owner,wrap(async(req,res)=>{const p=(await pool.query('SELECT profile FROM brtm_users WHERE id=$1',[req.params.id])).rows[0]?.profile?.photo;if(!p)throw fail(404,'Foto tidak tersedia');res.type(p.mime).send(Buffer.from(p.base64,'base64'));}));

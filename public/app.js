@@ -1,3 +1,4 @@
+function monthEndDay(day){const d=new Date(day.slice(0,7)+'-01T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+1);d.setUTCDate(0);return d.toISOString().slice(0,10);}
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -23,6 +24,7 @@ async function request(url, options = {}) {
 }
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.remove('hidden'); $('notice').classList.toggle('error', error); }
 function showLogin() {
+  $('staffEmailView')?.remove();
   loadSequence++;loadingData=false;S.pendingSnapshot=null;setDataAvailable(false);
   for(const key of ['workspace','announcements','finance','whatsappInbox','coachProfile','coachNoted','staffAttendance'])delete S[key];
   S.user = null; S.records = {}; S.config = null; S.viewToken++;
@@ -90,6 +92,15 @@ async function load(options = {}) {
 async function start(user) {
   S.user = user; $('loginView').classList.add('hidden');
   if (user.mustChangePassword) { $('app').classList.add('hidden'); openPassword(true); return; }
+  if(user.emailRequired){
+    $('app').classList.add('hidden');
+    let screen=$('staffEmailView');if(!screen){screen=document.createElement('section');screen.id='staffEmailView';screen.className='login-view';$('loginView').after(screen);}
+    screen.innerHTML='<div class="login-panel"><form id="staffEmailForm" class="login-form"><p class="eyebrow">DATA PELATIH</p><h2>Lengkapi email aktif</h2><p>Email ini disimpan untuk pesan dan pengingat BRTM. Cukup isi sekali.</p><label for="staffEmail">Email aktif</label><input id="staffEmail" name="email" type="email" autocomplete="email" maxlength="254" required><button class="primary" type="submit">Simpan dan lanjutkan</button><p id="staffEmailError" class="error" role="alert"></p><button id="staffEmailLogout" type="button" class="secondary">Keluar</button></form></div>';
+    $('staffEmailLogout').onclick=async()=>{await logout();screen.remove();};
+    $('staffEmailForm').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('[type=submit]');button.disabled=true;try{await request('/api/coach/email',{method:'POST',body:JSON.stringify({email:$('staffEmail').value.trim()})});const d=await request('/auth/me');screen.remove();await start(d.user);}catch(err){$('staffEmailError').textContent=err.message;}finally{button.disabled=false;}};
+    return;
+  }
+  $('staffEmailView')?.remove();
   S.config = await request('/api/config'); $('app').classList.remove('hidden');
   $('userName').textContent = user.nama; $('roleBadge').textContent = roleName(user.role); $('accountButton').textContent = user.nama.slice(0,1).toUpperCase();
   $('dateLabel').textContent = new Intl.DateTimeFormat('id-ID',{ weekday:'long', day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Jakarta' }).format(new Date()).toUpperCase();
@@ -155,7 +166,7 @@ function actions(kind,row) {
   if(isOwner()&&kind!=='akun')html+=`<button class="danger" data-delete="${esc(row.id)}">Hapus</button>`;
   if(isOwner()&&kind==='pembayaran'&&row.jenisKelas!=='Prestasi Class')html+=`<button class="secondary" data-exception="${esc(row.id)}">Perpanjang khusus</button>`;
   if(isOwner()&&kind==='akun'&&row.id!==S.user.id)html+=`<button class="secondary" data-reset="${esc(row.id)}">Buat kata sandi awal</button>`;
-  if(isOwner()&&kind==='atlet'&&row.noHpOrtu&&!['Lunas','Tidak Ada SPP Bulan Ini'].includes(row.statusSPP)){
+  if(isOwner()&&kind==='atlet'&&(row.kelompok!=='Prestasi Class'||S.config.today===monthEndDay(S.config.today))&&row.noHpOrtu&&!['Lunas','Tidak Ada SPP Bulan Ini'].includes(row.statusSPP)){
     let phone=row.noHpOrtu.replace(/\D/g,'');if(phone.startsWith('0'))phone='62'+phone.slice(1);
     const msg=`Halo, Bapak/Ibu orang tua ${row.nama}. Kami dari BRTM mengingatkan SPP/paket ${row.kelompok}${row.jatuhTempo?' dengan tanggal batas '+displayDate(row.jatuhTempo):''}. Mohon menghubungi admin kami untuk konfirmasi pembayaran. Terima kasih🙏🏻`;
     html+=`<a ${/Android/i.test(navigator.userAgent)?'':'target="_blank" rel="noopener"'} href="${esc(whatsappReminderLink(phone,msg))}">Ingatkan via WA Business</a>`;
@@ -221,7 +232,7 @@ function openForm(kind, row = null){
   if(!canWrite(kind))return; if(kind==='perkembangan'&&row&&!row.jadwalId)return openNoteEditor(row); if(S.user.role==='prestasi'&&!row&&['absensi','perkembangan','catatanwaktu'].includes(kind))return openTeamEntry(kind); S.formKind=kind;S.edit=row;let f='',v=row||{};
   $('dialogEyebrow').textContent='BARATHRUM • '+roleName(S.user.role).toUpperCase();$('dialogTitle').textContent=(row?'Edit ':'Tambah ')+title[kind].toLowerCase();$('saveButton').textContent='Simpan data';$('formMessage').textContent='';$('cancelDialog').textContent='Batal';
   if(kind==='atlet'){
-    f=field('nama','Nama lengkap','text',v.nama,{full:true})+field('namaPanggilan','Nama panggilan','text',v.namaPanggilan,{required:false})+field('namaOrtu','Nama orang tua / wali','text',v.namaOrtu,{required:false})+field('riwayatRenang','Riwayat latihan renang','textarea',v.riwayatRenang,{required:false,full:true,max:500})+field('tempatLahir','Tempat lahir','text',v.tempatLahir,{required:false})+field('tanggalLahir','Tanggal lahir','date',v.tanggalLahir,{required:false})+field('jk','Jenis kelamin',['Laki-laki','Perempuan'],v.jk,{required:false})+field('noHpOrtu','WhatsApp orang tua','tel',v.noHpOrtu,{required:false,help:'Contoh: 081234567890'})+field('sekolah','Sekolah','text',v.sekolah,{required:false,help:'Untuk diskon gunakan: DBS, ABA 5, Ebenhaezer, atau TEC.'})+field('kelasSekolah','Kelas sekolah','text',v.kelasSekolah,{required:false})+field('kelompok','Jenis kelas',Object.keys(S.config.classes),canonical(v.kelompok))+field('status','Status',['Aktif','Nonaktif'],v.status||'Aktif')+field('alamat','Alamat','textarea',v.alamat,{required:false,full:true,max:500})+field('tujuan','Tujuan latihan','textarea',v.tujuan,{required:false,full:true,max:500})+field('catatan','Catatan khusus','textarea',v.catatan,{required:false,full:true});
+    f=field('nama','Nama lengkap','text',v.nama,{full:true})+field('namaPanggilan','Nama panggilan','text',v.namaPanggilan,{required:false})+field('namaOrtu','Nama orang tua / wali','text',v.namaOrtu,{required:false})+field('riwayatRenang','Riwayat latihan renang','textarea',v.riwayatRenang,{required:false,full:true,max:500})+field('tempatLahir','Tempat lahir','text',v.tempatLahir,{required:false})+field('tanggalLahir','Tanggal lahir','date',v.tanggalLahir,{required:false})+field('jk','Jenis kelamin',['Laki-laki','Perempuan'],v.jk,{required:false})+field('noHpOrtu','WhatsApp orang tua','tel',v.noHpOrtu,{required:false,help:'Contoh: 081234567890'})+field('emailOrtu','Email orang tua (salinan invoice)','email',v.emailOrtu,{required:false})+field('sekolah','Sekolah','text',v.sekolah,{required:false,help:'Untuk diskon gunakan: DBS, ABA 5, Ebenhaezer, atau TEC.'})+field('kelasSekolah','Kelas sekolah','text',v.kelasSekolah,{required:false})+field('kelompok','Jenis kelas',Object.keys(S.config.classes),canonical(v.kelompok))+field('status','Status',['Aktif','Nonaktif'],v.status||'Aktif')+field('alamat','Alamat','textarea',v.alamat,{required:false,full:true,max:500})+field('tujuan','Tujuan latihan','textarea',v.tujuan,{required:false,full:true,max:500})+field('catatan','Catatan khusus','textarea',v.catatan,{required:false,full:true});
   }
   if(kind==='jadwal'){
     f=field('nama','Nama sesi','text',v.nama,{full:true})+field('tanggal','Tanggal sesi','date',v.tanggal||S.config.today)+field('jenisKelas','Jenis kelas',Object.keys(S.config.classes),canonical(v.jenisKelas))+field('mulai','Jam mulai','time',v.mulai||'15:00')+field('selesai','Jam selesai','time',v.selesai||'16:00')+field('statusSesi','Status sesi',['Terjadwal','Libur'],v.statusSesi||'Terjadwal')+field('alasanLibur','Alasan libur','textarea',v.alasanLibur,{required:false,full:true,max:500,help:'Wajib saat memilih Libur. Kuota tetap; paket yang terkait diperpanjang 7 hari.'})+field('lokasi','Lokasi','text',v.lokasi||'Hotel Grand Wahid Salatiga')+field('coachId','Pelatih bertugas',(S.records.akun||[]).filter(u=>u.active&&u.role!=='owner').map(u=>[u.id,u.nama]),v.coachId)+`<div class="field full"><label>Peserta sesi *</label><input id="athleteSearch" type="search" placeholder="Cari atlet kelas ini…" aria-label="Cari peserta"><div id="athleteChecks" class="athlete-checks"></div><small>Pilih jenis kelas dahulu, lalu centang atlet yang akan mengikuti sesi.</small></div>`+field('catatan','Catatan sesi','textarea',v.catatan,{required:false,full:true})+(row?field('alasanPerubahan','Alasan perubahan jadwal/pelatih','textarea','',{required:false,full:true,max:500,help:'Wajib jika tanggal, jam mulai, pelatih, atau peserta diubah.'}):'');

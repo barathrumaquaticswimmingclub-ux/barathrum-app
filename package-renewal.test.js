@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),{PGlite}=require('@electric-sql/pglite'),supertest=require('supertest');
 const B=require('./business'),{initDb,createApp,passwordHash}=require('./server');
 (async()=>{
- B.today=()=> '2026-11-19';
+ B.today=()=> '2026-11-19';B.time=()=> '18:00';
  const db=new PGlite(),pool={async query(q,p){const r=await db.query(q,p);return {...r,rowCount:r.affectedRows||r.rows.length};},async connect(){return {query:pool.query,release(){}};}};
  await initDb(pool);await pool.query('UPDATE brtm_install SET completed=TRUE');
  await pool.query("INSERT INTO brtm_users(username,nama,role,password_hash,must_change) VALUES('owner','Owner','owner',$1,FALSE)",[await passwordHash('renew-test')]);
@@ -66,5 +66,24 @@ const B=require('./business'),{initDb,createApp,passwordHash}=require('./server'
  await call(o,'post','/api/owner/payment',{...settlement,requestId:'settle-after-coach-123'});
  const final=(await call(o,'get','/api/pembayaran')).find(x=>x.id===auto.id);assert.equal(final.sisaPertemuan,2);assert.equal(final.status,'Lunas');assert.equal(final.catatan,'Berikutnya 2x seminggu');
 
+ // Late attendance on the 23rd, opened on the 26th: repair existing automatic
+ // packages and create missing ones atomically, for any active athlete.
+ B.today=()=> '2026-11-26';
+ for(const mode of ['existing','missing']){
+  const child=(await call(o,'post','/api/atlet',{nama:'Late '+mode,kelompok:'Semi Private Class',status:'Aktif'},201)).data;
+  const previous=(await call(o,'post','/api/owner/activation',{atletId:child.id,requestId:'late-activation-'+mode,tanggal:'2026-11-01',berakhir:'2026-12-01',kuota:4,sisa:0,harga:200000,status:'Lunas'})).data;
+  if(mode==='existing')await app.locals.maintain();
+  const schedule=(await call(o,'post','/api/jadwal',{nama:'Late entry',tanggal:'2026-11-23',mulai:mode==='existing'?'15:00':'16:00',selesai:mode==='existing'?'16:00':'17:00',coachId,jenisKelas:child.kelompok,atletIds:[child.id],lokasi:'Hotel Grand Wahid'},201)).data;
+  const before=(await call(o,'get','/api/pembayaran')).find(p=>p.renewalFrom===previous.id);
+  if(mode==='existing'){assert(before);assert.equal(before.tanggal,'2026-11-26');await app.locals.maintain();}
+  const body={jadwalId:schedule.id,atletId:child.id,tanggal:'2026-11-23',status:'Hadir',noted:'Catatan latihan tanggal 23.'};
+  const entry=(await call(coach,'post','/api/session-entry',body)).data;
+  await call(coach,'post','/api/session-entry',{...body,id:entry.id});
+  await app.locals.maintain();await app.locals.maintain();
+  const list=(await call(o,'get','/api/pembayaran')).filter(p=>p.atletId===child.id);
+  assert.equal(list.length,2);const next=list.find(p=>p.renewalFrom===previous.id);
+  assert.equal(next.tanggal,'2026-11-23');assert.equal(next.status,'Belum Lunas');assert.equal(next.sisaPertemuan,3);assert.equal(entry.paketId,next.id);
+  if(before){assert.equal(next.id,before.id);assert.equal(next.berlakuSampai,before.berlakuSampai);assert.equal(next.totalTagihan,before.totalTagihan);}
+ }
  await db.close();console.log('PASS renewal authorization, history preservation, dates, quota, retry, duplicate protection and private notification deduplication');
 })().catch(e=>{console.error(e);process.exit(1);});

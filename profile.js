@@ -1,7 +1,7 @@
 'use strict';
 const B = require('./business');
 const revision = a => require('crypto').createHash('sha256').update(JSON.stringify([a.id,a.diperbaruiPada,...FIELDS.map(k=>a[k]||'')])).digest('hex');
-const FIELDS = ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','namaOrtu','noHpOrtu','sekolah','kelasSekolah','alamat','tujuan','riwayatRenang','jadwalPilihan'];
+const FIELDS = ['nama','namaPanggilan','tanggalLahir','jk','tempatLahir','namaOrtu','noHpOrtu','emailOrtu','sekolah','kelasSekolah','alamat','tujuan','riwayatRenang','jadwalPilihan'];
 function cleanProfile(input, previous = {}) {
   const out = { ...previous };
   for (const k of FIELDS) if (Object.hasOwn(input,k)) {
@@ -11,6 +11,7 @@ function cleanProfile(input, previous = {}) {
   if (!out.nama) throw Object.assign(Error('Nama lengkap wajib diisi'),{status:400});
   if (out.tanggalLahir && (!B.validDate(out.tanggalLahir) || out.tanggalLahir > B.today())) throw Object.assign(Error('Tanggal lahir tidak valid'),{status:400});
   B.validateAge(out);
+  if(out.emailOrtu&&!require('./billing-policy').email(out.emailOrtu))throw Object.assign(Error('Alamat email orang tua tidak valid'),{status:400});
   if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw Object.assign(Error('Nomor WhatsApp tidak valid'),{status:400});
   if (out.jk && !['Laki-laki','Perempuan'].includes(out.jk)) throw Object.assign(Error('Jenis kelamin tidak valid'),{status:400});
   return out;

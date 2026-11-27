@@ -35,6 +35,7 @@ function bill(res,p,kind,id){
   const items=[[p.jenisKelas+(p.jenisKelas==='Prestasi Class'&&p.periode?' • '+p.periode:''),p.jumlah],[p.biayaPendaftaran?'Pendaftaran anggota baru':'',p.biayaPendaftaran],[p.potonganDiskon?'Potongan / diskon':'',-p.potonganDiskon]];
   items.forEach(([label,amount],i)=>{if(!label)return;const y=779+i*55;put(i+1,70,y,65,22,'center');put(label,165,y,450,21);put('1',645,y,185,22,'center');put(money(amount),850,y,230,22,'right');put(money(amount),1105,y,235,22,'right');});
   put(money(p.totalTagihan),1104,946,235,25,'right');
+  put('Status: '+p.status,60,1065,1280,18);
   if(p.jenisKelas==='Prestasi Class')put('Batas pembayaran: '+(p.jatuhTempo||'Toleransi sampai akhir bulan'),60,1005,1280,18);
   if(p.periodeMulai&&p.periodeSelesai)put('Periode: '+(p.periodeLabel?p.periodeLabel+' | ':'')+p.periodeMulai+' s.d. '+p.periodeSelesai,60,1035,1280,18);else if(p.provisional)put('Pemberitahuan invoice. Pembayaran Lunas tetap untuk periode tagihannya.',60,1035,1280,18);
  }

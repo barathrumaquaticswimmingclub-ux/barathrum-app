@@ -19,7 +19,7 @@ function text(value, label, required = true, max = 500) {
 }
 function date(value, label = 'Tanggal') { if (!B.validDate(value)) throw fail(400, `${label} tidak valid`); return value; }
 function id(value) { const v = String(value || ''); if (!/^[1-9]\d{0,14}$/.test(v)) throw fail(400, 'ID tidak valid'); return v; }
-function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change }; }
+function publicUser(u) { return { id: String(u.id), username: u.username, nama: u.nama, role: u.role, active: u.active, mustChangePassword: u.must_change, emailRequired: u.role!=='owner'&&!require('./billing-policy').email(u.profile?.email||'') }; }
 async function passwordHash(password, minimum = 5) {
   if (typeof password !== 'string' || password.length < minimum || password.length > 128) throw fail(400, 'Kata sandi harus 5–128 karakter');
   const salt = crypto.randomBytes(16).toString('hex');
@@ -51,6 +51,7 @@ async function initDb(pool) {
   await require('./workflow').initDb(pool);
   await require('./training-board').initDb(pool);
   await require('./whatsapp-payments').initDb(pool);
+  await require('./billing-channels').initDb(pool);
   await require('./parent-password-reset').run(pool,passwordHash);
   await require('./parent-password-reset').cleanUsernames(pool);
 }
@@ -62,7 +63,10 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
   });
   app.locals.release=require('./releases').mount(app,{enforce:enforceRelease,release});
   const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+  // Incoming payment confirmations remain active; outgoing WA documents stay disabled.
+  app.locals.metaRetired=true;
   require('./whatsapp-payments').mountWebhook(app,{pool,wrap,transaction});
+  app.use('/api/owner/whatsapp/invoices',(req,res)=>res.status(410).json({pesan:'Invoice dan kuitansi WhatsApp dinonaktifkan. Dokumen menggunakan email dan BRTM SWIM.'}));
   app.use('/integrations/google-forms',express.json({limit:'8mb'}));
   app.use('/registration/api/submit',express.json({limit:'30mb'}));
   app.use('/swim/api/viewed',express.json({limit:'1mb'}));
@@ -273,7 +277,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES,...require('./whatsapp-payments').TABLES]){
+      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES,...require('./whatsapp-payments').TABLES,...require('./billing-channels').TABLES]){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;
@@ -314,10 +318,11 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       out.nama = text(input.nama, 'Nama atlet', true, 150); out.kelompok = B.canonical(input.kelompok);
       if (!Object.hasOwn(B.CLASSES, out.kelompok)) throw fail(400, 'Pilih jenis kelas');
       if (!['Aktif','Nonaktif'].includes(input.status)) throw fail(400, 'Status atlet tidak valid'); out.status = input.status;
-      for (const k of ['namaPanggilan','namaOrtu','riwayatRenang','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
+      for (const k of ['namaPanggilan','namaOrtu','riwayatRenang','tempatLahir','sekolah','kelasSekolah','alamat','noHpOrtu','emailOrtu','tujuan','catatan','jk','nik']) out[k] = Object.hasOwn(input,k) ? text(input[k], k, false, k === 'catatan' ? 2000 : 500) : old?.[k] || '';
       out.tanggalLahir = input.tanggalLahir ? date(input.tanggalLahir, 'Tanggal lahir') : '';
       if (out.tanggalLahir > B.today()) throw fail(400, 'Tanggal lahir tidak boleh di masa depan');
       B.validateAge(out);
+      if(out.emailOrtu&&!require('./billing-policy').email(out.emailOrtu))throw fail(400,'Alamat email orang tua tidak valid');
       if (out.noHpOrtu && !/^\+?[0-9 ()-]{8,25}$/.test(out.noHpOrtu)) throw fail(400, 'Nomor WhatsApp orang tua tidak valid');
       // Owner may correct registration classes before completing activation, even with a paid package.
       // Existing package transactions retain their recorded class, price and quota.
@@ -404,6 +409,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
       if (kind === 'perkembangan') { for (const k of ['teknik','fisik','attitude']) out[k] = text(input[k], k, false, 1000);if(user.role==='coach'&&!require('./coach').content(out))throw fail(400,'Noted untuk orang tua tidak boleh kosong');return out; }
       if (!['Hadir','Izin','Sakit','Alpa'].includes(input.status)) throw fail(400, 'Pilih status kehadiran'); out.status = input.status; out.paketId = null;
       if (['Hadir','Alpa'].includes(out.status) && B.canonical(athlete.kelompok) !== 'Prestasi Class') {
+        if(!['Hadir','Alpa'].includes(old?.status))await require('./package-renewal').ensureAttendancePackage(db,{rows,payments,save},athlete,out.tanggal);
         const packs = (await payments(db, true)).filter(p => athleteLink(p, athlete) && p.jenisKelas === B.canonical(athlete.kelompok) && ['Lunas','Belum Lunas'].includes(p.status) && (p.statusManual!=='Kedaluwarsa'||old?.paketId===p.id) && p.tanggal <= out.tanggal && p.berlakuSampai >= out.tanggal && (p.sisaPertemuan > 0 || (['Hadir','Alpa'].includes(old?.status) && old.paketId === p.id))).sort((a,b) => a.berlakuSampai.localeCompare(b.berlakuSampai));
         if (!packs.length) throw fail(400, 'Tidak ada paket dengan sisa pertemuan pada tanggal sesi. Hubungi Owner untuk mencatat paket berikutnya.'); out.paketId = packs[0].id;
       } return out;
@@ -414,12 +420,13 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     } throw fail(404, 'Bagian tidak ditemukan');
   }
   require('./workflow').mount(app,{pool,wrap,owner,transaction,rows,record,save,validate,audit,passwordHash,payments});
+  require('./billing-channels').mount(app,{pool,wrap,owner,payments});
   require('./operations').mount(app,{pool,wrap,owner,transaction,rows,record,validate,save,payments});
   require('./staff-hours').mount(app,{pool,owner,wrap,transaction,rows,audit});
   require('./owner-management').mount(app,{owner,wrap,transaction,record,rows,payments,save,validate,audit});
   require('./replacement-schedule').mount(app,{owner,wrap,transaction,record,rows,save});
   require('./whatsapp-payments').mountOwner(app,{pool,owner,wrap,transaction,audit,rows});
-  require('./whatsapp-invoices').mount(app,{pool,owner,wrap,transaction,audit,payments});
+  app.locals.deliverWhatsAppInvoices=async()=>{};
   require('./whatsapp-connect').mount(app,{pool,owner,wrap,transaction,audit,secureCookies});
   require('./package-renewal').mount(app,{owner,wrap,transaction,record,rows,validate,save,payments});
   require('./prestasi').mount(app,{wrap,transaction,validate,save,rows,limit,record:(db,kind,id)=>record(db||pool,kind,id)});
@@ -492,7 +499,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     return scheduleSync;
   }
   app.locals.rosterAudit=()=>transaction(c=>require('./roster-audit').inspect(c,{rows,payments}));
-  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./workflow').billing(c,await payments(c));});
+  app.locals.maintain=()=>transaction(async c=>{await c.query('SELECT id FROM brtm_install WHERE id=1 FOR UPDATE');await require('./registration-email').sync(c);await require('./package-renewal').renewExhausted(c,{rows,payments,save});await require('./workflow').materialize(c,{rows,save});await require('./package-renewal').recoverLatePackages(c,{rows,payments,save});await require('./workflow').billing(c,await payments(c));await require('./billing-channels').enqueue(c,await payments(c));});
   return app;
 }
 if (require.main === module) {
@@ -501,7 +508,7 @@ if (require.main === module) {
     const app = createApp({ pool });
     let rosterAudited=false;
     let proofArchiving=false;
-    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();await app.locals.deliverWhatsAppInvoices();}catch{console.warn('BRTM WhatsApp proof worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
+    const proofTimer=setInterval(async()=>{if(proofArchiving)return;proofArchiving=true;try{await app.locals.archiveWhatsAppProofs();await app.locals.deliverBillingEmails();}catch{console.warn('BRTM incoming proof/email worker pending');}finally{proofArchiving=false;}},30000);proofTimer.unref();
     const stopNotifications=N.startWorker(pool,async()=>{
       await app.locals.maintain();
       if(!rosterAudited){require('./roster-audit').log(await app.locals.rosterAudit());rosterAudited=true;}
