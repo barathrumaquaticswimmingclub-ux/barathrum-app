@@ -138,6 +138,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const r = previous ? await db.query('UPDATE data_klub SET data=$1 WHERE jenis=$2 AND id=$3 RETURNING id,data', [JSON.stringify(payload), kind, previous.id]) : await db.query('INSERT INTO data_klub (jenis,data) VALUES ($1,$2) RETURNING id,data', [kind, JSON.stringify(payload)]);
     const out = { ...r.rows[0].data, id: String(r.rows[0].id) };
     await audit(db, user, previous ? 'ubah' : 'tambah', kind, out.id, previous, out);
+    if(kind==='atlet'&&user.role==='owner'&&previous?.noHpOrtu!==out.noHpOrtu)await db.query('UPDATE brtm_parents SET family_phone=$1 WHERE athlete_id=$2',[out.noHpOrtu||'',out.id]);
     if(kind==='atlet'&&previous&&previous.nama!==out.nama){
       const renamed=await db.query("UPDATE data_klub SET data=jsonb_set(data,'{namaAtlet}',to_jsonb($1::text)) WHERE jenis<>'atlet' AND data->>'atletId'=$2 RETURNING id",[out.nama,out.id]);
       // Legacy rows without athlete IDs may follow a name only when that name is unambiguous.
@@ -277,7 +278,7 @@ function createApp({ pool, setupHash = process.env.BRTM_SETUP_HASH || require('.
     const snapshot=await transaction(async c=>{
       await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const tables={};
-      for(const table of ['data_klub','brtm_audit','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES,...require('./whatsapp-payments').TABLES,...require('./billing-channels').TABLES]){
+      for(const table of ['data_klub','brtm_audit','brtm_parent_children','brtm_photos','brtm_registrations','brtm_notifications','brtm_parent_views','brtm_members','brtm_announcements','brtm_announcement_photos','brtm_feedback','brtm_feedback_replies','brtm_staff_notifications','brtm_spp_receipts','brtm_spp_accounts','brtm_spp_pending','brtm_weekly_slots','brtm_billing_notices',...require('./training-board').TABLES,...require('./whatsapp-payments').TABLES,...require('./billing-channels').TABLES]){
         tables[table]=(await c.query('SELECT * FROM '+table)).rows;
       }
       tables.brtm_parents=(await c.query('SELECT id,athlete_id,username,active,deleted FROM brtm_parents')).rows;

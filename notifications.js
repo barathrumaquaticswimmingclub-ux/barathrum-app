@@ -12,7 +12,7 @@ async function initDb(db) {
 async function enqueue(db, athleteId, key, title, body) {
   const n=(await db.query(`INSERT INTO brtm_notifications (athlete_id,event_key,title,body) VALUES ($1,$2,$3,$4) ON CONFLICT(athlete_id,event_key) DO NOTHING RETURNING id`,[athleteId,key,title,body])).rows[0];
   if (!n) return;
-  await db.query(`INSERT INTO brtm_push_jobs (notification_id,endpoint) SELECT $1,s.endpoint FROM brtm_push_subscriptions s JOIN brtm_parents p ON p.id=s.parent_id WHERE p.athlete_id=$2 AND p.active=TRUE AND p.deleted=FALSE ON CONFLICT DO NOTHING`,[n.id,athleteId]);
+  await db.query(`INSERT INTO brtm_push_jobs (notification_id,endpoint) SELECT $1,s.endpoint FROM brtm_push_subscriptions s JOIN brtm_parents p ON p.id=s.parent_id WHERE (p.athlete_id=$2 OR EXISTS(SELECT 1 FROM brtm_parent_children f JOIN brtm_parents child ON child.athlete_id=f.athlete_id WHERE f.parent_id=p.id AND f.athlete_id=$2 AND child.active=TRUE AND child.deleted=FALSE)) AND p.active=TRUE AND p.deleted=FALSE ON CONFLICT DO NOTHING`,[n.id,athleteId]);
 }
 async function afterSave(db, kind, value, old) {
   if(kind==='absensi' && (value.status!==old?.status)) {
@@ -39,14 +39,14 @@ async function reminders(pool, packs) {
 }
 async function deliver(pool, sender = webpush.sendNotification) {
   const key=(await pool.query('SELECT * FROM brtm_push_keys WHERE id=1')).rows[0];
-  const jobs=(await pool.query(`SELECT j.id,j.attempts,j.endpoint,s.subscription,n.event_key,n.athlete_id,n.title,n.body,photo.announcement_id AS photo_id FROM brtm_push_jobs j JOIN brtm_notifications n ON n.id=j.notification_id LEFT JOIN brtm_announcement_photos photo ON n.event_key='pengumuman:'||photo.announcement_id::text JOIN brtm_push_subscriptions s ON s.endpoint=j.endpoint JOIN brtm_parents p ON p.id=s.parent_id AND p.athlete_id=n.athlete_id JOIN data_klub a ON a.id=p.athlete_id WHERE j.sent_at IS NULL AND NOT EXISTS(SELECT 1 FROM brtm_billing_notices b WHERE n.event_key='invoice:'||b.id::text AND b.data->>'sppSuperseded'='true') AND j.attempts<5 AND j.next_attempt<=NOW() AND p.active=TRUE AND p.deleted=FALSE AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif' ORDER BY j.id LIMIT 50`)).rows;
+  const jobs=(await pool.query(`SELECT j.id,j.attempts,j.endpoint,s.subscription,n.event_key,n.athlete_id,n.title,n.body,a.data->>'nama' AS child_name,photo.announcement_id AS photo_id FROM brtm_push_jobs j JOIN brtm_notifications n ON n.id=j.notification_id LEFT JOIN brtm_announcement_photos photo ON n.event_key='pengumuman:'||photo.announcement_id::text JOIN brtm_push_subscriptions s ON s.endpoint=j.endpoint JOIN brtm_parents p ON p.id=s.parent_id JOIN brtm_parents child ON child.athlete_id=n.athlete_id AND child.active=TRUE AND child.deleted=FALSE JOIN data_klub a ON a.id=n.athlete_id WHERE (p.athlete_id=n.athlete_id OR EXISTS(SELECT 1 FROM brtm_parent_children f WHERE f.parent_id=p.id AND f.athlete_id=n.athlete_id)) AND j.sent_at IS NULL AND NOT EXISTS(SELECT 1 FROM brtm_billing_notices b WHERE n.event_key='invoice:'||b.id::text AND b.data->>'sppSuperseded'='true') AND j.attempts<5 AND j.next_attempt<=NOW() AND p.active=TRUE AND p.deleted=FALSE AND COALESCE(a.data->>'status','Aktif')<>'Nonaktif' ORDER BY j.id LIMIT 50`)).rows;
   for(const j of jobs) {
     if(!await require('./billing-policy').notificationAllowed(pool,j))continue;
     // Claim durably before network IO; recover after a crash without concurrent duplicate sends.
     const claim=await pool.query('UPDATE brtm_push_jobs SET attempts=attempts+1,next_attempt=NOW()+INTERVAL \'5 minutes\' WHERE id=$1 AND next_attempt<=NOW() RETURNING id',[j.id]);
     if(!claim.rows.length)continue;
     try {
-      await sender(j.subscription,JSON.stringify({title:'BRTM SWIM',body:j.event_key.startsWith('pengumuman:')?[...j.title+' · '+j.body].slice(0,550).join(''):'Ada kabar terbaru dari BRTM. Buka aplikasi untuk melihat informasi anak.',image:j.photo_id?'/swim/api/announcements/'+j.photo_id+'/photo':undefined,tag:'brtm-'+j.id,url:'/swim/'}),{TTL:3600,timeout:15000,vapidDetails:{subject:'https://barathrum-app-production.up.railway.app',publicKey:key.public_key,privateKey:key.private_key}});
+      await sender(j.subscription,JSON.stringify({title:'BRTM SWIM',child:String(j.athlete_id),body:(j.child_name?j.child_name+' · ':'')+(j.event_key.startsWith('pengumuman:')?[...j.title+' · '+j.body].slice(0,550).join(''):'Ada kabar terbaru dari BRTM. Buka aplikasi untuk melihat informasi anak.'),image:j.photo_id?'/swim/api/announcements/'+j.photo_id+'/photo?child='+j.athlete_id:undefined,tag:'brtm-'+j.id,url:'/swim/'}),{TTL:3600,timeout:15000,vapidDetails:{subject:'https://barathrum-app-production.up.railway.app',publicKey:key.public_key,privateKey:key.private_key}});
       await pool.query('UPDATE brtm_push_jobs SET sent_at=NOW() WHERE id=$1',[j.id]);
     } catch(e) { if([404,410].includes(e.statusCode))await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1',[j.endpoint]); }
   }

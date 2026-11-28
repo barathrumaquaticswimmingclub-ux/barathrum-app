@@ -18,6 +18,7 @@ async function initDb(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_parents (id SERIAL PRIMARY KEY, athlete_id INTEGER UNIQUE NOT NULL REFERENCES data_klub(id) ON DELETE CASCADE, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE)`);
   await db.query(`ALTER TABLE brtm_parents ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_parent_sessions (token_hash TEXT PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES brtm_parents(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL)`);
+  await require('./parent-family').initDb(db);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_form_keys (kind TEXT PRIMARY KEY CHECK (kind IN ('prestasi','nonprestasi')), token_hash TEXT NOT NULL, form_id TEXT, form_url TEXT, last_received_at TIMESTAMPTZ)`);
   await db.query(`CREATE TABLE IF NOT EXISTS brtm_registrations (id SERIAL PRIMARY KEY, kind TEXT NOT NULL, response_id TEXT NOT NULL, payload JSONB NOT NULL, status TEXT NOT NULL, athlete_id INTEGER REFERENCES data_klub(id) ON DELETE SET NULL, note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(kind,response_id))`);
 }
@@ -47,8 +48,11 @@ function mount(app, h) {
     const ownerSession = (await pool.query(`SELECT u.* FROM brtm_swim_owner_sessions s JOIN brtm_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.active=TRUE AND u.role='owner' AND u.must_change=FALSE`, [digest(token)])).rows[0];
     if (ownerSession) { req.swimOwner = ownerSession; return next(); }
     const r = await pool.query(`SELECT p.* FROM brtm_parent_sessions s JOIN brtm_parents p ON p.id=s.parent_id JOIN data_klub a ON a.id=p.athlete_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND p.active=TRUE AND p.deleted=FALSE AND a.jenis='atlet'`, [digest(token)]);
-    req.parent=await resolvedParent(r.rows[0]);if (!req.parent) throw fail(401, 'Silakan masuk ke BRTM SWIM');next();
+    req.parent=await resolvedParent(r.rows[0]);if (!req.parent) throw fail(401, 'Silakan masuk ke BRTM SWIM');
+    req.familyParent=req.parent;
+    req.parent=await require('./parent-family').select(pool,req.parent,req.query.child||req.get('X-BRTM-Child'));next();
   });
+  require('./parent-family').mount(app,{...h,parentAuth});
   require('./community').mountParent(app,{pool,wrap,parentAuth,transaction,rows,audit,limit});
   async function provision(db, athlete) {
     const existing = (await db.query('SELECT id,username,active FROM brtm_parents WHERE athlete_id=$1', [athlete.id])).rows[0];
@@ -57,7 +61,7 @@ function mount(app, h) {
     if ((await db.query('SELECT id FROM brtm_parents WHERE username=$1', [username])).rows.length) username = base + ' #' + athlete.id;
     // The suffix loop also handles a child's literal name already containing a suffix.
     while ((await db.query('SELECT id FROM brtm_parents WHERE username=$1', [username])).rows.length) username += '-';
-    return (await db.query('INSERT INTO brtm_parents (athlete_id,username,password_hash) VALUES ($1,$2,$3) RETURNING id,username,active', [athlete.id, username, await passwordHash('brtm', 4)])).rows[0];
+    return (await db.query('INSERT INTO brtm_parents (athlete_id,username,password_hash,family_phone) VALUES ($1,$2,$3,$4) RETURNING id,username,active', [athlete.id, username, await passwordHash('brtm', 4),athlete.noHpOrtu||''])).rows[0];
   }
   app.post('/swim/api/login', wrap(async (req, res) => {
     const username = norm(req.body?.username).slice(0, 200);
@@ -120,7 +124,7 @@ function mount(app, h) {
     const balance = prestasi ? null : require('./parent-package-summary').summary(packs,a.kelompok);
     const nextPayment = prestasi?B.prestasiNextDue(packs,firstPayment,today):unpaid.length ? unpaid.map(p => p.jatuhTempo || p.tanggal).filter(Boolean).sort()[0] : balance?.berlakuSampai || null;
     // Explicit projection: no contacts, other children, staff notes, or raw financial records.
-    res.json({ viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, emailRequired:!req.swimOwner&&!require('./billing-policy').email(a.emailOrtu||''), updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id },
+    res.json({ familia: req.familyParent ? await require('./parent-family').children(pool,req.familyParent) : [], viewRefs: req.swimOwner ? [] : [...packs.filter(r=>String(r.atletId)===a.id).map(r=>({kind:'pembayaran',id:r.id,revision:require('./operations').revision(r)})),...attendance.map(r=>({kind:'absensi',id:r.id,revision:require('./operations').revision(r)})),...evaluations.map(r=>({kind:'perkembangan',id:r.id,revision:require('./operations').revision(r)}))], today, emailRequired:!req.swimOwner&&!require('./billing-policy').email(a.emailOrtu||''), updatedAt: new Date().toISOString(), role: req.swimOwner ? 'owner' : 'parent', profil: { id:a.id, revision:P.revision(a), loginName:req.parent?.username||'', memberId:a.memberId, ...Object.fromEntries(P.FIELDS.map(k=>[k,a[k]||''])), kelompok: B.canonical(a.kelompok), status:a.status||'Aktif', foto: '/swim/api/photo/'+a.id+'?child='+a.id },
       latihan: { prestasi, hadirBulanIni: present.filter(x => x.tanggal?.startsWith(month)).length, hadirTotal: present.length, terpakaiPaket: prestasi ? null : pack?.terpakai ?? null, sisaPertemuan: prestasi ? null : balance.sisaPertemuan, kuota: prestasi ? null : pack?.totalPertemuan ?? null, paketLunas:prestasi?paymentSummary.sppPeriodeAktifLunas===true:pack?.status==='Lunas', statusPaket: prestasi ? 'Bulanan · kehadiran fleksibel' : pack?.statusMasaBerlaku || 'Belum ada paket', berlakuSampai: prestasi ? null : balance.berlakuSampai, rincianKuota: balance?.rincianKuota || [] },
       pembayaran: { ...sppState,tanggalPembayaranPertama:firstPayment||null,terakhirBayar: paid[0]?.dibayarPada || paid[0]?.tanggal || null, bayarBerikutnya: nextPayment, adaTunggakan: prestasi?unpaid.some(p=>p.jatuhTempo<today):unpaid.length > 0, statusDetail:paymentSummary?.statusSPPDetail||'',status: prestasi?(paymentSummary.statusSPP==='Lunas'&&paymentSummary.sppPeriodeAktifLunas?'Lunas periode ini':paymentSummary.statusSPP):sppState.sppMenungguOwner?'Menunggu Persetujuan Owner':paymentSummary.statusSPP },
       catatanwaktu: prestasi ? (await ownRows('catatanwaktu')).map(x=>({id:x.id,tanggal:x.tanggal,gaya:x.gaya,jarak:x.jarak,kolam:x.kolam,detik:x.detik,testName:x.testName||''})) : [],
@@ -230,15 +234,15 @@ function mount(app, h) {
     let url;try{url=new URL(s?.endpoint);}catch{throw fail(400,'Langganan notifikasi tidak valid');}
     const allowed=url.hostname==='fcm.googleapis.com'||url.hostname==='updates.push.services.mozilla.com'||url.hostname.endsWith('.push.apple.com')||url.hostname==='web.push.apple.com'||url.hostname==='wns2-par02p.notify.windows.com'||url.hostname.endsWith('.notify.windows.com');
     if(url.protocol!=='https:'||url.port||url.username||url.password||!allowed||!s.keys||!/^[-_a-zA-Z0-9]{16,200}$/.test(s.keys.auth)||!/^[-_a-zA-Z0-9]{50,200}$/.test(s.keys.p256dh))throw fail(400,'Langganan notifikasi tidak valid');
-    await pool.query('INSERT INTO brtm_push_subscriptions(endpoint,parent_id,subscription) VALUES($1,$2,$3) ON CONFLICT(endpoint) DO UPDATE SET parent_id=EXCLUDED.parent_id,subscription=EXCLUDED.subscription',[url.href,req.parent.id,JSON.stringify({endpoint:url.href,keys:s.keys})]);
+    await pool.query('INSERT INTO brtm_push_subscriptions(endpoint,parent_id,subscription) VALUES($1,$2,$3) ON CONFLICT(endpoint) DO UPDATE SET parent_id=EXCLUDED.parent_id,subscription=EXCLUDED.subscription',[url.href,req.familyParent.id,JSON.stringify({endpoint:url.href,keys:s.keys})]);
     res.json({pesan:'Notifikasi HP diaktifkan'});
   }));
   app.post('/swim/api/push/unsubscribe',parentAuth,wrap(async(req,res)=>{
-    if(req.parent)await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1 AND parent_id=$2',[req.body.endpoint,req.parent.id]);res.json({ok:true});
+    if(req.parent)await pool.query('DELETE FROM brtm_push_subscriptions WHERE endpoint=$1 AND parent_id=$2',[req.body.endpoint,req.familyParent.id]);res.json({ok:true});
   }));
   app.post('/swim/api/notifications/:id/read',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');await pool.query('UPDATE brtm_notifications SET read_at=NOW() WHERE id=$1 AND athlete_id=$2',[req.params.id,req.parent.athlete_id]);res.json({ok:true});}));
   async function parentCoach(req){if(!req.parent)throw fail(403,'Khusus orang tua');const schedules=await rows(pool,'jadwal');if(!schedules.some(s=>[s.coachId,...(s.coachIds||[])].map(String).includes(req.params.id)&&s.atletIds?.map(String).includes(String(req.parent.athlete_id))))throw fail(404,'Profil pelatih tidak tersedia');const u=(await pool.query('SELECT id,nama,profile FROM brtm_users WHERE id=$1',[req.params.id])).rows[0];if(!u)throw fail(404,'Profil pelatih tidak tersedia');return u;}
-  app.get('/swim/api/coaches/:id',parentAuth,wrap(async(req,res)=>{const u=await parentCoach(req);res.json({nama:u.nama,jabatan:u.profile.jabatan||'Pelatih',noWa:u.profile.noWa||'',foto:u.profile.photo?'/swim/api/coaches/'+u.id+'/photo':null});}));
+  app.get('/swim/api/coaches/:id',parentAuth,wrap(async(req,res)=>{const u=await parentCoach(req);res.json({nama:u.nama,jabatan:u.profile.jabatan||'Pelatih',noWa:u.profile.noWa||'',foto:u.profile.photo?'/swim/api/coaches/'+u.id+'/photo?child='+req.parent.athlete_id:null});}));
   app.get('/swim/api/coaches/:id/photo',parentAuth,wrap(async(req,res)=>{const u=await parentCoach(req),p=u.profile.photo;if(!p)throw fail(404,'Foto belum tersedia');res.type(p.mime).send(Buffer.from(p.base64,'base64'));}));
   app.get('/swim/api/receipt/:key',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');const a=await record(pool,'atlet',req.parent.athlete_id),packs=(await payments()).filter(p=>String(p.atletId)===a.id),r=(await require('./parent-ledger').list(pool,a.id,packs)).find(r=>r.key===req.params.key&&r.status==='Diterima');if(!r)throw fail(404,'Kuitansi tidak tersedia');const p=packs.find(p=>p.id===r.billId);if(!p)throw fail(404,'Kuitansi tidak tersedia');require('./reports').bill(res,{...p,penerimaanTunai:r.amount,dibayarPada:r.paidOn},'receipt',r.key.replace(':','-'));}));
   app.get('/swim/api/statement',parentAuth,wrap(async(req,res)=>{if(!req.parent)throw fail(403,'Khusus orang tua');const a=await record(pool,'atlet',req.parent.athlete_id),packs=(await payments()).filter(p=>String(p.atletId)===String(a.id));require('./reports').statement(res,a,await require('./parent-ledger').list(pool,a.id,packs));}));

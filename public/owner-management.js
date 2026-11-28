@@ -26,7 +26,7 @@ function ownerPaymentRow(a,month,status){
 const managementList=renderList;renderList=function(){if(!isOwner())return managementList();const k=S.section,q=qName(),f=$('filter').value;
  if(k==='atlet'){
   const list=filteredRows().sort(activeFirst);$('records').className='ops-records';$('sectionSummary').innerHTML='';
-  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('parent-info',a.id,'Info orang tua')+btn('replacement',a.id,'Jadwal pengganti'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')+'<button class="danger" data-delete="'+esc(a.id)+'">Hapus atlet</button>']));return;
+  $('records').innerHTML=grid(['No.','Nama lengkap / panggilan','Kelas','Pembayaran','Status','Bantuan Owner','Tindakan'],list.map((a,i)=>[i+1,'<button data-child="'+esc(a.id)+'">'+esc(athleteLabel(a))+'</button>',esc(a.kelompok),badge(a.statusSPP||'Belum ada pembayaran'),badge(a.status),btn('child-dashboard',a.id,'Dashboard')+btn('family-manage',a.id,'Anak Saya')+btn('parent-info',a.id,'Info orang tua')+btn('replacement',a.id,'Jadwal pengganti'),btn('athlete-edit',a.id,'Edit data atlet')+btn('activation-open',a.id,'Aktivasi')+'<button class="danger" data-delete="'+esc(a.id)+'">Hapus atlet</button>']));return;
  }
  if(['aktivasi','pembayaran'].includes(k)){
   const month=k==='pembayaran'?$('monthFilter').value:'';
@@ -74,6 +74,7 @@ async function ownerManagementAction(e){const b=e.target.closest('[data-wf]');if
  if(action==='payment-open')ownerPackageForm(a,ownerPacks(a).filter(p=>p.status==='Belum Lunas').sort((x,y)=>x.tanggal.localeCompare(y.tanggal)||Number(x.id)-Number(y.id))[0]||null,false);
  if(action==='manage-history')ownerHistory(a);
  if(action==='child-dashboard')await ownerChildDashboard(a);
+ if(action==='family-manage')await ownerFamily(a);
  if(action==='parent-info')ownerParentInfo(a);
  if(action==='manage-edit'){const p=S.records.pembayaran.find(p=>p.id===id);ownerPackageForm(S.records.atlet.find(a=>a.id===p.atletId),p,S.section==='aktivasi');}
  if(action==='manage-cancel')modal('Hapus / batalkan paket',field('reason','Alasan pembatalan','textarea','',{full:true})+'<p class="full">Paket dihapus dari daftar aktif dan penerimaannya dibatalkan. Salinan, absensi, dan alasan tetap tersimpan dalam audit.</p>',d=>request('/api/owner/package/'+id+'/cancel',{method:'POST',body:JSON.stringify(d)}));
@@ -111,3 +112,9 @@ async function ownerWhatsAppAction(e){
 $('sectionSummary').addEventListener('click',ownerWhatsAppAction);
 
 document.addEventListener('click',async e=>{if(!e.target.closest('[data-wf=billing-channels]')||!isOwner())return;try{const r=await request('/api/owner/billing/channels');modal('Saluran invoice BRTM','<div class="full"><p><b>Email pengirim:</b> '+esc(r.emailFrom)+'</p><p><b>BRTM SWIM:</b> invoice tersedia di SPP & pembayaran.</p><p><b>Notifikasi HP:</b> mengikuti izin notifikasi orang tua.</p><p><b>Email otomatis:</b> '+esc(r.emailStatus)+'. Orang tua dapat mengisi email pada Profil & foto.</p><p><b>WhatsApp manual:</b> buka Riwayat / edit, pilih Ingatkan via WA Business, lalu tekan Kirim di WhatsApp.</p><p>'+esc(r.prestasiPolicy)+'</p>'+grid(['Invoice','Status email','Keterangan'],r.jobs.map(j=>[esc('BRTM-'+j.payment_id),esc(({pending:'Menunggu',sending:'Diproses',accepted:'Diterima layanan email',failed:'Gagal',unknown:'Perlu diperiksa',cancelled:'Dibatalkan'})[j.status]||j.status),esc(j.last_error||'—')]))+'</div>',null);}catch(err){notice(err.message,true);}});
+
+async function ownerFamily(a){
+ const linked=await request('/api/owner/family/'+a.id),others=(S.records.atlet||[]).filter(x=>x.id!==a.id&&!x.mergedInto);
+ modal('Anak Saya • '+a.nama,'<p class="full">Atur anak yang dapat diakses ketika orang tua masuk menggunakan akun '+esc(a.nama)+'.</p><div class="full">'+linked.map(x=>'<p>'+esc(x.nama)+(x.utama?' • Akun utama':' <button type="button" data-family-remove="'+esc(x.id)+'">Lepas tautan</button>')+'</p>').join('')+'</div>'+field('atletId','Tambahkan anak',others.map(x=>[x.id,x.nama]),others[0]?.id||'',{full:true})+'<p class="full">Pastikan kedua anak berada dalam keluarga yang sama.</p>',d=>request('/api/owner/family/'+a.id,{method:'POST',body:JSON.stringify({atletId:d.atletId})}));
+ for(const b of document.querySelectorAll('[data-family-remove]'))b.onclick=async()=>{b.disabled=true;try{await request('/api/owner/family/'+a.id,{method:'POST',body:JSON.stringify({atletId:b.dataset.familyRemove,lepas:true})});await ownerFamily(a);}catch(e){notice(e.message,true);b.disabled=false;}};
+}

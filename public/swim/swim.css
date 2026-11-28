@@ -14,3 +14,5 @@ header .brand span{color:#12335d}header .brand small{color:#526c8d}
 
 /* Update availability must not change the page height while browsing. */
 #refresh{position:relative}#refresh[data-available="true"]::after{content:"Baru";position:absolute;right:0;top:-9px;background:#087c57;color:white;border-radius:5px;padding:2px 5px;font-size:9px;line-height:12px;pointer-events:none}
+
+.family-panel h2{margin-top:0}.family-children{display:flex;gap:.65rem;overflow-x:auto;padding:.25rem 0 .75rem}.family-children button{display:flex;align-items:center;gap:.6rem;flex:0 0 auto;max-width:90%;min-height:64px;text-align:left;font-size:1rem}.family-children button[aria-pressed="true"]{background:#003ca6;color:#fff;border:2px solid #003ca6}.family-children small{display:block;font-size:.875rem;margin-top:.2rem}.family-initial{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:50%;background:#e4f2ff;color:#003ca6;font-weight:700}.family-panel p{font-size:1rem}#familyName{display:block;width:100%;box-sizing:border-box;margin:.5rem 0;min-height:48px}#familyMessage{color:#b42318}
