@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {summary}=require('./parent-package-summary');
+const pack=(sisa,status,end,paid='Lunas')=>({jenisKelas:'Private Class',sisaPertemuan:sisa,statusMasaBerlaku:status,berlakuSampai:end,tanggal:'2026-11-01',status:paid});
+const old=pack(1,'Aktif','2026-11-30'),next=pack(4,'Belum mulai','2026-12-31');
+let r=summary([next,old],'Private Class');assert.equal(r.sisaPertemuan,5);assert.equal(r.berlakuSampai,'2026-12-31');assert.equal(r.rincianKuota.length,2);
+assert.equal(summary([old,{...next,status:'Belum Lunas'}],'Private Class').sisaPertemuan,1);
+assert.equal(summary([next,{...old,statusMasaBerlaku:'Kedaluwarsa'}],'Private Class').sisaPertemuan,4);
+assert.equal(summary([old,{...next,dibatalkan:true}],'Private Class').berlakuSampai,'2026-11-30');
+assert.equal(summary([old,{...next,jenisKelas:'Prestasi Class'}],'Private Class').sisaPertemuan,1);
+assert.equal(summary([pack(4,'Aktif','2026-12-31'),old],'Private Class').sisaPertemuan,5);
+assert.equal(summary([],'Private Class').sisaPertemuan,null);
+console.log('Parent accumulated quota and expiry checks passed');

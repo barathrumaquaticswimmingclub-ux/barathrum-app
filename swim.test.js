@@ -103,6 +103,16 @@ async function main(){
   assert.equal(edited.username,'wali dua baru');assert.equal(edited.active,true);assert(!JSON.stringify(edited).includes('baru-aman'));
   const logs=(await pool.query("SELECT * FROM brtm_audit WHERE action='ubah-akses-orangtua'")).rows;
   assert.equal(logs.length,2);assert(!JSON.stringify(logs).includes('baru-aman'));
+  // Parent and Owner share the accumulated balance and prepaid expiry.
+  const addBalance=async data=>pool.query("INSERT INTO data_klub(jenis,data) VALUES('pembayaran',$1)",[JSON.stringify({atletId:b.id,namaAtlet:b.nama,jenisKelas:'Private Class',status:'Lunas',jumlah:400000,totalPertemuan:4,...data})]);
+  await addBalance({tanggal:today,tanggalBerakhir:B.addMonth(today),pemakaianAwal:3});
+  await addBalance({tanggal:B.addDays(B.addMonth(today),1),tanggalBerakhir:B.addMonth(B.addMonth(today)),pemakaianAwal:0});
+  const accumulated=await body(other.get('/swim/api/dashboard'));
+  assert.equal(accumulated.latihan.sisaPertemuan,5);assert.equal(accumulated.latihan.kuota,4);
+  assert.equal(accumulated.latihan.berlakuSampai,B.addMonth(B.addMonth(today)));
+  assert.equal(accumulated.latihan.rincianKuota.length,2);
+  const ownerBalance=await body(owner.get('/api/owner/athlete/'+b.id+'/dashboard'));
+  assert.deepEqual(ownerBalance.latihan,accumulated.latihan);
   await db.close();console.log('PASS '+checks+' BRTM SWIM/form checks: isolation, identity matching, duplicates, quota correction, revocation, Google keys and existing histories.');
 }
 main().catch(e=>{console.error(e);process.exit(1);});
